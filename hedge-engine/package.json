@@ -1,0 +1,21 @@
+{
+  "name": "living-tokens-hedge-engine",
+  "version": "1.0.0",
+  "description": "QuickNode Streams consumer & Gemini automated hedging engine",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "ts-node src/index.ts"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "axios": "^1.7.2",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.9",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}

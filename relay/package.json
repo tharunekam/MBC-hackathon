@@ -1,0 +1,20 @@
+{
+  "name": "living-tokens-gemini-relay",
+  "version": "1.0.0",
+  "description": "Gemini WebSocket Market Data Listener & Solana Oracle Relay",
+  "main": "dist/gemini_relay.js",
+  "scripts": {
+    "start": "ts-node src/gemini_relay.ts"
+  },
+  "dependencies": {
+    "ws": "^8.17.1",
+    "@solana/web3.js": "^1.91.8",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.10",
+    "@types/node": "^20.14.9",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}
