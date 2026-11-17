@@ -234,3 +234,34 @@ test('reconcile accounts for orders placed outside the service after the baselin
   near(rec.cashDifference!, 0);
   assert.equal(rec.ok, true);
 });
+
+test('fees: with the right fee model the stake still comes back when the condition fails', async () => {
+  const { exchange, ledger, deps } = setup(LADDER);
+  exchange.feeCoef = 0.07; // venue charges Gemini's production taker fee
+  await ensureBaseline(exchange, ledger, 'primary');
+  const bet = await placeConditionalBet({ ...deps, feeCoef: 0.07 }, request(exchange, { stake: 100 }));
+
+  assert.equal(bet.status, 'open');
+  assert.ok(bet.legs.every((l) => l.fee > 0));
+  near(bet.quotedPrice, 0.452424, 1e-5); // fee-inclusive quote, not the fee-free 0.4225
+  assert.equal(bet.payoffs!.hedged, true);
+  near(await exchange.cash(), 1000 - bet.cost); // cost includes both fees
+
+  exchange.resolve(1800, 'no');
+  exchange.resolve(1820, 'no');
+  await settleBets({ ...deps, feeCoef: 0.07 });
+  assert.ok(bet.settlement!.pnl >= 0 && bet.settlement!.pnl < 0.05, `refund result was ${bet.settlement!.pnl}`);
+  near(await exchange.cash(), 1000 + bet.settlement!.pnl);
+  assert.equal((await reconcile(exchange, ledger, 'primary')).ok, true);
+});
+
+test('fees: a wrong fee model (the original bug) is caught by reconcile, not hidden', async () => {
+  const { exchange, ledger, deps } = setup(LADDER);
+  exchange.feeCoef = 0.07; // venue charges fees...
+  await ensureBaseline(exchange, ledger, 'primary');
+  const bet = await placeConditionalBet(deps, request(exchange, { stake: 100 })); // ...but we size as if it were free
+  assert.equal(bet.payoffs!.hedged, true); // the ledger believes it is protected
+  const rec = await reconcile(exchange, ledger, 'primary');
+  assert.equal(rec.ok, false); // and the cash check exposes the gap
+  assert.ok(rec.cashDifference! < -3, `expected several dollars of unmodelled fees, got ${rec.cashDifference}`);
+});

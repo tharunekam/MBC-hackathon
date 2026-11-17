@@ -55,6 +55,14 @@ Every order carries a tag (`gv-<betId>-...`) and is written to
 `data/ledger.json` before it is sent, so an interrupted bet can be repaired by
 looking the tag up on Gemini instead of resending.
 
+## Fees
+
+Gemini's published taker fee is `0.07 x contracts x price x (1 - price)`, rounded
+up to the cent. The sandbox charged nothing. Quotes, hedge sizing and the ledger
+all include the fee through one setting, `GIVEN_TAKER_FEE_COEF` (default `0` on
+the sandbox and `0.07` on production). `reconcile` fails if the setting is wrong,
+because the cash balance will not tie out.
+
 ## What was learned from Gemini's sandbox (2026-11-17)
 
 - Order entry works only over the WebSocket (`order.place`); the REST order
@@ -73,4 +81,3 @@ looking the tag up on Gemini instead of resending.
 - Conditional orders across markets (trigger watcher).
 - HTTP API for the frontend.
 - "Given the favourite doesn't win" bets on winner lists.
-- Fees: the sandbox charged none; production fees are not yet in the pricing.

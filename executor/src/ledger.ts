@@ -12,6 +12,8 @@ export interface LegRecord {
   quantityRequested: number;
   quantityFilled: number;
   avgPrice: number | null;
+  /** Fee charged on this order, from the fee model in force when it filled. */
+  fee: number;
   /** sent -> filled | partial | unfilled | resting | error */
   status: 'sent' | 'filled' | 'partial' | 'unfilled' | 'resting' | 'error';
   orderId?: string;

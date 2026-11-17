@@ -11,7 +11,7 @@ export interface ReconcileReport {
   /** Net cash those untracked orders moved (negative = spent). Included in expectedCash. */
   untrackedCashFlow: number;
   baselineCash: number | null;
-  /** Baseline, minus buys, plus sells, plus settled payouts. */
+  /** Baseline, minus buys, plus sells, minus modelled fees, plus settled payouts. */
   expectedCash: number | null;
   actualCash: number;
   cashDifference: number | null;
@@ -72,7 +72,7 @@ export async function reconcile(exchange: Exchange, ledger: Ledger, user: string
     let cash = baseline.cash + untrackedCashFlow;
     for (const leg of legs) {
       if (leg.quantityFilled <= 0 || leg.avgPrice === null) continue;
-      cash += (leg.side === 'buy' ? -1 : 1) * leg.quantityFilled * leg.avgPrice;
+      cash += (leg.side === 'buy' ? -1 : 1) * leg.quantityFilled * leg.avgPrice - (leg.fee ?? 0);
     }
     for (const bet of ledger.data.bets) {
       if (bet.user === user && bet.settlement) cash += bet.settlement.payout;

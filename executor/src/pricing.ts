@@ -24,28 +24,53 @@ export const ceilToStep = (x: number, step = QTY_STEP): number => clean(Math.cei
 export const fmt2 = (x: number): string => clean(x).toFixed(2);
 
 /**
- * Price of $1 paid "if B, given A" when buying B at `askB` and hedging with
- * NO on A, where `bidA` is the best YES bid on A (so NO on A costs 1 - bidA).
- * Returns null when no sensible bet exists (missing book, or B is not cheaper than A).
+ * Gemini's published taker fee: coef x contracts x price x (1 - price), rounded
+ * up to the cent (coef is 0.07 in production; the sandbox charged nothing).
  */
-export function conditionalPrice(askB: number | null, bidA: number | null): number | null {
+export function takerFee(quantity: number, price: number, coef: number): number {
+  if (!(coef > 0) || !(quantity > 0)) return 0;
+  return ceilToStep(coef * quantity * price * (1 - price), 0.01);
+}
+
+/** Fee per contract before rounding. */
+export const feeRate = (price: number, coef: number): number => (coef > 0 ? coef * price * (1 - price) : 0);
+
+/**
+ * All-in price of $1 paid "if B, given A" when buying B at `askB` and hedging
+ * with NO on A, where `bidA` is the best YES bid on A (so NO on A costs
+ * 1 - bidA). With a fee coefficient, both legs' taker fees are included:
+ *
+ *     (askB + fee(askB)) / (bidA - fee(1 - bidA))
+ *
+ * Returns null when no sensible bet exists (missing book, B not cheaper than
+ * A, or the all-in price reaches $1).
+ */
+export function conditionalPrice(askB: number | null, bidA: number | null, coef = 0): number | null {
   if (askB === null || bidA === null) return null;
   if (!(askB > 0) || !(bidA > 0) || bidA >= 1 || askB >= bidA) return null;
-  return clean(askB / bidA);
+  const refundPerHedge = bidA - feeRate(1 - bidA, coef); // what one NO contract returns net of its cost and fee
+  if (refundPerHedge <= 0) return null;
+  const price = clean((askB + feeRate(askB, coef)) / refundPerHedge);
+  return price < 1 ? price : null;
 }
 
 /**
  * NO-on-A quantity needed so that, if A fails, the payout covers everything
- * spent: qA >= costB + qA * noPriceA. Rounded UP to the quantity step so the
- * refund is never short. `alreadyHeld` and `alreadySpent` support topping up
- * after a partial fill.
+ * spent, fees included: qA >= costB + qA * noPriceA + fee(qA). Rounded UP to
+ * the quantity step so the refund is never short. `costB` and `alreadySpent`
+ * must include fees already paid. `alreadyHeld` and `alreadySpent` support
+ * topping up after a partial fill.
  */
-export function hedgeQuantity(costB: number, noPriceA: number, alreadyHeld = 0, alreadySpent = 0): number {
+export function hedgeQuantity(costB: number, noPriceA: number, alreadyHeld = 0, alreadySpent = 0, coef = 0): number {
   if (!(noPriceA > 0) || noPriceA >= 1) throw new Error(`NO price on the condition must be between 0 and 1, got ${noPriceA}`);
   if (costB < 0) throw new Error('costB cannot be negative');
   const shortfall = costB + alreadySpent - alreadyHeld;
   if (shortfall <= 0) return 0;
-  return ceilToStep(shortfall / (1 - noPriceA));
+  const refundPerHedge = 1 - noPriceA - feeRate(noPriceA, coef);
+  if (refundPerHedge <= 0) throw new Error(`Fees leave nothing to refund at a NO price of ${noPriceA}`);
+  // The hedge order's own fee is rounded up to the cent, so allow one cent for that.
+  const rounding = coef > 0 ? 0.01 : 0;
+  return ceilToStep((shortfall + rounding) / refundPerHedge);
 }
 
 export interface LegFill {

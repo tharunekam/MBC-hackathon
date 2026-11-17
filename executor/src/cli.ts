@@ -60,7 +60,7 @@ async function main(): Promise<void> {
     const events = args[1] && !args[1].startsWith('--') ? [await pub.getEvent(args[1])] : await pub.listEvents('active');
     let shown = 0;
     for (const event of events) {
-      const pairs = linkedPairs(event, { tradableOnly: true });
+      const pairs = linkedPairs(event, { tradableOnly: true, feeCoef: config.takerFeeCoef });
       if (pairs.length === 0) continue;
       console.log(`\n${event.title}  (${event.ticker}, expires ${event.expiryDate ?? '?'})`);
       for (const p of pairs) {
@@ -89,7 +89,7 @@ async function main(): Promise<void> {
       }
       await ensureBaseline(exchange, ledger, user);
       const bet = await placeConditionalBet(
-        { exchange, ledger },
+        { exchange, ledger, feeCoef: config.takerFeeCoef },
         {
           user,
           eventTicker,
@@ -103,11 +103,11 @@ async function main(): Promise<void> {
       );
       printBet(bet);
     } else if (command === 'settle') {
-      const done = await settleBets({ exchange, ledger });
+      const done = await settleBets({ exchange, ledger, feeCoef: config.takerFeeCoef });
       for (const bet of done) printBet(bet);
       console.log(`\n${done.length} bet(s) settled.`);
     } else if (command === 'recover') {
-      console.log(`${await recoverBets({ exchange, ledger })} order(s) repaired.`);
+      console.log(`${await recoverBets({ exchange, ledger, feeCoef: config.takerFeeCoef })} order(s) repaired.`);
     } else if (command === 'reconcile') {
       await ensureBaseline(exchange, ledger, user);
       const r = await reconcile(exchange, ledger, user);

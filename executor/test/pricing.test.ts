@@ -113,3 +113,34 @@ test('linked pairs: only "or above" strikes, outcome above condition, and a real
   assert.equal(tradable[0]!.b.symbol, 'HI1820');
   near(tradable[0]!.conditionalPrice!, 0.3 / 0.71);
 });
+
+test('fees: known answers for the all-in price and the fee itself', async () => {
+  const { takerFee } = await import('../src/pricing.ts');
+  // 10 contracts at 0.30: 0.07 * 10 * 0.30 * 0.70 = 0.147 -> rounded up to 15 cents
+  assert.equal(takerFee(10, 0.3, 0.07), 0.15);
+  assert.equal(takerFee(10, 0.3, 0), 0);
+  assert.equal(takerFee(0, 0.3, 0.07), 0);
+  // (0.30 * (1 + 0.07*0.70)) / (0.71 * (1 - 0.07*0.29)) = 0.3147 / 0.695587
+  near(conditionalPrice(0.3, 0.71, 0.07)!, 0.3147 / 0.695587, 1e-6);
+  near(conditionalPrice(0.3, 0.71, 0.07)!, 0.452424, 1e-5);
+  assert.ok(conditionalPrice(0.3, 0.71, 0.07)! > conditionalPrice(0.3, 0.71)!); // fees only ever make it dearer
+  // a pair that is just under $1 before fees is refused once fees are added
+  assert.ok(conditionalPrice(0.69, 0.7) !== null);
+  assert.equal(conditionalPrice(0.69, 0.7, 0.07), null);
+});
+
+test('fees: the hedge covers the stake AND both fees at the worst allowed fill', async () => {
+  const { takerFee } = await import('../src/pricing.ts');
+  const c = 0.07;
+  for (let pB = 0.02; pB < 0.9; pB += 0.07) {
+    for (let noA = 0.05; noA < 0.9; noA += 0.09) {
+      for (const qB of [0.01, 1, 7.37, 250]) {
+        const costB = qB * pB + takerFee(qB, pB, c);
+        const qA = hedgeQuantity(costB, noA, 0, 0, c);
+        const refund = qA - (costB + qA * noA + takerFee(qA, noA, c));
+        assert.ok(refund >= -1e-9, `short by ${refund} at pB=${pB} noA=${noA} qB=${qB}`);
+        assert.ok(refund < 0.05, `over-hedged by ${refund}`);
+      }
+    }
+  }
+});

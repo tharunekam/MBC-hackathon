@@ -20,6 +20,11 @@ export interface Config {
   users: Credentials[];
   dataDir: string;
   port: number;
+  /**
+   * Taker fee coefficient c in fee = c x contracts x price x (1 - price).
+   * Gemini publishes 0.07 for production; the sandbox charged nothing.
+   */
+  takerFeeCoef: number;
 }
 
 function parseEnvFile(path: string): Record<string, string> {
@@ -78,6 +83,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     users,
     dataDir: merged.GIVEN_DATA_DIR ? resolve(merged.GIVEN_DATA_DIR) : resolve(EXECUTOR_ROOT, 'data'),
     port: Number(merged.GIVEN_PORT ?? 8787),
+    takerFeeCoef: merged.GIVEN_TAKER_FEE_COEF !== undefined ? Number(merged.GIVEN_TAKER_FEE_COEF) : isSandbox ? 0 : 0.07,
   };
 }
 

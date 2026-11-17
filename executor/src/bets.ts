@@ -2,7 +2,8 @@ import { randomBytes } from 'node:crypto';
 import type { Exchange, OrderRequest, OrderResult } from './exchange.ts';
 import type { BetRecord, Ledger, LegRecord } from './ledger.ts';
 import { findPair, toRung } from './pairs.ts';
-import { PRICE_TICK, clean, floorToStep, hedgeQuantity, payoffs, settlementPayout } from './pricing.ts';
+import { conditionalPrice } from './pricing.ts';
+import { PRICE_TICK, clean, feeRate, floorToStep, hedgeQuantity, payoffs, settlementPayout, takerFee } from './pricing.ts';
 
 export interface BetRequest {
   user: string;
@@ -26,11 +27,13 @@ export interface Deps {
   ledger: Ledger;
   now?: () => Date;
   newId?: () => string;
+  /** Taker fee coefficient; 0 means the venue charges no fees. */
+  feeCoef?: number;
 }
 
 const MAX_HEDGE_ATTEMPTS = 3;
 const defaultId = () => randomBytes(4).toString('hex');
-const tickFloor = (x: number) => floorToStep(x, PRICE_TICK);
+const withinLimit = (price: number | null, max: number) => price !== null && price <= max + 1e-9;
 
 /** Sends one order, recording it in the ledger before and after. */
 async function sendLeg(deps: Deps, bet: BetRecord, role: LegRecord['role'], req: OrderRequest): Promise<LegRecord> {
@@ -45,6 +48,7 @@ async function sendLeg(deps: Deps, bet: BetRecord, role: LegRecord['role'], req:
     quantityRequested: req.quantity,
     quantityFilled: 0,
     avgPrice: null,
+    fee: 0,
     status: 'sent',
     sentAt: now().toISOString(),
   };
@@ -60,22 +64,23 @@ async function sendLeg(deps: Deps, bet: BetRecord, role: LegRecord['role'], req:
     deps.ledger.save();
     return leg;
   }
-  applyResult(leg, result);
+  applyResult(leg, result, deps.feeCoef ?? 0);
   deps.ledger.save();
   return leg;
 }
 
-function applyResult(leg: LegRecord, result: OrderResult): void {
+function applyResult(leg: LegRecord, result: OrderResult, feeCoef: number): void {
   leg.orderId = result.orderId;
   leg.quantityFilled = result.filledQuantity;
   leg.avgPrice = result.avgPrice;
+  leg.fee = result.avgPrice === null ? 0 : takerFee(result.filledQuantity, result.avgPrice, feeCoef);
   if (result.open) leg.status = 'resting';
   else if (result.filledQuantity <= 0) leg.status = 'unfilled';
   else if (result.filledQuantity + 1e-9 < leg.quantityRequested) leg.status = 'partial';
   else leg.status = 'filled';
 }
 
-/** Net contracts held and net dollars spent on one symbol/outcome within a bet. */
+/** Net contracts held and net dollars spent (fees included) on one symbol/outcome within a bet. */
 export function netHolding(bet: BetRecord, symbol: string, outcome: 'yes' | 'no'): { quantity: number; spent: number } {
   let quantity = 0;
   let spent = 0;
@@ -83,7 +88,7 @@ export function netHolding(bet: BetRecord, symbol: string, outcome: 'yes' | 'no'
     if (leg.symbol !== symbol || leg.outcome !== outcome || leg.quantityFilled <= 0 || leg.avgPrice === null) continue;
     const sign = leg.side === 'buy' ? 1 : -1;
     quantity += sign * leg.quantityFilled;
-    spent += sign * leg.quantityFilled * leg.avgPrice;
+    spent += sign * leg.quantityFilled * leg.avgPrice + (leg.fee ?? 0);
   }
   return { quantity: clean(quantity), spent: clean(spent) };
 }
@@ -117,8 +122,9 @@ export async function placeConditionalBet(deps: Deps, req: BetRequest): Promise<
     throw new Error('maxPrice must be between 0 and 1.');
   }
 
+  const feeCoef = deps.feeCoef ?? 0;
   const event = await deps.exchange.getEvent(req.eventTicker);
-  const pair = findPair(event, req.conditionSymbol, req.targetSymbol);
+  const pair = findPair(event, req.conditionSymbol, req.targetSymbol, feeCoef);
   if (!pair.a.open || !pair.b.open) throw new Error(`${event.ticker} is not open for trading right now.`);
   const quote = pair.conditionalPrice;
   if (quote === null || pair.a.bid === null || pair.b.ask === null) {
@@ -152,7 +158,10 @@ export async function placeConditionalBet(deps: Deps, req: BetRequest): Promise<
   deps.ledger.save();
 
   // Leg 1: the outcome. Never pay so much that the bet could exceed maxPrice even with a perfect hedge.
-  const bLimit = Math.min(clean(pair.b.ask + slip), tickFloor(maxPrice * pair.a.bid), 0.99);
+  let bLimit = Math.min(clean(pair.b.ask + slip), 0.99);
+  while (bLimit > pair.b.ask + 1e-9 && !withinLimit(conditionalPrice(bLimit, pair.a.bid, feeCoef), maxPrice)) {
+    bLimit = clean(bLimit - PRICE_TICK);
+  }
   const bLeg = await sendLeg(deps, bet, 'outcome', {
     symbol: pair.b.symbol,
     side: 'buy',
@@ -199,13 +208,18 @@ async function hedge(deps: Deps, bet: BetRecord, maxPrice: number, slip: number)
     const rung = contract ? toRung(contract) : null;
     if (!rung || !rung.open || rung.bid === null) return;
 
+    const feeCoef = deps.feeCoef ?? 0;
     const noAsk = clean(1 - rung.bid);
-    // Highest NO price that still keeps the whole bet at or under maxPrice.
-    const cap = tickFloor(1 - b.spent / b.quantity / maxPrice);
-    const limit = Math.min(clean(noAsk + slip), cap, 0.99);
-    if (limit < noAsk || limit <= 0) return; // hedging now would break the price limit
+    // Highest NO price, from the best offer upward, that keeps the whole bet at or under maxPrice.
+    const allIn = (noPrice: number) => {
+      const refundPerHedge = 1 - noPrice - feeRate(noPrice, feeCoef);
+      return refundPerHedge > 0 ? b.spent / b.quantity / refundPerHedge : Infinity;
+    };
+    let limit = Math.min(clean(noAsk + slip), 0.99);
+    while (limit > noAsk + 1e-9 && allIn(limit) > maxPrice + 1e-9) limit = clean(limit - PRICE_TICK);
+    if (limit < noAsk - 1e-9 || allIn(limit) > maxPrice + 1e-9) return; // hedging now would break the price limit
 
-    const need = hedgeQuantity(b.spent, limit, a.quantity, a.spent);
+    const need = hedgeQuantity(b.spent, limit, a.quantity, a.spent, feeCoef);
     if (need <= 0) return;
 
     const leg = await sendLeg(deps, bet, 'hedge', {
@@ -279,7 +293,7 @@ export async function recoverBets(deps: Deps): Promise<number> {
     if (pending.length === 0 && bet.status !== 'placing') continue;
     for (const leg of pending) {
       const found = await deps.exchange.findOrder(leg.clientOrderId);
-      if (found) applyResult(leg, found);
+      if (found) applyResult(leg, found, deps.feeCoef ?? 0);
       else {
         leg.status = 'unfilled';
         leg.note = 'Gemini has no order with this tag; it was never received.';

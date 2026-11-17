@@ -25,6 +25,8 @@ export class FakeExchange implements Exchange {
   private nextOrderId = 1;
   /** When set, the next placeOrder for a matching tag throws after "sending". */
   failAfterSend: string | null = null;
+  /** Taker fee coefficient the venue charges (0.07 mimics Gemini production). */
+  feeCoef = 0;
   /** Time stamped on new orders; tests can move it. */
   clock: () => Date = () => new Date('2026-11-17T23:30:00Z');
 
@@ -97,7 +99,8 @@ export class FakeExchange implements Exchange {
     const key = `${req.symbol}|${req.outcome}`;
     if (filled > 0 && price !== null) {
       const sign = req.side === 'buy' ? 1 : -1;
-      this.cashBalance = r(this.cashBalance - sign * filled * price);
+      const fee = this.feeCoef > 0 ? Math.ceil(r(this.feeCoef * filled * price * (1 - price) * 100)) / 100 : 0;
+      this.cashBalance = r(this.cashBalance - sign * filled * price - fee);
       this.positions.set(key, r((this.positions.get(key) ?? 0) + sign * filled));
       // consume liquidity on the side that was hit
       if ((req.side === 'buy') === (req.outcome === 'yes')) book.askSize = r(book.askSize - filled);

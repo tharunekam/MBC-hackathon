@@ -19,7 +19,7 @@ export interface LinkedPair {
   a: Rung;
   /** The outcome: the higher strike, which can only hit if A does. */
   b: Rung;
-  /** Executable price of $1 "if B given A" right now, or null if the book can't support it. */
+  /** Executable all-in price of $1 "if B given A" right now (fees included), or null if the book can't support it. */
   conditionalPrice: number | null;
 }
 
@@ -57,7 +57,7 @@ export function ladder(event: GeminiEvent): Rung[] {
  * underlying and expiry, so B hitting implies A hit: the link that lets two
  * plain orders behave as a conditional bet.
  */
-export function linkedPairs(event: GeminiEvent, opts: { tradableOnly?: boolean } = {}): LinkedPair[] {
+export function linkedPairs(event: GeminiEvent, opts: { tradableOnly?: boolean; feeCoef?: number } = {}): LinkedPair[] {
   const rungs = ladder(event);
   const out: LinkedPair[] = [];
   for (let i = 0; i < rungs.length; i++) {
@@ -65,7 +65,7 @@ export function linkedPairs(event: GeminiEvent, opts: { tradableOnly?: boolean }
       const a = rungs[i]!;
       const b = rungs[j]!;
       if (b.strike <= a.strike) continue;
-      const price = a.open && b.open ? conditionalPrice(b.ask, a.bid) : null;
+      const price = a.open && b.open ? conditionalPrice(b.ask, a.bid, opts.feeCoef ?? 0) : null;
       if (opts.tradableOnly && price === null) continue;
       out.push({
         eventTicker: event.ticker,
@@ -80,8 +80,8 @@ export function linkedPairs(event: GeminiEvent, opts: { tradableOnly?: boolean }
   return out;
 }
 
-export function findPair(event: GeminiEvent, aSymbol: string, bSymbol: string): LinkedPair {
-  const pair = linkedPairs(event).find((p) => p.a.symbol === aSymbol && p.b.symbol === bSymbol);
+export function findPair(event: GeminiEvent, aSymbol: string, bSymbol: string, feeCoef = 0): LinkedPair {
+  const pair = linkedPairs(event, { feeCoef }).find((p) => p.a.symbol === aSymbol && p.b.symbol === bSymbol);
   if (!pair) {
     throw new Error(
       `${aSymbol} and ${bSymbol} are not a linked pair in ${event.ticker}: both must be "or above" strikes ` +
