@@ -1,0 +1,24 @@
+{
+  "name": "given-receipts-feed",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Records Given conditional calls on Solana and serves the leaderboard from QuickNode Streams",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/main.ts",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "recorder": "node src/recorder.ts",
+    "e2e": "node scripts/e2e-local.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.0"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.99.0"
+  }
+}
