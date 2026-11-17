@@ -1,0 +1,329 @@
+import { randomBytes } from 'node:crypto';
+import type { Exchange, OrderRequest, OrderResult } from './exchange.ts';
+import type { BetRecord, Ledger, LegRecord } from './ledger.ts';
+import { findPair, toRung } from './pairs.ts';
+import { PRICE_TICK, clean, floorToStep, hedgeQuantity, payoffs, settlementPayout } from './pricing.ts';
+
+export interface BetRequest {
+  user: string;
+  eventTicker: string;
+  /** Instrument symbol of the condition (lower strike). */
+  conditionSymbol: string;
+  /** Instrument symbol of the outcome (higher strike). */
+  targetSymbol: string;
+  /** Dollars to put at risk. */
+  stake: number;
+  /** Highest acceptable price per $1 of payout. Defaults to the live quote plus 5 cents. */
+  maxPrice?: number;
+  /** How far past the best price each order may reach, in cents. Default 2. */
+  slippageTicks?: number;
+  /** What to do if the hedge leg can't be completed. Default: sell the position back. */
+  onHedgeFail?: 'unwind' | 'leave';
+}
+
+export interface Deps {
+  exchange: Exchange;
+  ledger: Ledger;
+  now?: () => Date;
+  newId?: () => string;
+}
+
+const MAX_HEDGE_ATTEMPTS = 3;
+const defaultId = () => randomBytes(4).toString('hex');
+const tickFloor = (x: number) => floorToStep(x, PRICE_TICK);
+
+/** Sends one order, recording it in the ledger before and after. */
+async function sendLeg(deps: Deps, bet: BetRecord, role: LegRecord['role'], req: OrderRequest): Promise<LegRecord> {
+  const now = deps.now ?? (() => new Date());
+  const leg: LegRecord = {
+    clientOrderId: req.clientOrderId,
+    role,
+    symbol: req.symbol,
+    side: req.side,
+    outcome: req.outcome,
+    limitPrice: req.limitPrice,
+    quantityRequested: req.quantity,
+    quantityFilled: 0,
+    avgPrice: null,
+    status: 'sent',
+    sentAt: now().toISOString(),
+  };
+  bet.legs.push(leg);
+  deps.ledger.save(); // on disk before the order leaves, so a crash can be reconciled by tag
+
+  let result: OrderResult;
+  try {
+    result = await deps.exchange.placeOrder(req);
+  } catch (err) {
+    leg.status = 'error';
+    leg.note = err instanceof Error ? err.message : String(err);
+    deps.ledger.save();
+    return leg;
+  }
+  applyResult(leg, result);
+  deps.ledger.save();
+  return leg;
+}
+
+function applyResult(leg: LegRecord, result: OrderResult): void {
+  leg.orderId = result.orderId;
+  leg.quantityFilled = result.filledQuantity;
+  leg.avgPrice = result.avgPrice;
+  if (result.open) leg.status = 'resting';
+  else if (result.filledQuantity <= 0) leg.status = 'unfilled';
+  else if (result.filledQuantity + 1e-9 < leg.quantityRequested) leg.status = 'partial';
+  else leg.status = 'filled';
+}
+
+/** Net contracts held and net dollars spent on one symbol/outcome within a bet. */
+export function netHolding(bet: BetRecord, symbol: string, outcome: 'yes' | 'no'): { quantity: number; spent: number } {
+  let quantity = 0;
+  let spent = 0;
+  for (const leg of bet.legs) {
+    if (leg.symbol !== symbol || leg.outcome !== outcome || leg.quantityFilled <= 0 || leg.avgPrice === null) continue;
+    const sign = leg.side === 'buy' ? 1 : -1;
+    quantity += sign * leg.quantityFilled;
+    spent += sign * leg.quantityFilled * leg.avgPrice;
+  }
+  return { quantity: clean(quantity), spent: clean(spent) };
+}
+
+function refreshTotals(bet: BetRecord): void {
+  const b = netHolding(bet, bet.target.symbol, 'yes');
+  const a = netHolding(bet, bet.condition.symbol, 'no');
+  bet.cost = clean(b.spent + a.spent);
+  bet.payoffs = payoffs(
+    { quantity: b.quantity, avgPrice: b.quantity > 0 ? b.spent / b.quantity : 0 },
+    { quantity: a.quantity, avgPrice: a.quantity > 0 ? a.spent / a.quantity : 0 },
+  );
+}
+
+/**
+ * Places a conditional bet "given A, will B?" as two real Gemini orders.
+ *
+ *   1. Buy YES on B (the outcome). Only what actually fills is hedged.
+ *   2. Buy NO on A (the condition), sized from B's real cost so that the
+ *      payout if A fails covers the whole stake. Retried a few times.
+ *   3. If the hedge can't be completed within the price cap, the position is
+ *      sold back (default) or left flagged "unhedged".
+ *
+ * Always returns a ledger record; it never leaves an unrecorded order behind.
+ */
+export async function placeConditionalBet(deps: Deps, req: BetRequest): Promise<BetRecord> {
+  const now = deps.now ?? (() => new Date());
+  const slip = (req.slippageTicks ?? 2) * PRICE_TICK;
+  if (!(req.stake > 0)) throw new Error('Stake must be a positive dollar amount.');
+  if (req.maxPrice !== undefined && !(req.maxPrice > 0 && req.maxPrice < 1)) {
+    throw new Error('maxPrice must be between 0 and 1.');
+  }
+
+  const event = await deps.exchange.getEvent(req.eventTicker);
+  const pair = findPair(event, req.conditionSymbol, req.targetSymbol);
+  if (!pair.a.open || !pair.b.open) throw new Error(`${event.ticker} is not open for trading right now.`);
+  const quote = pair.conditionalPrice;
+  if (quote === null || pair.a.bid === null || pair.b.ask === null) {
+    throw new Error('No conditional price is available: the book is empty or the outcome costs as much as the condition.');
+  }
+  const maxPrice = req.maxPrice ?? Math.min(0.99, clean(quote + 0.05));
+  if (quote > maxPrice) {
+    throw new Error(`The live price is ${quote.toFixed(3)} per $1, above your limit of ${maxPrice.toFixed(3)}.`);
+  }
+
+  const quantity = floorToStep(req.stake / quote);
+  if (quantity < 0.01) throw new Error(`A $${req.stake} stake is too small at a price of ${quote.toFixed(3)}.`);
+
+  const id = (deps.newId ?? defaultId)();
+  const bet: BetRecord = {
+    id,
+    user: req.user,
+    createdAt: now().toISOString(),
+    eventTicker: event.ticker,
+    eventTitle: event.title,
+    expiry: event.expiryDate ?? null,
+    condition: { symbol: pair.a.symbol, label: pair.a.label, strike: pair.a.strike },
+    target: { symbol: pair.b.symbol, label: pair.b.label, strike: pair.b.strike },
+    requestedStake: req.stake,
+    quotedPrice: quote,
+    status: 'placing',
+    legs: [],
+    cost: 0,
+  };
+  deps.ledger.data.bets.push(bet);
+  deps.ledger.save();
+
+  // Leg 1: the outcome. Never pay so much that the bet could exceed maxPrice even with a perfect hedge.
+  const bLimit = Math.min(clean(pair.b.ask + slip), tickFloor(maxPrice * pair.a.bid), 0.99);
+  const bLeg = await sendLeg(deps, bet, 'outcome', {
+    symbol: pair.b.symbol,
+    side: 'buy',
+    outcome: 'yes',
+    limitPrice: bLimit,
+    quantity,
+    tif: 'IOC',
+    clientOrderId: `gv-${id}-b`,
+  });
+  if (bLeg.status === 'error' || bLeg.quantityFilled <= 0) {
+    bet.status = 'failed';
+    bet.note = bLeg.status === 'error' ? `Outcome order failed: ${bLeg.note}` : 'Nothing was available at the quoted price, so no bet was placed.';
+    refreshTotals(bet);
+    deps.ledger.save();
+    return bet;
+  }
+
+  // Leg 2: the hedge, sized from what leg 1 really cost.
+  await hedge(deps, bet, maxPrice, slip);
+  refreshTotals(bet);
+
+  if (bet.payoffs?.hedged) {
+    bet.status = 'open';
+  } else if ((req.onHedgeFail ?? 'unwind') === 'unwind') {
+    await unwind(deps, bet, slip);
+  } else {
+    bet.status = 'unhedged';
+    bet.note = 'The hedge leg could not be completed within the price limit; the stake is NOT fully protected if the condition fails.';
+  }
+  refreshTotals(bet);
+  deps.ledger.save();
+  return bet;
+}
+
+async function hedge(deps: Deps, bet: BetRecord, maxPrice: number, slip: number): Promise<void> {
+  for (let attempt = 1; attempt <= MAX_HEDGE_ATTEMPTS; attempt++) {
+    const b = netHolding(bet, bet.target.symbol, 'yes');
+    const a = netHolding(bet, bet.condition.symbol, 'no');
+    if (b.quantity <= 0) return;
+
+    // Fresh book for the condition each attempt.
+    const event = await deps.exchange.getEvent(bet.eventTicker);
+    const contract = event.contracts.find((c) => c.instrumentSymbol === bet.condition.symbol);
+    const rung = contract ? toRung(contract) : null;
+    if (!rung || !rung.open || rung.bid === null) return;
+
+    const noAsk = clean(1 - rung.bid);
+    // Highest NO price that still keeps the whole bet at or under maxPrice.
+    const cap = tickFloor(1 - b.spent / b.quantity / maxPrice);
+    const limit = Math.min(clean(noAsk + slip), cap, 0.99);
+    if (limit < noAsk || limit <= 0) return; // hedging now would break the price limit
+
+    const need = hedgeQuantity(b.spent, limit, a.quantity, a.spent);
+    if (need <= 0) return;
+
+    const leg = await sendLeg(deps, bet, 'hedge', {
+      symbol: bet.condition.symbol,
+      side: 'buy',
+      outcome: 'no',
+      limitPrice: limit,
+      quantity: need,
+      tif: 'IOC',
+      clientOrderId: `gv-${bet.id}-a${attempt}`,
+    });
+    if (leg.status === 'filled') return;
+  }
+}
+
+/** Sells back whatever the bet holds, because the hedge could not be completed. */
+async function unwind(deps: Deps, bet: BetRecord, slip: number): Promise<void> {
+  const event = await deps.exchange.getEvent(bet.eventTicker);
+  const book = (symbol: string) => {
+    const c = event.contracts.find((x) => x.instrumentSymbol === symbol);
+    return c ? toRung(c) : null;
+  };
+
+  const b = netHolding(bet, bet.target.symbol, 'yes');
+  const bBook = book(bet.target.symbol);
+  if (b.quantity > 0 && bBook?.bid != null) {
+    await sendLeg(deps, bet, 'unwind', {
+      symbol: bet.target.symbol,
+      side: 'sell',
+      outcome: 'yes',
+      limitPrice: Math.max(PRICE_TICK, clean(bBook.bid - slip)),
+      quantity: b.quantity,
+      tif: 'IOC',
+      clientOrderId: `gv-${bet.id}-ub`,
+    });
+  }
+
+  const a = netHolding(bet, bet.condition.symbol, 'no');
+  const aBook = book(bet.condition.symbol);
+  if (a.quantity > 0 && aBook?.ask != null) {
+    // The NO bid is 1 minus the YES ask.
+    await sendLeg(deps, bet, 'unwind', {
+      symbol: bet.condition.symbol,
+      side: 'sell',
+      outcome: 'no',
+      limitPrice: Math.max(PRICE_TICK, clean(1 - aBook.ask - slip)),
+      quantity: a.quantity,
+      tif: 'IOC',
+      clientOrderId: `gv-${bet.id}-ua`,
+    });
+  }
+
+  const left = netHolding(bet, bet.target.symbol, 'yes').quantity + netHolding(bet, bet.condition.symbol, 'no').quantity;
+  if (left <= 1e-9) {
+    bet.status = 'unwound';
+    bet.note = 'The hedge leg could not be completed within the price limit, so the position was sold back.';
+  } else {
+    bet.status = 'unhedged';
+    bet.note = 'The hedge leg could not be completed and the position could not be fully sold back; the stake is NOT fully protected.';
+  }
+}
+
+/**
+ * Fills in any order that was sent but whose result was never recorded
+ * (for example, the process stopped mid-bet). Looks each one up by its tag.
+ */
+export async function recoverBets(deps: Deps): Promise<number> {
+  let fixed = 0;
+  for (const bet of deps.ledger.data.bets) {
+    const pending = bet.legs.filter((l) => l.status === 'sent');
+    if (pending.length === 0 && bet.status !== 'placing') continue;
+    for (const leg of pending) {
+      const found = await deps.exchange.findOrder(leg.clientOrderId);
+      if (found) applyResult(leg, found);
+      else {
+        leg.status = 'unfilled';
+        leg.note = 'Gemini has no order with this tag; it was never received.';
+      }
+      fixed++;
+    }
+    refreshTotals(bet);
+    if (bet.status === 'placing') {
+      const held = netHolding(bet, bet.target.symbol, 'yes').quantity;
+      bet.status = held <= 0 ? 'failed' : bet.payoffs?.hedged ? 'open' : 'unhedged';
+      if (bet.status === 'unhedged') bet.note = 'Recovered after an interruption: the hedge leg is incomplete.';
+    }
+  }
+  if (fixed > 0) deps.ledger.save();
+  return fixed;
+}
+
+/** Marks bets settled once Gemini has resolved both contracts, and records the result. */
+export async function settleBets(deps: Deps): Promise<BetRecord[]> {
+  const now = deps.now ?? (() => new Date());
+  const settled: BetRecord[] = [];
+  const events = new Map<string, Awaited<ReturnType<Exchange['getEvent']>>>();
+
+  for (const bet of deps.ledger.data.bets) {
+    if (bet.status !== 'open' && bet.status !== 'unhedged') continue;
+    if (!events.has(bet.eventTicker)) events.set(bet.eventTicker, await deps.exchange.getEvent(bet.eventTicker));
+    const event = events.get(bet.eventTicker)!;
+    const aSide = event.contracts.find((c) => c.instrumentSymbol === bet.condition.symbol)?.resolutionSide;
+    const bSide = event.contracts.find((c) => c.instrumentSymbol === bet.target.symbol)?.resolutionSide;
+    if ((aSide !== 'yes' && aSide !== 'no') || (bSide !== 'yes' && bSide !== 'no')) continue;
+
+    const b = netHolding(bet, bet.target.symbol, 'yes');
+    const a = netHolding(bet, bet.condition.symbol, 'no');
+    const payout = settlementPayout({ quantity: b.quantity, avgPrice: 0 }, { quantity: a.quantity, avgPrice: 0 }, aSide, bSide);
+    bet.settlement = {
+      conditionResolved: aSide,
+      targetResolved: bSide,
+      payout,
+      pnl: clean(payout - bet.cost),
+      settledAt: now().toISOString(),
+    };
+    bet.status = 'settled';
+    settled.push(bet);
+  }
+  if (settled.length > 0) deps.ledger.save();
+  return settled;
+}

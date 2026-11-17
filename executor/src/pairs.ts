@@ -1,0 +1,92 @@
+import type { GeminiContract, GeminiEvent } from './gemini/types.ts';
+import { conditionalPrice } from './pricing.ts';
+
+/** One strike of an "X or above" ladder, with its live YES-space book. */
+export interface Rung {
+  symbol: string;
+  label: string;
+  strike: number;
+  bid: number | null;
+  ask: number | null;
+  open: boolean;
+}
+
+export interface LinkedPair {
+  eventTicker: string;
+  eventTitle: string;
+  expiry: string | null;
+  /** The condition: the lower strike. */
+  a: Rung;
+  /** The outcome: the higher strike, which can only hit if A does. */
+  b: Rung;
+  /** Executable price of $1 "if B given A" right now, or null if the book can't support it. */
+  conditionalPrice: number | null;
+}
+
+const toNum = (v: string | null | undefined): number | null => {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+export function toRung(c: GeminiContract): Rung | null {
+  if (c.strike?.type !== 'above') return null;
+  const strike = toNum(c.strike.value);
+  if (strike === null) return null;
+  return {
+    symbol: c.instrumentSymbol,
+    label: c.label,
+    strike,
+    bid: toNum(c.prices?.bestBid),
+    ask: toNum(c.prices?.bestAsk),
+    open: c.status === 'active' && c.marketState === 'open',
+  };
+}
+
+/** The event's "or above" strikes, lowest first. Empty if the event isn't a ladder. */
+export function ladder(event: GeminiEvent): Rung[] {
+  return event.contracts
+    .map(toRung)
+    .filter((r): r is Rung => r !== null)
+    .sort((x, y) => x.strike - y.strike);
+}
+
+/**
+ * Every (condition, outcome) pair in an event where the outcome strike sits
+ * above the condition strike. Both are "price at or above X" on the same
+ * underlying and expiry, so B hitting implies A hit: the link that lets two
+ * plain orders behave as a conditional bet.
+ */
+export function linkedPairs(event: GeminiEvent, opts: { tradableOnly?: boolean } = {}): LinkedPair[] {
+  const rungs = ladder(event);
+  const out: LinkedPair[] = [];
+  for (let i = 0; i < rungs.length; i++) {
+    for (let j = i + 1; j < rungs.length; j++) {
+      const a = rungs[i]!;
+      const b = rungs[j]!;
+      if (b.strike <= a.strike) continue;
+      const price = a.open && b.open ? conditionalPrice(b.ask, a.bid) : null;
+      if (opts.tradableOnly && price === null) continue;
+      out.push({
+        eventTicker: event.ticker,
+        eventTitle: event.title,
+        expiry: event.expiryDate ?? null,
+        a,
+        b,
+        conditionalPrice: price,
+      });
+    }
+  }
+  return out;
+}
+
+export function findPair(event: GeminiEvent, aSymbol: string, bSymbol: string): LinkedPair {
+  const pair = linkedPairs(event).find((p) => p.a.symbol === aSymbol && p.b.symbol === bSymbol);
+  if (!pair) {
+    throw new Error(
+      `${aSymbol} and ${bSymbol} are not a linked pair in ${event.ticker}: both must be "or above" strikes ` +
+        'of this event, with the outcome strike higher than the condition strike.',
+    );
+  }
+  return pair;
+}

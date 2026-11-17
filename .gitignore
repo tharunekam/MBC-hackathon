@@ -4,3 +4,5 @@ target/
 .env
 .DS_Store
 *.log
+executor/data/
+research_notes/*/census_data/
