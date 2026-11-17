@@ -76,6 +76,40 @@ target missed) or `refund` (condition failed). Hit rate ignores refunds.
 | `QUICKNODE_STREAM_TOKEN` | feed | The stream's security token |
 | `RECEIPTS_FEED_PORT` | feed | Default 8788 |
 
+## Going live on devnet
+
+Not done yet. Order matters: the stream needs the public URL, the recorder
+needs the deployed program.
+
+```bash
+# 1. Deploy (needs about 2 devnet SOL on the deploy key; get it at faucet.solana.com,
+#    the RPC airdrop is closed on devnet)
+cd receipts-program && anchor build
+solana program deploy target/deploy/given_receipts.so --program-id target/deploy/given_receipts-keypair.json --url devnet
+
+# 2. Repo-root .env
+#    SOLANA_RPC_URL=<QuickNode Solana devnet endpoint>
+#    QUICKNODE_API_KEY=<QuickNode API key with Streams access>
+
+# 3. Feed, tunnel, stream
+cd ../receipts-feed
+cloudflared tunnel --url http://localhost:8788      # prints the public URL
+#    add WEBHOOK_URL=https://<that host>/webhooks/quicknode to .env
+npm run create-stream                               # also writes QUICKNODE_STREAM_TOKEN to .env
+node src/main.ts
+
+# 4. Recorder
+node src/recorder.ts init
+node src/recorder.ts watch
+```
+
+The program id is tied to `receipts-program/target/deploy/given_receipts-keypair.json`,
+which is not in git. Deploying from another machine needs that file, or a new
+id (`anchor keys sync`, then update `DEFAULT_PROGRAM_ID` and the fixture).
+
+`scripts/create-stream.ts` has not been run against the live API; its network
+and dataset names are guesses the API will correct on the first call.
+
 ## Tests
 
 ```bash
