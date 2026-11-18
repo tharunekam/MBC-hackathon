@@ -11,7 +11,7 @@
 // transaction as { signature, slot, blockTime, success, logs[], programInvocations[] }. Returning null delivers nothing.
 // Those names were checked against QuickNode's Streams documentation on 2026-11-18, and the tests run this file on the
 // log lines of real devnet records. It has NOT yet run on a live Stream. To run it on QuickNode against a real block
-// without creating a Stream:  cd chain && npm run stream -- test-filter   (or "Run test" in the Stream's filter editor).
+// without creating a Stream:  npm run quicknode -- test-filter   (or "Run test" in the Stream's filter editor).
 // The server side does not depend on this shape.
 
 function flatten(v, out, depth) {

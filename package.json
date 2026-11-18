@@ -18,6 +18,7 @@
     "build": "VITE_API_MODE=live npm --prefix web run build",
     "start": "node scripts/serve.mjs",
     "check:deploy": "node scripts/check-deploy.mjs",
+    "quicknode": "node scripts/quicknode.mjs",
     "e2e": "node scripts/e2e.mjs",
     "e2e:sabotage": "node scripts/e2e.mjs --sabotage",
     "install:all": "npm --prefix executor install && npm --prefix chain install && npm --prefix web install",

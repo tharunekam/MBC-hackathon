@@ -110,8 +110,8 @@ recorded fallback.
 - [ ] Video recorded on real devnet + Gemini sandbox; checked logged out.
 - [ ] A real devnet commit and reveal exist, and `/verify/…` passes in the browser against them.
 - [ ] The Stream exists, is not paused, and a screenshot of its dashboard (network, dataset, filter, webhook) is in the README.
-- [ ] The Stream is **running only when needed**: `cd chain && npm run stream -- activate` before recording and before
-      judging, `pause` after. Running, it uses about 10.6M credits a day; the free trial holds 10M in total.
+- [ ] The Stream is **running only when needed**: `npm run quicknode -- activate` before recording and before
+      judging, `pause` after. Running, it uses about 10.8M credits a day; the free trial holds 10M in total.
 - [ ] If the liquidity seeder is running while recording or presenting: `GIVEN_SEEDED=1` is set (the nav shows "Seeded
       prices"), the narration says the tight prices are our own test quotes, and nothing calls its fills order flow.
 - [ ] `npm run dev:quotes` looked at on the day of recording: it shows the sandbox's real listing, which changes.

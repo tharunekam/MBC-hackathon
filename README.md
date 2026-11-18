@@ -66,10 +66,10 @@ web (React/Vite)  ──►  executor (Node)  ──►  Gemini REST + WebSocket
 | Package | Role |
 |---|---|
 | `executor/` | Quotes, the two-leg bet with depth guard and hedge sizing, a ledger written before every order, settlement, and **reconcile to the cent against Gemini** (it counts Gemini's YES/NO netting). A sandbox liquidity seeder, disclosed (below). 163 tests. |
-| `chain/` | Commit and reveal on Solana, the QuickNode webhook, the leaderboard, a public proof endpoint. 127 tests. |
+| `chain/` | Commit and reveal on Solana, the QuickNode webhook, the leaderboard, a public proof endpoint. 115 tests. |
 | `receipts-program/` | `given_receipts`, our Solana program (Anchor): checks each reveal against its commit on chain, refuses a repeat, keeps each handle's score. Deployed on devnet, interface published on chain. 8 tests against the built program. |
 | `web/` | The app: a probability ladder with two draggable markers, the four-number quote, bets, leaderboard, proof page. Pages update on their own over server-sent events. 108 tests. |
-| `scripts/` | The dev stack, the hosted-demo server (`serve.mjs`: the built app plus an allowlist of API paths on one port), the deploy checker, the browser end-to-end test, and the rehearsals. 20 tests. |
+| `scripts/` | The dev stack, the hosted-demo server (`serve.mjs`: the built app plus an allowlist of API paths on one port), the deploy checker, the browser end-to-end test, and the rehearsals. 31 tests. |
 | `docs/` | `PLAN.md`, `GIVEN.md` (decision log), `CONTRACTS.md` (interfaces), `GEMINI_API_NOTES.md`, `SUBMISSION.md`. |
 
 ### Gemini endpoints used
@@ -117,11 +117,11 @@ the fair price at entry, summed. Luck on a few calls washes out.
   Solana and verifies it, so a forged delivery cannot add a row. Solana Streams cannot backfill and pause after repeated
   failed deliveries, so an RPC backfill runs every minute as a safety net.
 
-Status: the receiver is built and tested (authentication, replay window, deduplication, gzipped deliveries). **The Stream
-itself is not created yet** and the filter has not run on a live Stream. Its field names and the signature check were
-confirmed against QuickNode's documentation on 2026-11-18, and the filter is tested on the log lines of real devnet
-records. `cd chain && npm run stream` tests the filter on QuickNode, creates the Stream paused, and pauses and resumes it
-(a running devnet Stream uses about 10.6M credits a day, so it runs only for tests and demos). The receiver has been
+Status: the receiver is built and tested (authentication, replay window, deduplication, gzipped deliveries), and
+`npm run quicknode` tests the filter on QuickNode, creates and manages the Stream, and sends signed test deliveries. **The
+Stream itself is not created yet** and the filter has not run on a live Stream. Its field names and the signature check
+were confirmed against QuickNode's documentation on 2026-11-18, and the filter is tested on the log lines of real devnet
+records. A running devnet Stream uses about 10.8M credits a day, so it runs only for tests and demos. The receiver has been
 exercised with real devnet signatures. A real commit and reveal with our own key has run on devnet, both as Memo records and through the Anchor program
 (`chain/README.md` lists what is verified and what is not).
 
@@ -135,7 +135,7 @@ npm run dev         # whole stack with no keys and no SOL: local test exchange +
 npm run dev:quotes  # REAL Gemini sandbox prices and order books with no keys; every order is refused (read-only)
 node scripts/seed-history.mjs all   # optional: a win, a loss and a refund, committed and revealed
 npm run stop        # stop this project's servers
-npm test            # 418 tests: executor 163, chain service 127, web 108, hosted-demo server 20
+npm test            # 417 tests: executor 163, chain service 115, web 108, hosted-demo server and scripts 31
 npm run e2e         # the production build in real Chrome (17 checks; e2e:sabotage must fail)
 npm run rehearse    # (also rehearse:chaos) the whole golden path through the real clients, Gemini and Solana stood in on the wire
 npm run preflight   # what is ready for the real thing and what is missing, with the fix for each

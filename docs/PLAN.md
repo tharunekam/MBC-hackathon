@@ -77,7 +77,7 @@ midnight CST; branch `run/live-sandbox-devnet`).** This is the machine that hold
 
 **Second machine, Wednesday 2026-11-18 afternoon (the one with the Solana toolchain; PR #4).**
 
-- **A fresh clone works.** `npm run install:all`, `npm test` (418), `npm run typecheck`, `npm run rehearse` (19 checks),
+- **A fresh clone works.** `npm run install:all`, `npm test` (417), `npm run typecheck`, `npm run rehearse` (19 checks),
   `npm run e2e` (17 checks) and `npm start` + `npm run check:deploy` (11 checks, real sandbox ladders) all pass there.
   CI now runs the tests, a production build and the rehearsal on every push.
 - **The sandbox's listing changed and broke the builder.** Gemini listed 34 ladders (oil, metals and gas were added),
@@ -86,7 +86,7 @@ midnight CST; branch `run/live-sandbox-devnet`).** This is the machine that hold
   that feeds the page 30 unpriced ladders. **Look at `npm run dev:quotes` before recording**: it shows what a judge
   will see that day, which the local test exchange cannot.
 - **QuickNode:** the filter and the signature check match QuickNode's current docs. A running devnet Stream costs about
-  10.6M credits a day against a 10M free trial, so it runs only for tests and demos. `cd chain && npm run stream`.
+  10.8M credits a day against a 10M free trial, so it runs only for tests and demos. `npm run quicknode`.
 - **Program:** the deployed bytes are a clean `anchor build` of the committed source; its interface is published on
   chain. It is still upgradeable by the deploy key.
 - **Secret scan:** gitleaks and a pattern search over every branch's history found no key, token or keypair. Commit
@@ -111,7 +111,7 @@ settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is a
 | T-C0 Memo smoke test | **Done 2026-11-18**: commit and reveal with our own key on real devnet, Memo only and through Victor's program (`npm run smoke`); the proof page verified real devnet records in a browser |
 | T-C1 Anchor program | **Done; the Wednesday gate is met.** `given_receipts` is deployed on devnet (`8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK`) and recorded a commit and a reveal there on 11-17 through the chain service's smoke test (links in `chain/README.md`). It checks each record in the same transaction as its Memo when `GIVEN_PROGRAM_ID` is set. **Still to do:** set `GIVEN_PROGRAM_ID` where the demo's chain service runs, once its authority key is funded. Memo records stay the fallback |
 | T-C2 chain service | **Done** (commit, reveal, verify, void handling) |
-| T-C3 Stream, filter, webhook | Webhook receiver done and tested, gzip included. Filter and signature check **confirmed against QuickNode's docs** (2026-11-18) and tested on real devnet log lines. `cd chain && npm run stream` tests the filter on QuickNode, creates the Stream paused, and pauses and resumes it (written from the published spec, **not yet run with a key**). **Stream not created** (needs an API key and a public URL). **Credits: about 10.6M a day running, against a 10M free trial**: run it only for tests and demos |
+| T-C3 Stream, filter, webhook | Webhook receiver done and tested, gzip included. Filter and signature check **confirmed against QuickNode's docs** (2026-11-18) and tested on real devnet log lines. `npm run quicknode` (keys, plan, test-filter, test-delivery, create, activate, pause) is written from the docs and OpenAPI spec and **has not been run with a key**. **Stream not created** (needs `QUICKNODE_API_KEY` and a public URL). **Credits: about 10.8M a day running (devnet makes a block every 240 ms, measured), against a 10M free trial**: run it only for tests and demos |
 | T-C4 leaderboard, backfill | **Done** |
 | T-C5 verify-from-chain page | **Done** (`web/src/pages/Verify.tsx`, `web/src/lib/verify.ts`); verified in a browser against real devnet records |
 
@@ -121,9 +121,9 @@ settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is a
 2. ~~Put Gemini sandbox keys in `.env`, then `npm run dev:live`~~ **Done on Victor's laptop 2026-11-18** (see above). Other
    machines still need their own key, or use `npm run dev:quotes`. The OAuth test needs a sandbox OAuth app registered
    by the account owner.
-3. Create the QuickNode Stream: put an API key (Streams enabled) in `.env`, then `cd chain && npm run stream -- test-filter`
-   and `create --url https://<host>/chain/hooks/quicknode`. It is created paused; `activate` for a test or a demo, `pause`
-   after. **A running Stream uses the whole free trial in about 22 hours.**
+3. Create the QuickNode Stream: put an API key (Streams enabled) in `.env`, then `npm run quicknode -- test-filter` and
+   `create` (steps in `chain/README.md`). It is created paused; `activate` for a test or a demo, `pause` after. **A
+   running Stream uses the whole free trial in under a day.**
 4. Pick and open a host for the executor, chain service and web app (the hosted demo link).
 5. If the demo should run with the markup waiver off and at full stake: create a **second Gemini sandbox account** and
    key for the liquidity seeder, then follow "First run" in `executor/README.md`. Say on screen and in the pitch that
@@ -430,7 +430,7 @@ build problems? Is Playground's Anchor version current?
 | **Nobody can be in Austin Saturday**: all prizes void | D4 today; if not possible, re-plan around the online deliverables only |
 | Eligibility mismatch (students only vs open) | Email organizers; keep the reply |
 | Sandbox flakiness at finals (WebSocket drops, REST orders return 500, wide spreads, venue Wi-Fi) | Seeder (T-V4), replay mode (T-V7), recorded video as the last fallback; test on a phone hotspot |
-| QuickNode credits: billed per block whether or not the filter matches. **Measured 2026-11-18: 30 credits a block, about 350k blocks a day, so about 10.6M credits a day. The free trial is 10M in total (about 22 hours)** and RPC shares it | Create the Stream paused; `npm run stream -- activate` before a test or demo and `pause` after (failed deliveries aren't billed, filtered-out blocks are). A paid plan is about $6.50 a day if it must run through judging |
+| QuickNode credits: billed per block whether or not the filter matches. **Measured 2026-11-18: 30 credits a block, about 360k blocks a day (a 240 ms slot), so about 10.8M credits a day. The free trial is 10M in total (under a day)** and RPC shares it | Create the Stream paused; `npm run quicknode -- activate` before a test or demo and `pause` after (failed deliveries aren't billed, filtered-out blocks are). A paid plan is about $6.50 a day if it must run through judging |
 | A Stream **pauses after 3 failed deliveries** (default) | Always-on webhook, 2xx before doing work, idempotent writes, resume via API; check the Stream before every demo |
 | **No backfill on Solana**: anything before the Stream starts is missed | Start the Stream early Wednesday; RPC gap-fill (T-C4); verify page reads chain directly |
 | Streams may re-deliver blocks (reorgs) | Dedupe by transaction signature |
