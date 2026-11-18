@@ -116,9 +116,12 @@ the fair price at entry, summed. Luck on a few calls washes out.
   Solana and verifies it, so a forged delivery cannot add a row. Solana Streams cannot backfill and pause after repeated
   failed deliveries, so an RPC backfill runs every minute as a safety net.
 
-Status: the receiver is built and tested (authentication, replay window, deduplication). **The Stream itself is not
-created yet** and the filter has not been run against a live Stream. The receiver has been exercised with real devnet
-signatures. A real commit and reveal with our own key has run on devnet, both as Memo records and through the Anchor program
+Status: the receiver is built and tested (authentication, replay window, deduplication, gzipped deliveries). **The Stream
+itself is not created yet** and the filter has not run on a live Stream. Its field names and the signature check were
+confirmed against QuickNode's documentation on 2026-11-18, and the filter is tested on the log lines of real devnet
+records. `cd chain && npm run stream` tests the filter on QuickNode, creates the Stream paused, and pauses and resumes it
+(a running devnet Stream uses about 10.6M credits a day, so it runs only for tests and demos). The receiver has been
+exercised with real devnet signatures. A real commit and reveal with our own key has run on devnet, both as Memo records and through the Anchor program
 (`chain/README.md` lists what is verified and what is not).
 
 ## Run it

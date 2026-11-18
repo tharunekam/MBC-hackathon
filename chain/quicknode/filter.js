@@ -3,13 +3,16 @@
 // Stream: Solana DEVNET, dataset "Programs + Logs".
 // Paste this into the Stream's filter editor (the function must be named `main`).
 //
-// It keeps the Stream quiet: of every block, only successful transactions that logged a Given memo are delivered,
-// and only as { sig, slot }. That is all the chain service needs. It re-reads each signature from Solana itself, checks
-// the signer is our authority and verifies the record, so nothing in this payload is trusted.
+// It keeps the Stream quiet: of every batch of blocks, only successful transactions that logged a Given memo are
+// delivered, and only as { sig, slot }. That is all the chain service needs. It re-reads each signature from Solana
+// itself, checks the signer is our authority and verifies the record, so nothing in this payload is trusted.
 //
-// NOTE: written from QuickNode's documentation of the "Programs + Logs" payload (signature, slot, success, logs[]) and
-// NOT yet run against a live Stream. Open the Stream's "test filter" with a recent block to confirm the field names,
-// and adjust `flatten`/the field reads below if the payload differs. The server side does not depend on this shape.
+// QuickNode runs this once per batch: `stream.data` holds one array of transactions for each block in the batch, each
+// transaction as { signature, slot, blockTime, success, logs[], programInvocations[] }. Returning null delivers nothing.
+// Those names were checked against QuickNode's Streams documentation on 2026-11-18, and the tests run this file on the
+// log lines of real devnet records. It has NOT yet run on a live Stream. To run it on QuickNode against a real block
+// without creating a Stream:  cd chain && npm run stream -- test-filter   (or "Run test" in the Stream's filter editor).
+// The server side does not depend on this shape.
 
 function flatten(v, out, depth) {
   if (depth > 5 || v === null || v === undefined) return;
@@ -33,5 +36,5 @@ function main(stream) {
     const ours = logs.some((l) => typeof l === 'string' && l.indexOf('Program log: Memo') === 0 && (l.indexOf('{\\"g\\":1,') !== -1 || l.indexOf('{"g":1,') !== -1));
     if (ours) out.push({ sig: tx.signature, slot: tx.slot });
   }
-  return out.length > 0 ? out : null; // null: deliver nothing for this block
+  return out.length > 0 ? out : null; // null: deliver nothing for this batch
 }

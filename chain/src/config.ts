@@ -50,8 +50,12 @@ export interface ChainConfig {
 export const isLoopback = (host: string): boolean => host === '127.0.0.1' || host === 'localhost' || host === '::1';
 
 /** Repo-root .env, then chain/.env, then the real environment (later wins). Secrets are never logged. */
+export function mergedEnv(env: Record<string, string | undefined> = process.env): Record<string, string | undefined> {
+  return { ...parseEnvFile(resolve(REPO_ROOT, '.env')), ...parseEnvFile(resolve(CHAIN_ROOT, '.env')), ...env };
+}
+
 export function loadConfig(env: Record<string, string | undefined> = process.env): ChainConfig {
-  const m: Record<string, string | undefined> = { ...parseEnvFile(resolve(REPO_ROOT, '.env')), ...parseEnvFile(resolve(CHAIN_ROOT, '.env')), ...env };
+  const m = mergedEnv(env);
   const network = m.GIVEN_CHAIN === 'fake' ? 'fake' : 'devnet';
   const dataDir = m.GIVEN_CHAIN_DATA_DIR ? resolve(m.GIVEN_CHAIN_DATA_DIR) : resolve(CHAIN_ROOT, 'data');
   return {

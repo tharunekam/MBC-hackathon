@@ -92,7 +92,7 @@ settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is a
 | T-C0 Memo smoke test | **Done 2026-11-18**: commit and reveal with our own key on real devnet, Memo only and through Victor's program (`npm run smoke`); the proof page verified real devnet records in a browser |
 | T-C1 Anchor program | **Done; the Wednesday gate is met.** `given_receipts` is deployed on devnet (`8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK`) and recorded a commit and a reveal there on 11-17 through the chain service's smoke test (links in `chain/README.md`). It checks each record in the same transaction as its Memo when `GIVEN_PROGRAM_ID` is set. **Still to do:** set `GIVEN_PROGRAM_ID` where the demo's chain service runs, once its authority key is funded. Memo records stay the fallback |
 | T-C2 chain service | **Done** (commit, reveal, verify, void handling) |
-| T-C3 Stream, filter, webhook | Webhook receiver done and tested; filter written from the docs, **Stream not created** (needs a QuickNode account and a public URL) |
+| T-C3 Stream, filter, webhook | Webhook receiver done and tested, gzip included. Filter and signature check **confirmed against QuickNode's docs** (2026-11-18) and tested on real devnet log lines. `cd chain && npm run stream` tests the filter on QuickNode, creates the Stream paused, and pauses and resumes it (written from the published spec, **not yet run with a key**). **Stream not created** (needs an API key and a public URL). **Credits: about 10.6M a day running, against a 10M free trial**: run it only for tests and demos |
 | T-C4 leaderboard, backfill | **Done** |
 | T-C5 verify-from-chain page | **Done** (`web/src/pages/Verify.tsx`, `web/src/lib/verify.ts`); verified in a browser against real devnet records |
 
@@ -403,7 +403,7 @@ build problems? Is Playground's Anchor version current?
 | **Nobody can be in Austin Saturday**: all prizes void | D4 today; if not possible, re-plan around the online deliverables only |
 | Eligibility mismatch (students only vs open) | Email organizers; keep the reply |
 | Sandbox flakiness at finals (WebSocket drops, REST orders return 500, wide spreads, venue Wi-Fi) | Seeder (T-V4), replay mode (T-V7), recorded video as the last fallback; test on a phone hotspot |
-| QuickNode credits: billed per block whether or not the filter matches; Solana devnet produces a block every ~0.4 s, about 200k a day (estimate) | Claim the plan, read the real multiplier in the dashboard on Tuesday, pause the Stream outside dev and demo windows (failed deliveries aren't billed, filtered-out blocks are) |
+| QuickNode credits: billed per block whether or not the filter matches. **Measured 2026-11-18: 30 credits a block, about 350k blocks a day, so about 10.6M credits a day. The free trial is 10M in total (about 22 hours)** and RPC shares it | Create the Stream paused; `npm run stream -- activate` before a test or demo and `pause` after (failed deliveries aren't billed, filtered-out blocks are). A paid plan is about $6.50 a day if it must run through judging |
 | A Stream **pauses after 3 failed deliveries** (default) | Always-on webhook, 2xx before doing work, idempotent writes, resume via API; check the Stream before every demo |
 | **No backfill on Solana**: anything before the Stream starts is missed | Start the Stream early Wednesday; RPC gap-fill (T-C4); verify page reads chain directly |
 | Streams may re-deliver blocks (reorgs) | Dedupe by transaction signature |

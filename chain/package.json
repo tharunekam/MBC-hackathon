@@ -16,7 +16,8 @@
     "rehearse": "node scripts/rehearse.ts",
     "test": "node --test \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
-    "inspect": "node scripts/inspect-tx.ts"
+    "inspect": "node scripts/inspect-tx.ts",
+    "stream": "node scripts/stream.ts"
   },
   "dependencies": {
     "@solana/web3.js": "1.99.0"
