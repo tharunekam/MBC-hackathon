@@ -7,6 +7,7 @@
  * Extra routes under /dev (this server only, never in the real executor):
  *   POST /dev/resolve?spot=63300   settle every contract of the ladder against that price, as Gemini would at expiry
  *   POST /dev/reset                new empty exchange and ledger
+ *   POST /dev/state?strike=63500&state=post_only   put one rung in a market state (state=open restores it)
  *   POST /dev/churn?on=1&slowMs=2000&everyMs=800   wobbling prices, a rung that empties, a rung that goes post-only, slow fills
  */
 import { mkdtempSync } from 'node:fs';
@@ -130,6 +131,12 @@ const server = createServer((req, res) => {
     if (url.searchParams.get('on') !== '0') churn.timer = setInterval(churnOnce, Number(url.searchParams.get('everyMs') ?? 800));
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return void res.end(JSON.stringify({ churn: !!churn.timer, slowMs: churn.slowMs }));
+  }
+  if (req.method === 'POST' && url.pathname === '/dev/state') {
+    // /dev/state?strike=63500&state=post_only   (state=open puts it back)
+    exchange.setMarketState(Number(url.searchParams.get('strike')), url.searchParams.get('state') ?? 'open');
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return void res.end(JSON.stringify({ ok: true }));
   }
   if (req.method === 'POST' && url.pathname === '/dev/reset') {
     api.close();

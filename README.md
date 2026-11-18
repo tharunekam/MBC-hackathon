@@ -131,6 +131,7 @@ npm run dev:quotes  # REAL Gemini sandbox prices and order books with no keys; e
 node scripts/seed-history.mjs all   # optional: a win, a loss and a refund, committed and revealed
 npm run stop        # stop this project's servers
 npm test            # 324 tests: executor 132, chain service 105, web 70, hosted-demo server 17
+npm run e2e         # the production build in real Chrome (14 checks; e2e:sabotage must fail)
 npm run rehearse    # (also rehearse:chaos) the whole golden path through the real clients, Gemini and Solana stood in on the wire
 npm run preflight   # what is ready for the real thing and what is missing, with the fix for each
 ```
