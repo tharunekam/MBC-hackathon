@@ -75,6 +75,24 @@ midnight CST; branch `run/live-sandbox-devnet`).** This is the machine that hold
   demo only if that state moves to the host, and a second executor on the same Gemini key with a fresh ledger breaks the
   reconcile. Decide the host before seeding the demo history (T-V5).
 
+**Second machine, Wednesday 2026-11-18 afternoon (the one with the Solana toolchain; PR #4).**
+
+- **A fresh clone works.** `npm run install:all`, `npm test` (367), `npm run typecheck`, `npm run rehearse` (19 checks),
+  `npm run e2e` (16 checks) and `npm start` + `npm run check:deploy` (11 checks, real sandbox ladders) all pass there.
+  CI now runs the tests, a production build and the rehearsal on every push.
+- **The sandbox's listing changed and broke the builder.** Gemini listed 34 ladders (oil, metals and gas were added),
+  four with prices. On a phone the page was about 6,000px wide, the page could open on a ladder with nothing to quote,
+  and XRP's ladder (two-cent steps) was drawn squashed into the left edge of its chart. Fixed, with a browser check
+  that feeds the page 30 unpriced ladders. **Look at `npm run dev:quotes` before recording**: it shows what a judge
+  will see that day, which the local test exchange cannot.
+- **QuickNode:** the filter and the signature check match QuickNode's current docs. A running devnet Stream costs about
+  10.6M credits a day against a 10M free trial, so it runs only for tests and demos. `cd chain && npm run stream`.
+- **Program:** the deployed bytes are a clean `anchor build` of the committed source; its interface is published on
+  chain. It is still upgradeable by the deploy key.
+- **Secret scan:** gitleaks and a pattern search over every branch's history found no key, token or keypair. Commit
+  metadata carries Victor's personal email address and a machine-local address for Tharun; decide whether that is
+  wanted before the repository goes public.
+
 **Verified by running** (130 tests across the three packages; the golden path was also driven in a real browser against
 the real executor handler and chain service): bet builder on the probability ladder, quote, place, receipt, My bets,
 settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is and is not verified: `chain/README.md`.
@@ -102,9 +120,14 @@ settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is a
 2. ~~Put Gemini sandbox keys in `.env`, then `npm run dev:live`~~ **Done on Victor's laptop 2026-11-18** (see above). Other
    machines still need their own key, or use `npm run dev:quotes`. The OAuth test needs a sandbox OAuth app registered
    by the account owner.
-3. Create the QuickNode Stream (steps and filter in `chain/README.md` and `chain/quicknode/filter.js`) and read the real
-   credit multiplier.
+3. Create the QuickNode Stream: put an API key (Streams enabled) in `.env`, then `cd chain && npm run stream -- test-filter`
+   and `create --url https://<host>/chain/hooks/quicknode`. It is created paused; `activate` for a test or a demo, `pause`
+   after. **A running Stream uses the whole free trial in about 22 hours.**
 4. Pick and open a host for the executor, chain service and web app (the hosted demo link).
+5. After the freeze, make the Solana program final (one command on the machine that holds the deploy key; it cannot
+   be undone). See `receipts-program/README.md`, "Who can change it".
+6. Merge to `main`, re-run the secret scan, decide about the email addresses in commit metadata, then make the
+   repository public.
 
 ## Hard facts from the official rules (checked 2026-11-17)
 
@@ -436,7 +459,7 @@ build problems? Is Playground's Anchor version current?
 - [ ] Both teammates registered on Devpost and listed on the project.
 - [ ] **Repo is public** (it is private today; the owner switches it), created
       during the hackathon: first commit Nov 16.
-- [ ] Secret scan over full history, then public.
+- [ ] Secret scan over full history, then public. (Clean on 2026-11-18 across all branches; run it again on the final history: `gitleaks git --log-opts="--all" --redact .`)
 - [ ] Root `README.md` describes Given, not Living Tokens, with: what it is; an
       architecture diagram; how a bet works with a worked example; fees and
       disclosures; "not affiliated with Gemini"; which Gemini endpoints we use
