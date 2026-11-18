@@ -62,15 +62,18 @@ test('commit: only a complete, hedged bet of this user can be recorded', async (
   assert.equal(chain.txs.length, 0, 'nothing reached the chain');
 });
 
-test('commit: if Solana fails, nothing is stored and the error is plain', async () => {
+test('commit: if Solana fails, nothing is written to the chain, no call is shown, the salt is kept, and the error is plain', async () => {
   const { service, chain, bets, store } = setup();
   bets.add();
   chain.failNext = 'Attempt to debit an account but found no record of a prior credit.';
   await rejects(service.commitCall('b1', 'primary'), 'chain_unfunded');
   chain.failNext = 'socket hang up';
   await rejects(service.commitCall('b1', 'primary'), 'chain_error');
-  assert.equal(store.data.calls.length, 0);
+  assert.equal(chain.txs.length, 0);
+  assert.equal(service.listCalls('primary').length, 0, 'a call that has not landed is not shown');
+  assert.deepEqual(store.data.calls.map((c) => c.state), ['pending'], 'but its salt is kept so a retry is safe');
   assert.equal((await service.commitCall('b1', 'primary')).state, 'committed', 'it works once the chain does');
+  assert.equal(store.data.calls.length, 1);
 });
 
 test('reveal: not before settlement; a refunded call is void and never scored', async () => {

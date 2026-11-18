@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import realCall from './fixtures/devnet-program-call.json';
 import { assetOf, commitHash, memoTx, preimage, strikeOf, verifyOnChain } from './verify';
 import type { CallFields, Rpc } from './verify';
 
@@ -96,5 +97,64 @@ describe('helpers', () => {
     expect(strikeOf('GEMI-XRP2611190100-HI2.45')).toBe(2.45);
     expect(strikeOf('weird')).toBeNull();
     expect(assetOf('BTC2611190100')).toBe('BTC');
+  });
+});
+
+describe('the on-chain program check', () => {
+  const PROGRAM = 'Program1111111111111111111111111111111111111';
+  const withProgram = (memo: unknown, signer = AUTH) => {
+    const t = tx(memo, signer);
+    t.transaction.message.instructions.push({ programId: PROGRAM } as never);
+    return t;
+  };
+  const node = (txs: Record<string, unknown>): Rpc => async (_m, params) => txs[params[0] as string] ?? null;
+
+  it('is informational when the program ran on both transactions', async () => {
+    const v = await verifyOnChain(node({ [REVEAL_SIG]: withProgram(revealMemo), [COMMIT_SIG]: withProgram(commitMemo) }), REVEAL_SIG, AUTH, PROGRAM);
+    expect(v.ok).toBe(true);
+    const k = v.checks.find((c) => c.id === 'program')!;
+    expect(k).toMatchObject({ ok: true, optional: true });
+  });
+
+  it('a Memo-only record still verifies, and says so without failing', async () => {
+    const v = await verifyOnChain(node({ [REVEAL_SIG]: tx(revealMemo), [COMMIT_SIG]: tx(commitMemo) }), REVEAL_SIG, AUTH, PROGRAM);
+    expect(v.ok).toBe(true);
+    expect(v.checks.find((c) => c.id === 'program')).toMatchObject({ ok: false, optional: true, label: 'Recorded as a Memo only' });
+  });
+
+  it('a program on only one of the two transactions is not reported as checked', async () => {
+    const v = await verifyOnChain(node({ [REVEAL_SIG]: withProgram(revealMemo), [COMMIT_SIG]: tx(commitMemo) }), REVEAL_SIG, AUTH, PROGRAM);
+    expect(v.checks.find((c) => c.id === 'program')!.ok).toBe(false);
+  });
+
+  it('adds no row when the service has no program', async () => {
+    const v = await verifyOnChain(node({ [REVEAL_SIG]: tx(revealMemo), [COMMIT_SIG]: tx(commitMemo) }), REVEAL_SIG, AUTH, null);
+    expect(v.checks.some((c) => c.id === 'program')).toBe(false);
+  });
+
+  it('a tampered reveal still fails whatever the program says', async () => {
+    const forged = { ...revealMemo, f: 0.01 };
+    const v = await verifyOnChain(node({ [REVEAL_SIG]: withProgram(forged), [COMMIT_SIG]: withProgram(commitMemo) }), REVEAL_SIG, AUTH, PROGRAM);
+    expect(v.ok).toBe(false);
+    expect(v.checks.some((c) => c.id === 'program')).toBe(false);
+  });
+});
+
+describe('real Solana devnet records', () => {
+  const real = realCall as unknown as { program: string; authority: string; revealSignature: string; commitSignature: string; transactions: Record<string, unknown> };
+  const node: Rpc = async (_m, params) => real.transactions[params[0] as string] ?? null;
+
+  it('the first call recorded through the deployed program verifies in the browser, program check included', async () => {
+    const v = await verifyOnChain(node, real.revealSignature, real.authority, real.program);
+    expect(v.checks.filter((c) => !c.optional).every((c) => c.ok)).toBe(true);
+    expect(v.ok).toBe(true);
+    expect(v.checks.find((c) => c.id === 'program')).toMatchObject({ ok: true, optional: true });
+    expect(v.commitSignature).toBe(real.commitSignature);
+  });
+
+  it('the same real records are rejected for any other authority', async () => {
+    const v = await verifyOnChain(node, real.revealSignature, 'SomeOtherAuthority1111111111111111111111111', real.program);
+    expect(v.ok).toBe(false);
+    expect(v.checks.at(-1)?.id).toBe('reveal-signer');
   });
 });

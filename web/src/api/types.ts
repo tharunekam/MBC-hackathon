@@ -289,6 +289,8 @@ export interface PublicReveal {
   network: 'devnet' | 'fake';
   /** Public key of the key that signed the records. The proof page checks every transaction was signed by it. */
   authority: string;
+  /** The given_receipts program that checks each record on chain, or null when records are Memos only. */
+  program?: string | null;
 }
 
 export interface LeaderboardRow {

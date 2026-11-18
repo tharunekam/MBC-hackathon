@@ -1554,6 +1554,10 @@ button.chip:hover {
   background: var(--bad-soft);
   color: var(--bad);
 }
+.checks li[data-optional='true'][data-ok='false'] .mark {
+  background: var(--bg-2);
+  color: var(--muted);
+}
 .checks b {
   font-weight: 600;
   font-size: 15px;

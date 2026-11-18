@@ -102,7 +102,7 @@ export class ChainService {
       id: row.id,
       handle: row.handle,
       betId: row.betId,
-      state: row.state,
+      state: row.state as CallView['state'],
       commitHash: row.hash,
       commitSignature: row.commitSignature,
       committedAt: row.committedAt,
@@ -136,40 +136,83 @@ export class ChainService {
 
   commitCall(betId: string, user: string): Promise<CallView> {
     return this.locked(`bet:${betId}`, async () => {
-      const existing = this.store.data.calls.find((c) => c.betId === betId && c.user === user);
-      if (existing) return this.view(existing);
+      let row = this.store.data.calls.find((c) => c.betId === betId && c.user === user);
+      if (row && row.state !== 'pending') return this.view(row);
 
-      const bet = await this.bets.getBet(betId);
-      if (!bet || bet.user !== user) throw new ServiceError(404, 'unknown_bet', 'No such bet.');
-      const fields = this.fieldsFromBet(bet);
+      if (!row) {
+        const bet = await this.bets.getBet(betId);
+        if (!bet || bet.user !== user) throw new ServiceError(404, 'unknown_bet', 'No such bet.');
+        const fields = this.fieldsFromBet(bet);
+        const salt = newSalt();
+        const handle = handleFor(user, this.store.data.handleSecret);
+        row = {
+          id: this.newId(),
+          betId,
+          user,
+          handle,
+          state: 'pending',
+          salt,
+          fields,
+          hash: commitHash(fields, salt),
+          commitSignature: '',
+          commitSlot: 0,
+          committedAt: new Date(fields.at * 1000).toISOString(),
+          network: this.chain.network,
+          eventTitle: bet.eventTitle,
+          conditionLabel: bet.condition.label,
+          targetLabel: bet.target.label,
+        };
+        // The salt is written BEFORE the transaction is sent. A crash, a timeout or a lost reply after the transaction
+        // lands then cannot lose it: a commit whose salt is gone can never be revealed.
+        this.store.data.calls.push(row);
+        this.store.save();
+      } else if (await this.promoteIfLanded(row)) {
+        return this.view(row); // an earlier attempt landed on chain but was never recorded here: adopt it, do not write twice
+      }
 
-      const salt = newSalt();
-      const handle = handleFor(user, this.store.data.handleSecret);
-      const hash = commitHash(fields, salt);
-      const sent = await this.send({ g: 1, t: 'c', h: hash, u: handle, at: fields.at });
-
-      const row: CallRow = {
-        id: this.newId(),
-        betId,
-        user,
-        handle,
-        state: 'committed',
-        salt,
-        fields,
-        hash,
-        commitSignature: sent.signature,
-        commitSlot: sent.slot,
-        committedAt: new Date(fields.at * 1000).toISOString(),
-        network: this.chain.network,
-        eventTitle: bet.eventTitle,
-        conditionLabel: bet.condition.label,
-        targetLabel: bet.target.label,
-      };
-      this.store.data.calls.push(row);
-      this.store.data.commits[sent.signature] = { signature: sent.signature, hash, handle, at: fields.at };
+      // A failure leaves the row pending, with the same salt and time, so a retry produces the same hash.
+      const sent = await this.send({ g: 1, t: 'c', h: row.hash, u: row.handle, at: row.fields.at });
+      row.state = 'committed';
+      row.commitSignature = sent.signature;
+      row.commitSlot = sent.slot;
+      this.store.data.commits[sent.signature] = { signature: sent.signature, hash: row.hash, handle: row.handle, at: row.fields.at };
       this.store.save();
       return this.view(row);
     });
+  }
+
+  /** The commit for this pending row is on chain already (a previous attempt landed). If so, mark it committed. */
+  private async promoteIfLanded(row: CallRow): Promise<boolean> {
+    const find = () => Object.values(this.store.data.commits).find((c) => c.hash === row.hash && c.handle === row.handle);
+    let seen = find();
+    if (!seen) {
+      try {
+        await this.backfill(50, 3);
+      } catch (err) {
+        this.log(`[chain] could not check the chain for a pending commit: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      seen = find();
+    }
+    if (!seen) return false;
+    row.state = 'committed';
+    row.commitSignature = seen.signature;
+    this.store.save();
+    return true;
+  }
+
+  /** Marks every pending row whose commit has since been seen on chain. Returns how many were promoted. */
+  recoverPending(): number {
+    let n = 0;
+    for (const row of this.store.data.calls) {
+      if (row.state !== 'pending') continue;
+      const seen = Object.values(this.store.data.commits).find((c) => c.hash === row.hash && c.handle === row.handle);
+      if (!seen) continue;
+      row.state = 'committed';
+      row.commitSignature = seen.signature;
+      n++;
+    }
+    if (n > 0) this.store.save();
+    return n;
   }
 
   private fieldsFromBet(bet: ExecutorBet): CallFields {
@@ -197,7 +240,11 @@ export class ChainService {
     if (!row) throw new ServiceError(404, 'unknown_call', 'No such call.');
     return this.locked(`bet:${row.betId}`, async () => {
       if (row.state === 'revealed') return this.view(row);
+      if (row.state === 'pending') throw new ServiceError(409, 'commit_pending', 'This call is still being recorded. Try again in a moment.');
       if (row.state === 'void') throw new ServiceError(409, 'void_call', 'The first half failed, so your stake came back and this call does not count.');
+
+      // An earlier reveal may have landed without being recorded here. Adopt it instead of writing (or being refused) twice.
+      if (await this.adoptReveal(row, row.revealing === true)) return this.view(row);
 
       const bet = await this.bets.getBet(row.betId);
       if (!bet?.settlement) throw new ServiceError(409, 'not_settled', 'This bet has not settled yet, so there is nothing to reveal.');
@@ -209,15 +256,37 @@ export class ChainService {
 
       const outcome: 0 | 1 = bet.settlement.targetResolved === 'yes' ? 1 : 0;
       const f = row.fields;
+      row.revealing = true; // sent-or-not is unknown from here until we hear back; the next attempt checks the chain first
+      this.store.save();
       const sent = await this.send({
         g: 1, t: 'r', c: row.commitSignature, u: row.handle, b: f.betId, e: f.event, k: f.condition, x: f.target, p: f.entryPrice, f: f.fairPrice, at: f.at, s: row.salt, o: outcome,
       });
       row.state = 'revealed';
+      delete row.revealing;
       row.reveal = { signature: sent.signature, slot: sent.slot, revealedAt: this.now().toISOString(), outcome, edge: edge(outcome, f.fairPrice) };
       this.store.save();
       if (this.selfIngest) await this.ingest(sent.signature, 'local');
       return this.view(row);
     });
+  }
+
+  private async adoptReveal(row: CallRow, checkChain: boolean): Promise<boolean> {
+    const find = () => Object.values(this.store.data.reveals).find((r) => r.commitSignature === row.commitSignature && r.verified);
+    let seen = find();
+    if (!seen && checkChain) {
+      try {
+        await this.backfill(50, 3);
+      } catch (err) {
+        this.log(`[chain] could not check the chain for an earlier reveal: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      seen = find();
+    }
+    if (!seen) return false;
+    row.state = 'revealed';
+    delete row.revealing;
+    row.reveal = { signature: seen.signature, slot: 0, revealedAt: new Date(seen.revealedAt * 1000).toISOString(), outcome: seen.outcome, edge: seen.edge };
+    this.store.save();
+    return true;
   }
 
   // ------------------------------------------------------------------ ingest
@@ -315,6 +384,7 @@ export class ChainService {
       // oldest first, so a commit is always seen before its reveal
       if ((await this.ingest(sig, 'rpc')) === 'new') added++;
     }
+    this.recoverPending();
     return { scanned: all.length, added };
   }
 
@@ -322,7 +392,7 @@ export class ChainService {
 
   listCalls(user: string): CallView[] {
     return this.store.data.calls
-      .filter((c) => c.user === user)
+      .filter((c) => c.user === user && c.state !== 'pending')
       .map((c) => this.view(c))
       .reverse();
   }
@@ -348,6 +418,8 @@ export class ChainService {
       revealedAt: new Date(r.revealedAt * 1000).toISOString(),
       network: this.chain.network,
       authority: this.chain.authority,
+      /** The on-chain program that checks each record, or null when records are Memos only. */
+      program: this.chain.program ?? null,
     };
   }
 
@@ -379,7 +451,7 @@ export class ChainService {
 
   /** Re-reads a call's commit and reveal from the chain and recomputes the hash. For the verify page and for judges. */
   async verifyCall(id: string, user: string) {
-    const row = this.store.data.calls.find((c) => c.id === id && c.user === user);
+    const row = this.store.data.calls.find((c) => c.id === id && c.user === user && c.state !== 'pending');
     if (!row) throw new ServiceError(404, 'unknown_call', 'No such call.');
     const commitTx = await this.chain.getTx(row.commitSignature);
     const commit = commitTx ? parseMemo(commitTx.memo) : null;

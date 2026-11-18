@@ -27,7 +27,7 @@ export default function Verify() {
     setProblem(null);
     setResult(null);
     try {
-      setResult(await verifyOnChain(solanaRpc(RPC), c.signature, c.authority));
+      setResult(await verifyOnChain(solanaRpc(RPC), c.signature, c.authority, c.program));
     } catch (e) {
       setProblem(e instanceof Error ? e.message : 'Could not reach Solana.');
     } finally {
@@ -154,9 +154,9 @@ export default function Verify() {
           <>
             <ul className="checks">
               {result.checks.map((k) => (
-                <li key={k.id} data-ok={k.ok}>
+                <li key={k.id} data-ok={k.ok} data-optional={k.optional ? 'true' : undefined}>
                   <span className="mark" aria-hidden="true">
-                    {k.ok ? '✓' : '✕'}
+                    {k.ok ? '✓' : k.optional ? '–' : '✕'}
                   </span>
                   <div>
                     <b>{k.label}</b>

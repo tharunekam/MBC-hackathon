@@ -60,6 +60,8 @@ export interface MemoTx {
   memo: string;
   signer: string;
   slot: number;
+  /** Every program the (successful) transaction invoked. Used to see whether our program ran. */
+  programs: string[];
 }
 
 export async function memoTx(rpc: Rpc, signature: string): Promise<MemoTx | null> {
@@ -68,14 +70,17 @@ export async function memoTx(rpc: Rpc, signature: string): Promise<MemoTx | null
   const ix = tx.transaction.message.instructions.find((i) => i.program === 'spl-memo' || i.programId === MEMO_PROGRAM_ID);
   const signer = tx.transaction.message.accountKeys.find((k) => k.signer)?.pubkey;
   if (!ix || typeof ix.parsed !== 'string' || !signer) return null;
-  return { memo: ix.parsed, signer, slot: tx.slot ?? 0 };
+  const programs = tx.transaction.message.instructions.map((i) => i.programId).filter((p): p is string => typeof p === 'string');
+  return { memo: ix.parsed, signer, slot: tx.slot ?? 0, programs };
 }
 
 export interface Check {
-  id: 'reveal-found' | 'reveal-signer' | 'commit-found' | 'commit-signer' | 'link' | 'hash';
+  id: 'reveal-found' | 'reveal-signer' | 'commit-found' | 'commit-signer' | 'link' | 'hash' | 'program';
   label: string;
   ok: boolean;
   detail?: string;
+  /** Informational: it never decides `Verification.ok`. Records made before the program existed are valid without it. */
+  optional?: boolean;
 }
 
 export interface Verification {
@@ -95,7 +100,7 @@ const parse = (text: string): Json | null => {
 };
 
 /** Runs the checks in order and stops at the first failure, so the page can say exactly which step broke. */
-export async function verifyOnChain(rpc: Rpc, revealSignature: string, authority: string): Promise<Verification> {
+export async function verifyOnChain(rpc: Rpc, revealSignature: string, authority: string, program?: string | null): Promise<Verification> {
   const checks: Check[] = [];
   const fail = (c: Check): Verification => ({ ok: false, checks: [...checks, c], commitSignature: null });
 
@@ -136,6 +141,18 @@ export async function verifyOnChain(rpc: Rpc, revealSignature: string, authority
   }
   if (recomputed !== commit.h) return { ...fail({ id: 'hash', label: 'The revealed call reproduces the commit', ok: false, detail: 'The hashes differ: this call was changed after it was committed.' }), commitSignature };
   checks.push({ id: 'hash', label: 'The revealed call reproduces the commit', ok: true, detail: `${recomputed.slice(0, 12)}…` });
+
+  // Beyond the hash: did Solana's own program run on both transactions? A transaction that includes the program and
+  // succeeded passed its checks (the program rejects a reveal that does not reproduce its commit, and a repeat reveal).
+  // Informational only: records made before the program existed are Memos and are still valid.
+  if (program) {
+    const checked = revealTx.programs.includes(program) && commitTx.programs.includes(program);
+    checks.push(
+      checked
+        ? { id: 'program', label: 'Solana’s program checked it on chain', ok: true, optional: true, detail: `Program ${program.slice(0, 8)}… ran on both transactions, and Solana would have rejected a changed or repeated reveal.` }
+        : { id: 'program', label: 'Recorded as a Memo only', ok: false, optional: true, detail: 'This call was recorded without the on-chain program. The hash check above still holds.' },
+    );
+  }
 
   return { ok: true, checks, commitSignature };
 }

@@ -1,0 +1,270 @@
+{
+ "note": "Real Solana devnet transactions (jsonParsed) of one call recorded through given_receipts on 2026-11-18. Public chain data.",
+ "program": "8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK",
+ "authority": "5fE6B5sFJQURtKiJJepzqvHshJZR9SkKSMgeKB3oaGsN",
+ "revealSignature": "45iRt5TRfiiyBTY8PDJNp4gbscBsTSfmsW4sZkqPSbKLPgAiGcFTLTKX9hvEgA8hYCP6oFx1iGsBL6LoBJ3DT9xU",
+ "commitSignature": "2DFD8UjXaPofQh82UXFpwsUm47ArcVkteQAxFSeyjp76CRFtr8tNK7JvZD8Th8NepmctkYqnDypHdKRavEJxQnQL",
+ "transactions": {
+  "45iRt5TRfiiyBTY8PDJNp4gbscBsTSfmsW4sZkqPSbKLPgAiGcFTLTKX9hvEgA8hYCP6oFx1iGsBL6LoBJ3DT9xU": {
+   "blockTime": 1794977000,
+   "meta": {
+    "computeUnitsConsumed": 142603,
+    "costUnits": 144399,
+    "err": null,
+    "fee": 5000,
+    "innerInstructions": [
+     {
+      "index": 1,
+      "instructions": [
+       {
+        "parsed": {
+         "info": {
+          "lamports": 1163320,
+          "newAccount": "HRddcSv4dVWQeuCzWuG3M4kJ889oVvvrx1QUs6p2iaWs",
+          "owner": "8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK",
+          "source": "5fE6B5sFJQURtKiJJepzqvHshJZR9SkKSMgeKB3oaGsN",
+          "space": 101
+         },
+         "type": "createAccount"
+        },
+        "program": "system",
+        "programId": "11111111111111111111111111111111",
+        "stackHeight": 2
+       }
+      ]
+     }
+    ],
+    "logMessages": [
+     "Program MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr invoke [1]",
+     "Program log: Signed by 5fE6B5sFJQURtKiJJepzqvHshJZR9SkKSMgeKB3oaGsN",
+     "Program log: Memo (len 317): \"{\\\"g\\\":1,\\\"t\\\":\\\"r\\\",\\\"c\\\":\\\"2DFD8UjXaPofQh82UXFpwsUm47ArcVkteQAxFSeyjp76CRFtr8tNK7JvZD8Th8NepmctkYqnDypHdKRavEJxQnQL\\\",\\\"u\\\":\\\"north-tern-98\\\",\\\"b\\\":\\\"smokemwlmyjvy\\\",\\\"e\\\":\\\"SMOKE2611190100\\\",\\\"k\\\":\\\"GEMI-SMOKE2611190100-HI100\\\",\\\"x\\\":\\\"GEMI-SMOKE2611190100-HI110\\\",\\\"p\\\":0.45,\\\"f\\\":0.41,\\\"at\\\":1794976998,\\\"s\\\":\\\"4ad7cc813ef92f40e0f4fb7b5b113060\\\",\\\"o\\\":1}\"",
+     "Program MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr consumed 126282 of 400000 compute units",
+     "Program MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr success",
+     "Program 8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK invoke [1]",
+     "Program log: Instruction: RevealCall",
+     "Program 11111111111111111111111111111111 invoke [2]",
+     "Program 11111111111111111111111111111111 success",
+     "Program data: AMIuaqV8309FOZ5TdR6CLJ3wB2P1Bbg+MvQAR5Ys/enxtmXxGuriTbRXupHQ4iLHbj74qWduqljX9pU8uRiHFs7MEIK2E2CoDQAAAG5vcnRoLXRlcm4tOTgNAAAAc21va2Vtd2xteWp2eQ8AAABTTU9LRTI2MTExOTAxMDAaAAAAR0VNSS1TTU9LRTI2MTExOTAxMDAtSEkxMDAaAAAAR0VNSS1TTU9LRTI2MTExOTAxMDAtSEkxMTDQ3QYAAAAAAJBBBgDmLP1qAAAAAOYs/WoAAAAA5yz9agAAAAABsAAJAAAAAAA=",
+     "Program 8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK consumed 16321 of 273718 compute units",
+     "Program 8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK success"
+    ],
+    "postBalances": [
+     9116165280,
+     1397000,
+     1163320,
+     1,
+     833120,
+     41509619334
+    ],
+    "postTokenBalances": [],
+    "preBalances": [
+     9117333600,
+     1397000,
+     0,
+     1,
+     833120,
+     41509619334
+    ],
+    "preTokenBalances": [],
+    "rewards": [],
+    "status": {
+     "Ok": null
+    }
+   },
+   "slot": 523513412,
+   "transaction": {
+    "message": {
+     "accountKeys": [
+      {
+       "pubkey": "5fE6B5sFJQURtKiJJepzqvHshJZR9SkKSMgeKB3oaGsN",
+       "signer": true,
+       "source": "transaction",
+       "writable": true
+      },
+      {
+       "pubkey": "9GJh6fgPgYzpbHne4XYSHgaDE4NFQPH1WCcHWYzbmcM3",
+       "signer": false,
+       "source": "transaction",
+       "writable": true
+      },
+      {
+       "pubkey": "HRddcSv4dVWQeuCzWuG3M4kJ889oVvvrx1QUs6p2iaWs",
+       "signer": false,
+       "source": "transaction",
+       "writable": true
+      },
+      {
+       "pubkey": "11111111111111111111111111111111",
+       "signer": false,
+       "source": "transaction",
+       "writable": false
+      },
+      {
+       "pubkey": "8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK",
+       "signer": false,
+       "source": "transaction",
+       "writable": false
+      },
+      {
+       "pubkey": "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+       "signer": false,
+       "source": "transaction",
+       "writable": false
+      }
+     ],
+     "instructions": [
+      {
+       "parsed": "{\"g\":1,\"t\":\"r\",\"c\":\"2DFD8UjXaPofQh82UXFpwsUm47ArcVkteQAxFSeyjp76CRFtr8tNK7JvZD8Th8NepmctkYqnDypHdKRavEJxQnQL\",\"u\":\"north-tern-98\",\"b\":\"smokemwlmyjvy\",\"e\":\"SMOKE2611190100\",\"k\":\"GEMI-SMOKE2611190100-HI100\",\"x\":\"GEMI-SMOKE2611190100-HI110\",\"p\":0.45,\"f\":0.41,\"at\":1794976998,\"s\":\"4ad7cc813ef92f40e0f4fb7b5b113060\",\"o\":1}",
+       "program": "spl-memo",
+       "programId": "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+       "stackHeight": 1
+      },
+      {
+       "accounts": [
+        "5fE6B5sFJQURtKiJJepzqvHshJZR9SkKSMgeKB3oaGsN",
+        "9GJh6fgPgYzpbHne4XYSHgaDE4NFQPH1WCcHWYzbmcM3",
+        "HRddcSv4dVWQeuCzWuG3M4kJ889oVvvrx1QUs6p2iaWs",
+        "11111111111111111111111111111111"
+       ],
+       "data": "92SFai7ASZKCGj5QL9J3TNLxscdfxpaUh298tmEuPGYhRfnBYgaLn4ciGQKNT9rsG5rGjHvuk1QPWWwLJqgVRWdqLLTF6FCCfwR1iThdAogQGuD6PsPuEAVSNF1ztQ6zRntUyCMSBJqrggkjj8zugh2qm4TbYsqw8q8jGtCew5nETj78TueDwE",
+       "programId": "8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK",
+       "stackHeight": 1
+      }
+     ],
+     "recentBlockhash": "CnLTyg7bKkyXzXizTJQGyB88Y4Aho3NF8nn4ppc28TkT"
+    },
+    "signatures": [
+     "45iRt5TRfiiyBTY8PDJNp4gbscBsTSfmsW4sZkqPSbKLPgAiGcFTLTKX9hvEgA8hYCP6oFx1iGsBL6LoBJ3DT9xU"
+    ]
+   },
+   "transactionIndex": 18,
+   "version": "legacy"
+  },
+  "2DFD8UjXaPofQh82UXFpwsUm47ArcVkteQAxFSeyjp76CRFtr8tNK7JvZD8Th8NepmctkYqnDypHdKRavEJxQnQL": {
+   "blockTime": 1794976998,
+   "meta": {
+    "computeUnitsConsumed": 65849,
+    "costUnits": 67279,
+    "err": null,
+    "fee": 5000,
+    "innerInstructions": [
+     {
+      "index": 1,
+      "instructions": [
+       {
+        "parsed": {
+         "info": {
+          "lamports": 1397000,
+          "newAccount": "9GJh6fgPgYzpbHne4XYSHgaDE4NFQPH1WCcHWYzbmcM3",
+          "owner": "8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK",
+          "source": "5fE6B5sFJQURtKiJJepzqvHshJZR9SkKSMgeKB3oaGsN",
+          "space": 147
+         },
+         "type": "createAccount"
+        },
+        "program": "system",
+        "programId": "11111111111111111111111111111111",
+        "stackHeight": 2
+       }
+      ]
+     }
+    ],
+    "logMessages": [
+     "Program MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr invoke [1]",
+     "Program log: Signed by 5fE6B5sFJQURtKiJJepzqvHshJZR9SkKSMgeKB3oaGsN",
+     "Program log: Memo (len 122): \"{\\\"g\\\":1,\\\"t\\\":\\\"c\\\",\\\"h\\\":\\\"b457ba91d0e222c76e3ef8a9676eaa58d7f6953cb9188716cecc1082b61360a8\\\",\\\"u\\\":\\\"north-tern-98\\\",\\\"at\\\":1794976998}\"",
+     "Program MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr consumed 58048 of 400000 compute units",
+     "Program MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr success",
+     "Program 8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK invoke [1]",
+     "Program log: Instruction: CommitCall",
+     "Program 11111111111111111111111111111111 invoke [2]",
+     "Program 11111111111111111111111111111111 success",
+     "Program data: DcS6FBcBZLZFOZ5TdR6CLJ3wB2P1Bbg+MvQAR5Ys/enxtmXxGuriTbRXupHQ4iLHbj74qWduqljX9pU8uRiHFs7MEIK2E2CoDQAAAG5vcnRoLXRlcm4tOTjmLP1qAAAAAOYs/WoAAAAA",
+     "Program 8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK consumed 7801 of 341952 compute units",
+     "Program 8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK success"
+    ],
+    "postBalances": [
+     9117333600,
+     1397000,
+     1,
+     833120,
+     41509619334
+    ],
+    "postTokenBalances": [],
+    "preBalances": [
+     9118735600,
+     0,
+     1,
+     833120,
+     41509619334
+    ],
+    "preTokenBalances": [],
+    "rewards": [],
+    "status": {
+     "Ok": null
+    }
+   },
+   "slot": 523513407,
+   "transaction": {
+    "message": {
+     "accountKeys": [
+      {
+       "pubkey": "5fE6B5sFJQURtKiJJepzqvHshJZR9SkKSMgeKB3oaGsN",
+       "signer": true,
+       "source": "transaction",
+       "writable": true
+      },
+      {
+       "pubkey": "9GJh6fgPgYzpbHne4XYSHgaDE4NFQPH1WCcHWYzbmcM3",
+       "signer": false,
+       "source": "transaction",
+       "writable": true
+      },
+      {
+       "pubkey": "11111111111111111111111111111111",
+       "signer": false,
+       "source": "transaction",
+       "writable": false
+      },
+      {
+       "pubkey": "8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK",
+       "signer": false,
+       "source": "transaction",
+       "writable": false
+      },
+      {
+       "pubkey": "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+       "signer": false,
+       "source": "transaction",
+       "writable": false
+      }
+     ],
+     "instructions": [
+      {
+       "parsed": "{\"g\":1,\"t\":\"c\",\"h\":\"b457ba91d0e222c76e3ef8a9676eaa58d7f6953cb9188716cecc1082b61360a8\",\"u\":\"north-tern-98\",\"at\":1794976998}",
+       "program": "spl-memo",
+       "programId": "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+       "stackHeight": 1
+      },
+      {
+       "accounts": [
+        "5fE6B5sFJQURtKiJJepzqvHshJZR9SkKSMgeKB3oaGsN",
+        "9GJh6fgPgYzpbHne4XYSHgaDE4NFQPH1WCcHWYzbmcM3",
+        "11111111111111111111111111111111"
+       ],
+       "data": "8ewFePGrqiX3FSXkMCjxgTEveiZyRXp6LnuJ7wjZkkymH9PjUiB8VdwGiA87wtAxrDnqUDQKfNXGGT8tQURRtBBFm",
+       "programId": "8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK",
+       "stackHeight": 1
+      }
+     ],
+     "recentBlockhash": "CnLTyg7bKkyXzXizTJQGyB88Y4Aho3NF8nn4ppc28TkT"
+    },
+    "signatures": [
+     "2DFD8UjXaPofQh82UXFpwsUm47ArcVkteQAxFSeyjp76CRFtr8tNK7JvZD8Th8NepmctkYqnDypHdKRavEJxQnQL"
+    ]
+   },
+   "transactionIndex": 0,
+   "version": "legacy"
+  }
+ }
+}

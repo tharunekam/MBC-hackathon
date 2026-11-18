@@ -54,6 +54,8 @@ export class FakeChain implements Chain {
   readonly txs: ChainTx[] = [];
   /** Make the next sendMemo fail (e.g. out of funds). */
   failNext: string | null = null;
+  /** Make the next sendMemo LAND on the chain and then fail, as a timeout or a lost reply does. */
+  landThenFailNext: string | null = null;
   private slot = 1000;
 
   constructor(authority = 'FakeAuthority1111111111111111111111111111111') {
@@ -66,7 +68,13 @@ export class FakeChain implements Chain {
       this.failNext = null;
       throw new Error(message);
     }
-    return this.forge(text, this.authority);
+    const landed = this.forge(text, this.authority);
+    if (this.landThenFailNext) {
+      const message = this.landThenFailNext;
+      this.landThenFailNext = null;
+      throw new Error(message);
+    }
+    return landed;
   }
 
   /** Adds a transaction as if `signer` had sent it. Lets tests simulate other people writing memos. */
