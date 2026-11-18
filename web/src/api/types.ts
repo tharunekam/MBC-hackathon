@@ -211,6 +211,8 @@ export interface HealthResponse {
   sandbox: boolean;
   /** True when the executor has no Gemini keys: live prices and quotes, but every order is refused. */
   readOnly?: boolean;
+  /** True when our own liquidity seeder is quoting on the sandbox, so some of the prices shown are ours. */
+  seeded?: boolean;
   users: { user: string; connected: boolean | null }[];
   time: string;
 }

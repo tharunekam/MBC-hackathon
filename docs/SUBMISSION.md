@@ -112,6 +112,8 @@ recorded fallback.
 - [ ] The Stream exists, is not paused, and a screenshot of its dashboard (network, dataset, filter, webhook) is in the README.
 - [ ] The Stream is **running only when needed**: `cd chain && npm run stream -- activate` before recording and before
       judging, `pause` after. Running, it uses about 10.6M credits a day; the free trial holds 10M in total.
+- [ ] If the liquidity seeder is running while recording or presenting: `GIVEN_SEEDED=1` is set (the nav shows "Seeded
+      prices"), the narration says the tight prices are our own test quotes, and nothing calls its fills order flow.
 - [ ] `npm run dev:quotes` looked at on the day of recording: it shows the sandbox's real listing, which changes.
 - [ ] README claims re-checked against what is actually running; every "not built" item either built or still listed.
 - [ ] Devpost: track, chain award, both bounties, each prize opt-in ticked, all members, the five answers above.

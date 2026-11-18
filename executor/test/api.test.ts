@@ -27,7 +27,7 @@ const WIDE = [
 type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 /** Runs the real HTTP handler on a spare local port, backed by the in-memory exchange. */
-async function start(strikes: ConstructorParameters<typeof FakeExchange>[1], opts: { waiveMarkup?: boolean } = {}) {
+async function start(strikes: ConstructorParameters<typeof FakeExchange>[1], opts: { waiveMarkup?: boolean; seeded?: boolean } = {}) {
   const exchange = new FakeExchange('ETHTEST', strikes);
   const other = new FakeExchange('ETHTEST', strikes); // a second user's account
   const ledger = new Ledger(join(mkdtempSync(join(tmpdir(), 'given-api-')), 'ledger.json'));
@@ -50,6 +50,7 @@ async function start(strikes: ConstructorParameters<typeof FakeExchange>[1], opt
     isSandbox: true,
     feeCoef: 0,
     waiveMarkup: opts.waiveMarkup ?? false,
+    seeded: opts.seeded,
     marketsCacheMs: 0,
     now: () => clock,
     newId: () => `api${++n}`,
@@ -86,6 +87,18 @@ async function start(strikes: ConstructorParameters<typeof FakeExchange>[1], opt
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 }
+
+test('GET /health: says when our own seeder is quoting on the sandbox, and does not say so otherwise', async () => {
+  const plain = await start(TIGHT);
+  const seeded = await start(TIGHT, { seeded: true });
+  try {
+    assert.equal((await plain.call('GET', '/health')).json.seeded, false);
+    assert.equal((await seeded.call('GET', '/health')).json.seeded, true);
+  } finally {
+    await plain.close();
+    await seeded.close();
+  }
+});
 
 test('GET /health: says what it is talking to and never includes a key', async () => {
   const app = await start(TIGHT);

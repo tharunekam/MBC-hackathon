@@ -56,6 +56,8 @@ export interface ApiDeps {
   feeCoef: number;
   /** Sandbox demo switch; see config.waiveMarkup. */
   waiveMarkup: boolean;
+  /** Our own seeder is quoting on this sandbox (config.seeded). Reported by /health so the app can say so. */
+  seeded?: boolean;
   /** Extra allowed browser origins besides localhost. */
   corsOrigins?: string[];
   /** How long a /markets answer is reused, in ms. Default 5000. */
@@ -288,6 +290,7 @@ export function createApi(deps: ApiDeps): ApiHandler {
       venue,
       sandbox: deps.isSandbox,
       readOnly: deps.readOnly === true,
+      seeded: deps.seeded === true,
       users: deps.users.map((user) => ({ user, connected: deps.isConnected ? deps.isConnected(user) : null })),
       feeCoefCharged: deps.feeCoef,
       streams: deps.live ? deps.live.count() : null,

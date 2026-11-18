@@ -32,6 +32,11 @@ export interface Config {
    * there. Always false outside the sandbox, whatever the setting says.
    */
   waiveMarkup: boolean;
+  /**
+   * GIVEN_SEEDED=1: our liquidity seeder (src/seeder.ts) is resting quotes on this sandbox from a second account, so
+   * some of the prices shown are our own. The API reports it and the app says so. Sandbox only.
+   */
+  seeded: boolean;
   /** Extra browser origins allowed to call the HTTP API (GIVEN_CORS_ORIGINS, comma-separated). Localhost is always allowed. */
   corsOrigins: string[];
   /** Address to listen on (GIVEN_HOST). Default 127.0.0.1; anything else needs the hosted-demo protections below. */
@@ -111,6 +116,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     port: Number(merged.GIVEN_PORT ?? 8787),
     takerFeeCoef: merged.GIVEN_TAKER_FEE_COEF !== undefined ? Number(merged.GIVEN_TAKER_FEE_COEF) : isSandbox ? 0 : 0.07,
     waiveMarkup: isSandbox && merged.GIVEN_SANDBOX_WAIVE_MARKUP === '1',
+    seeded: isSandbox && merged.GIVEN_SEEDED === '1',
     corsOrigins: (merged.GIVEN_CORS_ORIGINS ?? '')
       .split(',')
       .map((o) => o.trim().replace(/\/+$/, ''))

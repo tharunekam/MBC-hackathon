@@ -65,10 +65,10 @@ web (React/Vite)  ──►  executor (Node)  ──►  Gemini REST + WebSocket
 
 | Package | Role |
 |---|---|
-| `executor/` | Quotes, the two-leg bet with depth guard and hedge sizing, a ledger written before every order, settlement, and **reconcile to the cent against Gemini** (it counts Gemini's YES/NO netting). 132 tests. |
+| `executor/` | Quotes, the two-leg bet with depth guard and hedge sizing, a ledger written before every order, settlement, and **reconcile to the cent against Gemini** (it counts Gemini's YES/NO netting). A sandbox liquidity seeder, disclosed (below). 163 tests. |
 | `chain/` | Commit and reveal on Solana, the QuickNode webhook, the leaderboard, a public proof endpoint. 127 tests. |
 | `receipts-program/` | `given_receipts`, our Solana program (Anchor): checks each reveal against its commit on chain, refuses a repeat, keeps each handle's score. Deployed on devnet, interface published on chain. 8 tests against the built program. |
-| `web/` | The app: a probability ladder with two draggable markers, the four-number quote, bets, leaderboard, proof page. Pages update on their own over server-sent events. 104 tests. |
+| `web/` | The app: a probability ladder with two draggable markers, the four-number quote, bets, leaderboard, proof page. Pages update on their own over server-sent events. 108 tests. |
 | `scripts/` | The dev stack, the hosted-demo server (`serve.mjs`: the built app plus an allowlist of API paths on one port), the deploy checker, the browser end-to-end test, and the rehearsals. 17 tests. |
 | `docs/` | `PLAN.md`, `GIVEN.md` (decision log), `CONTRACTS.md` (interfaces), `GEMINI_API_NOTES.md`, `SUBMISSION.md`. |
 
@@ -135,7 +135,7 @@ npm run dev         # whole stack with no keys and no SOL: local test exchange +
 npm run dev:quotes  # REAL Gemini sandbox prices and order books with no keys; every order is refused (read-only)
 node scripts/seed-history.mjs all   # optional: a win, a loss and a refund, committed and revealed
 npm run stop        # stop this project's servers
-npm test            # 380 tests: executor 132, chain service 127, web 104, hosted-demo server 17
+npm test            # 415 tests: executor 163, chain service 127, web 108, hosted-demo server 17
 npm run e2e         # the production build in real Chrome (17 checks; e2e:sabotage must fail)
 npm run rehearse    # (also rehearse:chaos) the whole golden path through the real clients, Gemini and Solana stood in on the wire
 npm run preflight   # what is ready for the real thing and what is missing, with the fix for each
@@ -155,6 +155,12 @@ The executor refuses to run against production unless `GIVEN_ALLOW_PRODUCTION=1`
 address unless it is on the sandbox with a pinned account, a stake cap and a rate limit. The sandbox's books are about 20¢
 wide (production's median is about 4¢), so on the sandbox the value rule would refuse almost everything; `npm run
 start:demo` in `executor/` waives the markup check **on the sandbox only**, and the verdict shown is never softened.
+
+**The liquidity seeder, disclosed.** `executor/src/seeder.ts` can rest tight two-sided quotes on the sandbox from a
+second sandbox account of ours, so the same rules can run with the waiver off against a production-like book. Those
+quotes are ours: a bet filled by them is two of our own test accounts trading with each other, and is not order flow.
+Whenever it runs the app shows "Seeded prices" and says so in the footer. It is built and tested but **has not been run
+on the sandbox yet** (it needs a second sandbox account), so nothing shown so far used it.
 
 ## What has been run for real
 

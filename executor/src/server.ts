@@ -66,6 +66,7 @@ const api = createApi({
   isSandbox: config.isSandbox,
   feeCoef: config.takerFeeCoef,
   waiveMarkup: config.waiveMarkup,
+  seeded: config.seeded,
   corsOrigins: config.corsOrigins,
   pinnedUser: config.pinnedUser ?? undefined,
   maxStake: config.maxStake ?? undefined,
