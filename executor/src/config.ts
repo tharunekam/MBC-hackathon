@@ -25,6 +25,15 @@ export interface Config {
    * Gemini publishes 0.07 for production; the sandbox charged nothing.
    */
   takerFeeCoef: number;
+  /**
+   * Sandbox demo switch (GIVEN_SANDBOX_WAIVE_MARKUP=1): allow bets the offer
+   * rule refuses ONLY because the price is too far above fair. The sandbox's
+   * bot-run books are about 19 cents wide, so without this nothing passes
+   * there. Always false outside the sandbox, whatever the setting says.
+   */
+  waiveMarkup: boolean;
+  /** Extra browser origins allowed to call the HTTP API (GIVEN_CORS_ORIGINS, comma-separated). Localhost is always allowed. */
+  corsOrigins: string[];
 }
 
 function parseEnvFile(path: string): Record<string, string> {
@@ -84,6 +93,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     dataDir: merged.GIVEN_DATA_DIR ? resolve(merged.GIVEN_DATA_DIR) : resolve(EXECUTOR_ROOT, 'data'),
     port: Number(merged.GIVEN_PORT ?? 8787),
     takerFeeCoef: merged.GIVEN_TAKER_FEE_COEF !== undefined ? Number(merged.GIVEN_TAKER_FEE_COEF) : isSandbox ? 0 : 0.07,
+    waiveMarkup: isSandbox && merged.GIVEN_SANDBOX_WAIVE_MARKUP === '1',
+    corsOrigins: (merged.GIVEN_CORS_ORIGINS ?? '')
+      .split(',')
+      .map((o) => o.trim().replace(/\/+$/, ''))
+      .filter(Boolean),
   };
 }
 

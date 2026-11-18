@@ -14,6 +14,18 @@ export class GeminiApiError extends Error {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Gemini sends `orderId` as a bare 18-digit number, which JavaScript cannot
+ * hold exactly: two different orders came back with the same rounded id.
+ * Quote it before parsing so it survives as text.
+ */
+export function parseGeminiJson<T>(text: string): T {
+  return JSON.parse(text.replace(/"orderId":\s*(\d{15,})/g, '"orderId":"$1"')) as T;
+}
+
+/** Rows per page of order history. Gemini's default is 50 and it is NOT the whole history. */
+const HISTORY_PAGE = 50;
+
 /** Public market data. No API key needed. */
 export class GeminiPublic {
   private readonly baseUrl: string;
@@ -78,7 +90,7 @@ export class GeminiRest {
       });
       const text = await res.text();
       if (!res.ok) throw new GeminiApiError(res.status, text, path);
-      return JSON.parse(text) as T;
+      return parseGeminiJson<T>(text);
     };
     const next = this.queue.then(run, run);
     this.queue = next.catch(() => undefined);
@@ -102,17 +114,37 @@ export class GeminiRest {
     return res.orders;
   }
 
-  async orderHistory(): Promise<GeminiOrderRecord[]> {
-    const res = await this.post<{ orders: GeminiOrderRecord[] }>('/v1/prediction-markets/orders/history');
+  /**
+   * Every order on record, newest first. Gemini pages this 50 at a time, so
+   * this follows the pages to the end; a single call would silently drop
+   * older orders and make the books look wrong.
+   */
+  async orderHistory(maxOrders = 5000): Promise<GeminiOrderRecord[]> {
+    const out: GeminiOrderRecord[] = [];
+    for (let offset = 0; out.length < maxOrders; offset += HISTORY_PAGE) {
+      const res = await this.post<{ orders: GeminiOrderRecord[] }>('/v1/prediction-markets/orders/history', { limit: HISTORY_PAGE, offset });
+      out.push(...res.orders);
+      if (res.orders.length < HISTORY_PAGE) break;
+    }
+    return out;
+  }
+
+  /** Only the newest few orders: a much faster call (about half a second against 1-3 for a full page). */
+  async recentOrders(count = 10): Promise<GeminiOrderRecord[]> {
+    const res = await this.post<{ orders: GeminiOrderRecord[] }>('/v1/prediction-markets/orders/history', { limit: count, offset: 0 });
     return res.orders;
   }
 
-  /** Looks an order up by the tag we attached to it. Checks live orders first, then history. */
-  async findOrder(clientOrderId: string): Promise<GeminiOrderRecord | null> {
+  /**
+   * Looks an order up by the tag we attached to it. Checks live orders first,
+   * then history. `recentOnly` looks at just the newest orders, for an order
+   * that was sent a moment ago.
+   */
+  async findOrder(clientOrderId: string, opts: { recentOnly?: boolean } = {}): Promise<GeminiOrderRecord | null> {
     const active = await this.activeOrders();
     const live = active.find((o) => o.clientOrderId === clientOrderId);
     if (live) return live;
-    const history = await this.orderHistory();
+    const history = opts.recentOnly ? await this.recentOrders() : await this.orderHistory();
     return history.find((o) => o.clientOrderId === clientOrderId) ?? null;
   }
 

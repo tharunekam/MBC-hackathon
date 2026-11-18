@@ -1,0 +1,80 @@
+/**
+ * Starts the HTTP API for the frontend:  node src/server.ts
+ *
+ * Listens on 127.0.0.1 only (this process holds trading keys), on GIVEN_PORT
+ * (default 8787). Keeps ONE long-lived Gemini session per configured user and
+ * reuses it for every request.
+ */
+import { createServer } from 'node:http';
+import { resolve } from 'node:path';
+import { createApi } from './api.ts';
+import { recoverBets } from './bets.ts';
+import { loadConfig, requireUser } from './config.ts';
+import { GeminiExchange } from './exchange.ts';
+import { GeminiPublic } from './gemini/rest.ts';
+import { Ledger } from './ledger.ts';
+
+const config = loadConfig();
+const ledger = new Ledger(resolve(config.dataDir, 'ledger.json'));
+const pub = new GeminiPublic(config.baseUrl);
+const users = config.users.map((u) => u.user);
+
+/** One exchange session per user, created on first use and kept for the life of the process. */
+const sessions = new Map<string, GeminiExchange>();
+function exchangeFor(user: string): GeminiExchange {
+  let session = sessions.get(user);
+  if (!session) {
+    session = new GeminiExchange(config, requireUser(config, user));
+    sessions.set(user, session);
+  }
+  return session;
+}
+
+const api = createApi({
+  ledger,
+  users,
+  exchangeFor,
+  isConnected: (user) => sessions.get(user)?.connected ?? false,
+  markets: { listEvents: () => pub.listEvents('active'), getEvent: (ticker) => pub.getEvent(ticker) },
+  isSandbox: config.isSandbox,
+  feeCoef: config.takerFeeCoef,
+  waiveMarkup: config.waiveMarkup,
+  corsOrigins: config.corsOrigins,
+});
+
+// Before taking requests: repair anything a previous run left half-done, each bet on its own user's account.
+for (const user of users) {
+  try {
+    const fixed = await recoverBets({ exchange: exchangeFor(user), ledger, feeCoef: config.takerFeeCoef }, user);
+    if (fixed > 0) console.log(`Repaired ${fixed} order(s) for "${user}" left unfinished by a previous run.`);
+  } catch (err) {
+    console.error(`Could not check "${user}" for unfinished orders: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+const server = createServer(api);
+server.on('error', (err) => {
+  console.error(`Could not start the server: ${err.message}`);
+  process.exit(1);
+});
+server.listen(config.port, '127.0.0.1', () => {
+  console.log(`Given executor API on http://127.0.0.1:${config.port}  (${config.isSandbox ? 'Gemini SANDBOX' : 'Gemini PRODUCTION'})`);
+  console.log(`Accounts: ${users.join(', ') || 'none configured'}   fee coefficient charged: ${config.takerFeeCoef}`);
+  if (config.waiveMarkup) console.log('Sandbox demo mode: pairs refused only for markup can be traded (GIVEN_SANDBOX_WAIVE_MARKUP=1).');
+
+  // Open each user's session now rather than on the first bet.
+  for (const user of users) {
+    exchangeFor(user)
+      .connect()
+      .then(() => console.log(`Connected to Gemini for "${user}".`))
+      .catch((err: unknown) => console.error(`Could not connect to Gemini for "${user}": ${err instanceof Error ? err.message : String(err)}`));
+  }
+});
+
+function shutdown(): void {
+  for (const session of sessions.values()) session.close();
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 1500).unref();
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);

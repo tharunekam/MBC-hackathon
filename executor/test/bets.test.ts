@@ -3,7 +3,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { netHolding, placeConditionalBet, recoverBets, settleBets } from '../src/bets.ts';
+import { BetRefused, isScorable, netHolding, placeConditionalBet, recoverBets, settleBets } from '../src/bets.ts';
 import { Ledger } from '../src/ledger.ts';
 import { ensureBaseline, reconcile } from '../src/reconcile.ts';
 import { FakeExchange } from './fake.ts';
@@ -11,13 +11,34 @@ import { FakeExchange } from './fake.ts';
 const near = (actual: number, expected: number, eps = 1e-6) =>
   assert.ok(Math.abs(actual - expected) < eps, `expected ${expected}, got ${actual}`);
 
-function setup(strikes: ConstructorParameters<typeof FakeExchange>[1]) {
+/**
+ * `waiveMarkup` defaults to true here because the classic LADDER fixture below
+ * has a sandbox-style wide spread (about 20 cents over fair) that the offer
+ * rule would refuse; the execution tests are about fills, not value. The
+ * offer-rule tests further down run with the rule fully enforced.
+ */
+function setup(strikes: ConstructorParameters<typeof FakeExchange>[1], opts: { waiveMarkup?: boolean } = {}) {
   const exchange = new FakeExchange('ETHTEST', strikes);
   const ledger = new Ledger(join(mkdtempSync(join(tmpdir(), 'given-')), 'ledger.json'));
   let n = 0;
-  const deps = { exchange, ledger, newId: () => `t${++n}`, now: () => new Date('2026-11-17T23:10:00Z') };
+  const deps = {
+    exchange,
+    ledger,
+    newId: () => `t${++n}`,
+    now: () => new Date('2026-11-17T23:10:00Z'),
+    waiveMarkup: opts.waiveMarkup ?? true,
+  };
   return { exchange, ledger, deps };
 }
+
+/** Makes the depth read report a full book, so a test can thin the REAL book out after the bet was sized. */
+const pretendDeep = (ex: FakeExchange, strike: number) => ex.reportedDepth.set(ex.symbol(strike), { bidSize: 1000, askSize: 1000 });
+
+/** A pair the offer rule accepts as it stands: 4.1 cents (8.2%) over fair at production fees. */
+const TIGHT = [
+  { strike: 1800, bid: 0.8, ask: 0.82 },
+  { strike: 1820, bid: 0.4, ask: 0.41 },
+];
 
 const LADDER = [
   { strike: 1800, bid: 0.71, ask: 0.9 },
@@ -57,11 +78,12 @@ test('a clean bet: two fills, stake protected, cash conserved', async () => {
   near(rec.cashDifference!, 0);
 });
 
-test('thin book: only what filled on the outcome is hedged', async () => {
+test('book thins out after sizing: only what filled on the outcome is hedged', async () => {
   const { exchange, deps } = setup([
     { strike: 1800, bid: 0.71, ask: 0.9 },
     { strike: 1820, bid: 0.11, ask: 0.3, askSize: 1 }, // only 1 contract offered, as seen in the sandbox
   ]);
+  pretendDeep(exchange, 1820); // the depth read saw plenty; it was gone by the time the order arrived
   const bet = await placeConditionalBet(deps, request(exchange));
   assert.equal(bet.status, 'open');
   assert.equal(bet.legs[0]!.quantityFilled, 1);
@@ -75,6 +97,7 @@ test('hedge leg cannot fill: the position is sold back and nothing is left open'
     { strike: 1800, bid: 0.71, ask: 0.9, bidSize: 0 }, // nobody to sell us NO on the condition
     { strike: 1820, bid: 0.11, ask: 0.3 },
   ]);
+  pretendDeep(exchange, 1800); // it was there when the bet was sized, and gone a moment later
   await ensureBaseline(exchange, ledger, 'primary');
   const bet = await placeConditionalBet(deps, request(exchange));
 
@@ -94,6 +117,7 @@ test('hedge leg cannot fill and the user chose to keep the position: flagged unh
     { strike: 1800, bid: 0.71, ask: 0.9, bidSize: 0 },
     { strike: 1820, bid: 0.11, ask: 0.3 },
   ]);
+  pretendDeep(exchange, 1800);
   const bet = await placeConditionalBet(deps, request(exchange, { onHedgeFail: 'leave' }));
   assert.equal(bet.status, 'unhedged');
   assert.equal(bet.payoffs!.hedged, false);
@@ -106,6 +130,7 @@ test('partial hedge is topped up on the next attempt', async () => {
     { strike: 1800, bid: 0.71, ask: 0.9, bidSize: 2 },
     { strike: 1820, bid: 0.11, ask: 0.3 },
   ]);
+  pretendDeep(exchange, 1800);
   const original = exchange.placeOrder.bind(exchange);
   exchange.placeOrder = async (req) => {
     const res = await original(req);
@@ -124,6 +149,7 @@ test('nothing fills on the outcome: no bet, no hedge, no money moved', async () 
     { strike: 1800, bid: 0.71, ask: 0.9 },
     { strike: 1820, bid: 0.11, ask: 0.3, askSize: 0 },
   ]);
+  pretendDeep(exchange, 1820);
   const bet = await placeConditionalBet(deps, request(exchange));
   assert.equal(bet.status, 'failed');
   assert.equal(bet.legs.length, 1);
@@ -169,11 +195,13 @@ for (const [name, aSide, bSide, expected] of [
     const bet = await placeConditionalBet(deps, request(exchange));
     const predicted = bet.payoffs!;
 
-    assert.equal((await settleBets(deps)).length, 0); // not resolved yet
+    assert.equal((await settleBets(deps)).settled.length, 0); // not resolved yet
     exchange.resolve(1800, aSide);
     exchange.resolve(1820, bSide);
     const done = await settleBets(deps);
-    assert.equal(done.length, 1);
+    assert.equal(done.settled.length, 1);
+    assert.equal(done.needsReview.length, 0);
+    assert.equal(isScorable(bet), true);
     assert.equal(bet.status, 'settled');
 
     const pnl = bet.settlement!.pnl;
@@ -183,7 +211,7 @@ for (const [name, aSide, bSide, expected] of [
     near(await exchange.cash(), 1000 + pnl); // the venue's cash agrees with the ledger's result
     assert.equal((await reconcile(exchange, ledger, 'primary')).ok, true);
 
-    assert.equal((await settleBets(deps)).length, 0); // settling twice changes nothing
+    assert.equal((await settleBets(deps)).settled.length, 0); // settling twice changes nothing
     near(await exchange.cash(), 1000 + pnl);
   });
 }
@@ -264,4 +292,239 @@ test('fees: a wrong fee model (the original bug) is caught by reconcile, not hid
   const rec = await reconcile(exchange, ledger, 'primary');
   assert.equal(rec.ok, false); // and the cash check exposes the gap
   assert.ok(rec.cashDifference! < -3, `expected several dollars of unmodelled fees, got ${rec.cashDifference}`);
+});
+
+// ---------------------------------------------------------------- offer rule at the point of trade
+
+test('offer rule: a fair-value pair is placed with the rule fully enforced, and its numbers are kept', async () => {
+  const { exchange, ledger, deps } = setup(TIGHT, { waiveMarkup: false });
+  await ensureBaseline(exchange, ledger, 'primary');
+  const bet = await placeConditionalBet(deps, request(exchange, { stake: 10 }));
+  assert.equal(bet.status, 'open');
+  assert.equal(bet.offer!.verdict, 'ok');
+  assert.equal(bet.offer!.overridden, false);
+  near(bet.offer!.fairPrice!, 0.5);
+  near(bet.offer!.pricePaid!, 0.5125); // 0.41 / 0.80
+  assert.equal(bet.stakeReduced, undefined);
+  assert.equal((await reconcile(exchange, ledger, 'primary')).ok, true);
+});
+
+test('offer rule: a poor-value pair is refused before any order, with the reason and the numbers', async () => {
+  const { exchange, ledger, deps } = setup(LADDER, { waiveMarkup: false });
+  await assert.rejects(placeConditionalBet(deps, request(exchange)), (err: unknown) => {
+    assert.ok(err instanceof BetRefused);
+    assert.equal(err.code, 'offer_refused');
+    assert.match(err.message, /more than the fair price/);
+    assert.match(err.message, /No order was sent/);
+    assert.equal(err.quote!.verdict, 'refuse');
+    assert.deepEqual(err.quote!.reasons.map((r) => r.code), ['markup_too_high']);
+    return true;
+  });
+  assert.equal(exchange.sent.length, 0);
+  assert.equal(ledger.data.bets.length, 0);
+});
+
+test('offer rule: the sandbox waiver lets a markup-only refusal through and records that it did', async () => {
+  const { exchange, deps } = setup(LADDER, { waiveMarkup: true });
+  const bet = await placeConditionalBet(deps, request(exchange));
+  assert.equal(bet.status, 'open');
+  assert.equal(bet.offer!.verdict, 'refuse');
+  assert.equal(bet.offer!.overridden, true);
+});
+
+test('offer rule: the waiver never covers a one-sided book or an out-of-order ladder', async () => {
+  const oneSided = setup(
+    [
+      { strike: 1800, bid: 0.8, ask: null },
+      { strike: 1820, bid: 0.4, ask: 0.41 },
+    ],
+    { waiveMarkup: true },
+  );
+  await assert.rejects(placeConditionalBet(oneSided.deps, request(oneSided.exchange)), /two-sided/);
+  assert.equal(oneSided.exchange.sent.length, 0);
+
+  const inverted = setup([...TIGHT, { strike: 1840, bid: 0.03, ask: 0.2 }, { strike: 1860, bid: 0.03, ask: 0.21 }], { waiveMarkup: true });
+  await assert.rejects(placeConditionalBet(inverted.deps, request(inverted.exchange)), /out of order/);
+  assert.equal(inverted.exchange.sent.length, 0);
+});
+
+// ---------------------------------------------------------------- market state
+
+test('market state: a paused contract is refused, naming what Gemini reports', async () => {
+  const { exchange, ledger, deps } = setup(TIGHT, { waiveMarkup: false });
+  exchange.setMarketState(1800, 'post_only');
+  await assert.rejects(placeConditionalBet(deps, request(exchange)), (err: unknown) => {
+    assert.ok(err instanceof BetRefused);
+    assert.equal(err.code, 'market_closed');
+    assert.match(err.message, /post_only/);
+    return true;
+  });
+  assert.equal(exchange.sent.length, 0);
+  assert.equal(ledger.data.bets.length, 0);
+});
+
+test('market state: checked again immediately before trading, not only at the first look', async () => {
+  const { exchange, deps } = setup(TIGHT, { waiveMarkup: false });
+  const original = exchange.getEvent.bind(exchange);
+  let reads = 0;
+  exchange.getEvent = async (ticker) => {
+    const event = await original(ticker);
+    if (++reads === 1) exchange.setMarketState(1820, 'closed'); // the market closes right after the first read
+    return event;
+  };
+  await assert.rejects(placeConditionalBet(deps, request(exchange)), /not open for trading/);
+  assert.ok(reads >= 2);
+  assert.equal(exchange.sent.length, 0);
+});
+
+// ---------------------------------------------------------------- depth guard
+
+test('depth guard: a thin outcome book reduces the stake, and the caller is told', async () => {
+  const { exchange, ledger, deps } = setup(
+    [
+      { strike: 1800, bid: 0.8, ask: 0.82 },
+      { strike: 1820, bid: 0.4, ask: 0.41, askSize: 5 }, // only 5 contracts on offer
+    ],
+    { waiveMarkup: false },
+  );
+  await ensureBaseline(exchange, ledger, 'primary');
+  const bet = await placeConditionalBet(deps, request(exchange, { stake: 10 })); // $10 would want 19.51 contracts
+
+  assert.equal(bet.status, 'open');
+  assert.equal(bet.legs[0]!.quantityRequested, 5); // asked only for what was there
+  assert.equal(bet.legs[0]!.status, 'filled'); // so nothing was left hanging as a partial fill
+  assert.equal(bet.legs[1]!.quantityFilled, 2.57); // 5 * 0.41 = 2.05 -> 2.05 / 0.80 = 2.5625 -> 2.57
+  assert.equal(bet.requestedStake, 10);
+  assert.equal(bet.stakeReduced!.requested, 10);
+  assert.equal(bet.stakeReduced!.reducedTo, 2.56); // 2.05 + 2.57 * 0.20 = 2.564
+  assert.equal(bet.stakeReduced!.outcomeAvailable, 5);
+  assert.match(bet.stakeReduced!.reason, /reduced from \$10\.00 to about \$2\.56/);
+  near(bet.cost, 2.564);
+  assert.equal(bet.payoffs!.hedged, true);
+  assert.equal((await reconcile(exchange, ledger, 'primary')).ok, true);
+});
+
+test('depth guard: a thin CONDITION book reduces the stake so the hedge still fits whole', async () => {
+  const { exchange, deps } = setup(
+    [
+      { strike: 1800, bid: 0.8, ask: 0.82, bidSize: 2 }, // only 2 contracts to hedge against
+      { strike: 1820, bid: 0.4, ask: 0.41 },
+    ],
+    { waiveMarkup: false },
+  );
+  const bet = await placeConditionalBet(deps, request(exchange, { stake: 10 }));
+  assert.equal(bet.status, 'open');
+  assert.equal(bet.legs.length, 2); // one outcome order, one hedge order: no retries, no unwind
+  assert.equal(bet.legs[0]!.quantityFilled, 3.9); // 3.90 * 0.41 = 1.599 -> hedge 1.99875 -> 2.00, which is all there is
+  assert.equal(bet.legs[1]!.quantityFilled, 2);
+  assert.equal(bet.legs[1]!.status, 'filled');
+  assert.equal(bet.payoffs!.hedged, true);
+  assert.equal(bet.stakeReduced!.conditionAvailable, 2);
+});
+
+test('depth guard: nothing resting, a book that moved away, or no depth at all -> refused, no order sent', async () => {
+  const empty = setup(
+    [
+      { strike: 1800, bid: 0.8, ask: 0.82, bidSize: 0 },
+      { strike: 1820, bid: 0.4, ask: 0.41 },
+    ],
+    { waiveMarkup: false },
+  );
+  await assert.rejects(placeConditionalBet(empty.deps, request(empty.exchange)), (err: unknown) => {
+    assert.ok(err instanceof BetRefused);
+    assert.equal(err.code, 'insufficient_depth');
+    return true;
+  });
+  assert.equal(empty.exchange.sent.length, 0);
+  assert.equal(empty.ledger.data.bets.length, 0);
+
+  // Depth shows the best offer is now dearer than the quoted price: that size does not count.
+  const moved = setup(TIGHT, { waiveMarkup: false });
+  moved.exchange.reportedDepth.set(moved.exchange.symbol(1820), { ask: 0.45, askSize: 500 });
+  await assert.rejects(placeConditionalBet(moved.deps, request(moved.exchange)), /Not enough is on offer/);
+  assert.equal(moved.exchange.sent.length, 0);
+
+  // The depth read itself fails: never trade blind.
+  const blind = setup(TIGHT, { waiveMarkup: false });
+  blind.exchange.depthUnavailable = true;
+  await assert.rejects(placeConditionalBet(blind.deps, request(blind.exchange)), (err: unknown) => {
+    assert.ok(err instanceof BetRefused);
+    assert.equal(err.code, 'no_depth');
+    assert.match(err.message, /no order was sent/);
+    return true;
+  });
+  assert.equal(blind.exchange.sent.length, 0);
+});
+
+// ---------------------------------------------------------------- settlement that cannot hang
+
+test('settlement: a void or fractional result becomes needs_review instead of staying open forever', async () => {
+  const { exchange, ledger, deps } = setup(TIGHT, { waiveMarkup: false });
+  await ensureBaseline(exchange, ledger, 'primary');
+  const bet = await placeConditionalBet(deps, request(exchange, { stake: 10 }));
+  assert.equal(bet.status, 'open');
+
+  // Gemini settles the condition at a "last fair price" of 60 cents instead of yes/no; the outcome settles "no".
+  exchange.settleUnclear(1800, { resolutionSide: null, settlementValue: '1799.99' }, 0.6);
+  exchange.resolve(1820, 'no');
+
+  // Within a minute of expiry the result may simply be late, so the bet is left alone...
+  const early = await settleBets({ ...deps, now: () => new Date('2026-11-18T00:00:20Z') });
+  assert.deepEqual([early.settled.length, early.needsReview.length], [0, 0]);
+  assert.equal(bet.status, 'open');
+
+  // ...after that it is flagged, with exactly what Gemini reported.
+  const later = { ...deps, now: () => new Date('2026-11-18T00:02:00Z') };
+  const done = await settleBets(later);
+  assert.equal(done.settled.length, 0);
+  assert.equal(done.needsReview.length, 1);
+  assert.equal(bet.status, 'needs_review');
+  assert.equal(bet.settlement, undefined); // no payout is guessed
+  assert.equal(isScorable(bet), false); // excluded from scoring
+  assert.match(bet.review!.reason, /without a clean yes\/no/);
+  assert.equal(bet.review!.condition!.resolutionSide, null);
+  assert.equal(bet.review!.condition!.status, 'settled');
+  assert.equal(bet.review!.condition!.settlementValue, '1799.99');
+  assert.equal(bet.review!.target!.resolutionSide, 'no');
+
+  // It survives a restart, and settling again neither changes nor re-reports it.
+  assert.equal(new Ledger(ledger.path).bet(bet.id)!.status, 'needs_review');
+  const again = await settleBets(later);
+  assert.deepEqual([again.settled.length, again.needsReview.length], [0, 0]);
+
+  // Reconcile names the bet, and does not pretend the cash ties out.
+  const rec = await reconcile(exchange, ledger, 'primary');
+  assert.deepEqual(rec.betsNeedingReview, [bet.id]);
+  assert.equal(rec.ok, false);
+  near(rec.cashDifference!, bet.legs[1]!.quantityFilled * 0.6, 1e-6); // the fractional payout Given could not know
+});
+
+test('settlement: Gemini reporting an unknown word (e.g. UNSPECIFIED) is also flagged, and a later clean result promotes it', async () => {
+  const { exchange, ledger, deps } = setup(TIGHT, { waiveMarkup: false });
+  await ensureBaseline(exchange, ledger, 'primary');
+  const bet = await placeConditionalBet(deps, request(exchange, { stake: 10 }));
+  exchange.settleUnclear(1800, { resolutionSide: 'UNSPECIFIED' });
+  exchange.settleUnclear(1820, { resolutionSide: 'UNSPECIFIED' });
+  const later = { ...deps, now: () => new Date('2026-11-18T00:05:00Z') };
+  assert.equal((await settleBets(later)).needsReview.length, 1);
+  assert.equal(bet.status, 'needs_review');
+  assert.equal(bet.review!.condition!.resolutionSide, 'UNSPECIFIED');
+
+  // Gemini later publishes a clean result: the bet settles normally and becomes scorable.
+  exchange.resolve(1800, 'yes');
+  exchange.resolve(1820, 'no');
+  const done = await settleBets(later);
+  assert.equal(done.settled.length, 1);
+  assert.equal(bet.status, 'settled');
+  assert.equal(bet.settlement!.conditionResolved, 'yes');
+  assert.equal(isScorable(bet), true);
+});
+
+test('settlement: an event that has not settled yet is left open, however late it is', async () => {
+  const { exchange, deps } = setup(TIGHT, { waiveMarkup: false });
+  const bet = await placeConditionalBet(deps, request(exchange, { stake: 10 }));
+  exchange.resolve(1820, 'no'); // only one of the two contracts has settled
+  const done = await settleBets({ ...deps, now: () => new Date('2026-11-19T00:00:00Z') });
+  assert.deepEqual([done.settled.length, done.needsReview.length], [0, 0]);
+  assert.equal(bet.status, 'open');
 });

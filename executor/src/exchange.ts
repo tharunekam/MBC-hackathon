@@ -46,6 +46,11 @@ export interface Exchange {
   /** All orders Gemini has on record for the account (recent history plus live). */
   allOrders(): Promise<VenueOrder[]>;
   watchBook(symbol: string, onTick: (tick: BookTicker) => void): Promise<void>;
+  /**
+   * Best bid and ask of one contract WITH the size resting at each, read live.
+   * Must reject rather than guess when the book cannot be read.
+   */
+  topOfBook(symbol: string): Promise<BookTicker>;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -54,7 +59,7 @@ function toResult(rec: GeminiOrderRecord): OrderResult {
   const filled = Number(rec.filledQuantity ?? 0);
   const avg = rec.avgExecutionPrice === null || rec.avgExecutionPrice === undefined ? null : Number(rec.avgExecutionPrice);
   return {
-    orderId: String(rec.orderId),
+    orderId: rec.globalOrderId ?? String(rec.orderId),
     filledQuantity: Number.isFinite(filled) ? filled : 0,
     avgPrice: filled > 0 && avg !== null && Number.isFinite(avg) ? avg : null,
     open: rec.status === 'open',
@@ -95,8 +100,9 @@ export class GeminiExchange implements Exchange {
     if (terminal) await terminal;
 
     // The order record over REST is the source of truth for what filled.
+    // It was sent a moment ago, so look among the newest orders first (fast); widen the search if it is not there.
     for (let attempt = 0; attempt < 8; attempt++) {
-      const rec = await this.rest.findOrder(req.clientOrderId);
+      const rec = await this.rest.findOrder(req.clientOrderId, { recentOnly: attempt < 5 });
       if (rec && (req.tif === 'GTC' || rec.status !== 'open')) return toResult(rec);
       await sleep(400);
     }
@@ -135,6 +141,30 @@ export class GeminiExchange implements Exchange {
     if (!this.bookHandlers.has(key)) this.bookHandlers.set(key, new Set());
     this.bookHandlers.get(key)!.add(onTick);
     await this.ws.watchBook(symbol);
+  }
+
+  async topOfBook(symbol: string): Promise<BookTicker> {
+    const depth = await this.ws.depth(symbol);
+    // Do not rely on the order Gemini sends the levels in.
+    const bid = depth.bids.reduce<[number, number] | null>((best, lvl) => (!best || lvl[0] > best[0] ? lvl : best), null);
+    const ask = depth.asks.reduce<[number, number] | null>((best, lvl) => (!best || lvl[0] < best[0] ? lvl : best), null);
+    return {
+      symbol: depth.symbol,
+      bid: bid ? bid[0] : null,
+      bidSize: bid ? bid[1] : null,
+      ask: ask ? ask[0] : null,
+      askSize: ask ? ask[1] : null,
+    };
+  }
+
+  /** True while the long-lived WebSocket session is up. */
+  get connected(): boolean {
+    return this.ws.isOpen;
+  }
+
+  /** Opens the WebSocket session now instead of on the first order. */
+  connect(): Promise<void> {
+    return this.ws.connect();
   }
 
   close(): void {

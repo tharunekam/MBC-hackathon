@@ -1,4 +1,6 @@
 import type { GeminiContract, GeminiEvent } from './gemini/types.ts';
+import { assessPair } from './offer.ts';
+import type { OfferQuote } from './offer.ts';
 import { conditionalPrice } from './pricing.ts';
 
 /** One strike of an "X or above" ladder, with its live YES-space book. */
@@ -8,7 +10,10 @@ export interface Rung {
   strike: number;
   bid: number | null;
   ask: number | null;
+  /** True only when the contract is active and its market state is "open". */
   open: boolean;
+  /** What Gemini reports, e.g. "active/open", "active/post_only", "settled/closed". */
+  state: string;
 }
 
 export interface LinkedPair {
@@ -21,6 +26,8 @@ export interface LinkedPair {
   b: Rung;
   /** Executable all-in price of $1 "if B given A" right now (fees included), or null if the book can't support it. */
   conditionalPrice: number | null;
+  /** The offer rule's verdict and the numbers every quote must carry. */
+  offer: OfferQuote;
 }
 
 const toNum = (v: string | null | undefined): number | null => {
@@ -40,6 +47,7 @@ export function toRung(c: GeminiContract): Rung | null {
     bid: toNum(c.prices?.bestBid),
     ask: toNum(c.prices?.bestAsk),
     open: c.status === 'active' && c.marketState === 'open',
+    state: `${c.status}/${c.marketState ?? 'unknown'}`,
   };
 }
 
@@ -57,7 +65,10 @@ export function ladder(event: GeminiEvent): Rung[] {
  * underlying and expiry, so B hitting implies A hit: the link that lets two
  * plain orders behave as a conditional bet.
  */
-export function linkedPairs(event: GeminiEvent, opts: { tradableOnly?: boolean; feeCoef?: number } = {}): LinkedPair[] {
+export function linkedPairs(
+  event: GeminiEvent,
+  opts: { tradableOnly?: boolean; feeCoef?: number; waiveMarkup?: boolean } = {},
+): LinkedPair[] {
   const rungs = ladder(event);
   const out: LinkedPair[] = [];
   for (let i = 0; i < rungs.length; i++) {
@@ -74,14 +85,15 @@ export function linkedPairs(event: GeminiEvent, opts: { tradableOnly?: boolean; 
         a,
         b,
         conditionalPrice: price,
+        offer: assessPair(rungs, a, b, { feeCoef: opts.feeCoef ?? 0, waiveMarkup: opts.waiveMarkup }),
       });
     }
   }
   return out;
 }
 
-export function findPair(event: GeminiEvent, aSymbol: string, bSymbol: string, feeCoef = 0): LinkedPair {
-  const pair = linkedPairs(event, { feeCoef }).find((p) => p.a.symbol === aSymbol && p.b.symbol === bSymbol);
+export function findPair(event: GeminiEvent, aSymbol: string, bSymbol: string, feeCoef = 0, waiveMarkup = false): LinkedPair {
+  const pair = linkedPairs(event, { feeCoef, waiveMarkup }).find((p) => p.a.symbol === aSymbol && p.b.symbol === bSymbol);
   if (!pair) {
     throw new Error(
       `${aSymbol} and ${bSymbol} are not a linked pair in ${event.ticker}: both must be "or above" strikes ` +

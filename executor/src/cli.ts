@@ -8,10 +8,16 @@
  *   node src/cli.ts settle                     record results for resolved bets
  *   node src/cli.ts reconcile                  check the ledger against Gemini
  *   node src/cli.ts recover                    repair bets interrupted mid-flight
+ *   node src/cli.ts flow                       what Given's bets have sent to Gemini's book
+ *
+ * `pairs --all` also lists the pairs the offer rule refuses, with the reason.
+ * Do not run bet/settle/recover while the HTTP server (src/server.ts) is
+ * running: both keep the ledger in memory and the last one to save wins.
  */
 import { resolve } from 'node:path';
 import { placeConditionalBet, recoverBets, settleBets } from './bets.ts';
 import { loadConfig, requireUser } from './config.ts';
+import { flowTotals } from './flow.ts';
 import { GeminiExchange } from './exchange.ts';
 import { GeminiPublic } from './gemini/rest.ts';
 import { Ledger } from './ledger.ts';
@@ -47,6 +53,15 @@ function printBet(bet: ReturnType<Ledger['bet']>): void {
     console.log(`  stake ${money(p.stake)}   paid ${p.conditionalPrice?.toFixed(4) ?? '-'} per $1   hedged: ${p.hedged ? 'yes' : 'NO'}`);
     console.log(`  if condition fails: ${money(p.ifConditionFails)}   if both hit: ${money(p.ifBothHit)}   if condition only: ${money(p.ifConditionOnly)}`);
   }
+  if (bet.stakeReduced) console.log(`  reduced: ${bet.stakeReduced.reason}`);
+  if (bet.offer) {
+    const o = bet.offer;
+    console.log(
+      `  offer rule: ${o.verdict}${o.overridden ? ' (waived for sandbox demo)' : ''}   fair ${o.fairPrice?.toFixed(3) ?? '-'}   ` +
+        `with production fees ${o.allInPrice?.toFixed(3) ?? '-'}   markup ${o.markup?.toFixed(3) ?? '-'}`,
+    );
+  }
+  if (bet.review) console.log(`  NEEDS REVIEW: ${bet.review.reason}`);
   if (bet.settlement) {
     const s = bet.settlement;
     console.log(`  SETTLED condition=${s.conditionResolved} target=${s.targetResolved}  payout ${money(s.payout)}  result ${money(s.pnl)}`);
@@ -59,18 +74,32 @@ async function main(): Promise<void> {
     const pub = new GeminiPublic(config.baseUrl);
     const events = args[1] && !args[1].startsWith('--') ? [await pub.getEvent(args[1])] : await pub.listEvents('active');
     let shown = 0;
+    let refused = 0;
+    const c = (x: number | null, digits = 3) => (x === null ? '-' : x.toFixed(digits));
     for (const event of events) {
-      const pairs = linkedPairs(event, { tradableOnly: true, feeCoef: config.takerFeeCoef });
+      const all = linkedPairs(event, { feeCoef: config.takerFeeCoef, waiveMarkup: config.waiveMarkup });
+      const pairs = has('all') ? all : all.filter((p) => p.offer.offerable);
+      refused += all.filter((p) => !p.offer.offerable).length;
       if (pairs.length === 0) continue;
       console.log(`\n${event.title}  (${event.ticker}, expires ${event.expiryDate ?? '?'})`);
       for (const p of pairs) {
-        shown++;
+        const o = p.offer;
+        if (o.offerable) shown++;
+        const verdict = o.overridden ? 'REFUSED (waived for sandbox demo)' : o.verdict.toUpperCase();
         console.log(
-          `  given ${p.a.label} [bid ${p.a.bid}]  ->  ${p.b.label} [ask ${p.b.ask}]   ${p.conditionalPrice!.toFixed(3)} per $1   ${p.a.symbol} ${p.b.symbol}`,
+          `  given ${p.a.label} [${p.a.bid}/${p.a.ask}]  ->  ${p.b.label} [${p.b.bid}/${p.b.ask}]   ` +
+            `pay ${c(o.pricePaid)}  fair ${c(o.fairPrice)}  with prod fees ${c(o.allInPrice)}  markup ${c(o.markup)}  ` +
+            `cash-out/$100 ${c(o.cashOutPer100, 2)}  ${verdict}   ${p.a.symbol} ${p.b.symbol}` +
+            (o.reasons.length > 0 ? `\n      why: ${o.reasons.map((r) => r.message).join(' ')}` : ''),
         );
       }
     }
-    console.log(`\n${shown} tradable conditional bets across ${events.length} events.`);
+    console.log(`\n${shown} conditional bets on offer, ${refused} refused by the offer rule, across ${events.length} events.`);
+    return;
+  }
+
+  if (command === 'flow') {
+    console.log(JSON.stringify(flowTotals(ledger, flag('user')), null, 2));
     return;
   }
 
@@ -89,7 +118,7 @@ async function main(): Promise<void> {
       }
       await ensureBaseline(exchange, ledger, user);
       const bet = await placeConditionalBet(
-        { exchange, ledger, feeCoef: config.takerFeeCoef },
+        { exchange, ledger, feeCoef: config.takerFeeCoef, waiveMarkup: config.waiveMarkup },
         {
           user,
           eventTicker,
@@ -104,8 +133,8 @@ async function main(): Promise<void> {
       printBet(bet);
     } else if (command === 'settle') {
       const done = await settleBets({ exchange, ledger, feeCoef: config.takerFeeCoef });
-      for (const bet of done) printBet(bet);
-      console.log(`\n${done.length} bet(s) settled.`);
+      for (const bet of [...done.settled, ...done.needsReview]) printBet(bet);
+      console.log(`\n${done.settled.length} bet(s) settled, ${done.needsReview.length} flagged for review.`);
     } else if (command === 'recover') {
       console.log(`${await recoverBets({ exchange, ledger, feeCoef: config.takerFeeCoef })} order(s) repaired.`);
     } else if (command === 'reconcile') {
@@ -114,7 +143,7 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(r, null, 2));
       process.exitCode = r.ok ? 0 : 1;
     } else {
-      console.log('Commands: pairs [event] | bet ... | bets | settle | recover | reconcile');
+      console.log('Commands: pairs [event] [--all] | bet ... | bets | settle | recover | reconcile | flow');
       process.exitCode = 1;
     }
   } finally {

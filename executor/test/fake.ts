@@ -27,6 +27,13 @@ export class FakeExchange implements Exchange {
   failAfterSend: string | null = null;
   /** Taker fee coefficient the venue charges (0.07 mimics Gemini production). */
   feeCoef = 0;
+  /**
+   * What topOfBook reports when it differs from the real book: lets a test
+   * simulate the book thinning out between the depth read and the order.
+   */
+  readonly reportedDepth = new Map<string, Partial<Book>>();
+  /** When true, the depth read fails (as when Gemini sends nothing in time). */
+  depthUnavailable = false;
   /** Time stamped on new orders; tests can move it. */
   clock: () => Date = () => new Date('2026-11-17T23:30:00Z');
 
@@ -54,6 +61,30 @@ export class FakeExchange implements Exchange {
 
   setBook(strike: number, book: Partial<Book>): void {
     Object.assign(this.books.get(this.symbol(strike))!, book);
+  }
+
+  /** Marks one contract as not open for trading (Gemini uses "post_only", "closed", ...). */
+  setMarketState(strike: number, marketState: string): void {
+    this.event.contracts.find((x) => x.instrumentSymbol === this.symbol(strike))!.marketState = marketState;
+  }
+
+  /**
+   * Settles a contract WITHOUT a clean yes/no result, as a void or fractional
+   * settlement would: positions are closed out at `payPerContract` each.
+   */
+  settleUnclear(strike: number, reported: { resolutionSide?: string | null; settlementValue?: string | null }, payPerContract = 0): void {
+    const c = this.event.contracts.find((x) => x.instrumentSymbol === this.symbol(strike))!;
+    c.status = 'settled';
+    c.marketState = 'closed';
+    c.resolutionSide = (reported.resolutionSide ?? null) as GeminiContract['resolutionSide'];
+    c.settlementValue = reported.settlementValue ?? null;
+    c.resolvedAt = this.clock().toISOString();
+    for (const outcome of ['yes', 'no'] as const) {
+      const key = `${c.instrumentSymbol}|${outcome}`;
+      const held = this.positions.get(key) ?? 0;
+      if (held > 0) this.cashBalance = r(this.cashBalance + held * payPerContract);
+      this.positions.delete(key);
+    }
   }
 
   resolve(strike: number, side: 'yes' | 'no'): void {
@@ -135,4 +166,23 @@ export class FakeExchange implements Exchange {
   }
 
   async watchBook(_symbol: string, _onTick: (tick: BookTicker) => void): Promise<void> {}
+
+  async topOfBook(symbol: string): Promise<BookTicker> {
+    if (this.depthUnavailable) throw new Error(`No order-book depth arrived for ${symbol} within 4000ms`);
+    const book = this.books.get(symbol);
+    if (!book) throw new Error(`unknown symbol ${symbol}`);
+    const seen = { ...book, ...this.reportedDepth.get(symbol) };
+    return {
+      symbol: symbol.toUpperCase(),
+      bid: seen.bid,
+      bidSize: seen.bid === null ? null : seen.bidSize,
+      ask: seen.ask,
+      askSize: seen.ask === null ? null : seen.askSize,
+    };
+  }
+
+  /** The event as the list endpoint would return it. */
+  async listEvents(): Promise<GeminiEvent[]> {
+    return [await this.getEvent(this.event.ticker)];
+  }
 }

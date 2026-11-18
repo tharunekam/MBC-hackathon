@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import type { OfferQuote } from './offer.ts';
 
 /** One order sent to Gemini, identified by the tag we attach (`clientOrderId`). */
 export interface LegRecord {
@@ -37,9 +38,12 @@ export interface BetRecord {
    * unhedged  the hedge leg could not be completed and unwinding was not requested or failed
    * unwound   the hedge failed, so the position was sold back
    * failed    nothing was bought
-   * settled   Gemini has resolved the event
+   * settled   Gemini has resolved the event with a clean yes/no on both contracts
+   * needs_review  Gemini settled the event but NOT as a clean yes/no (void or
+   *               fractional). What Gemini reported is in `review`; the payout is
+   *               unknown to this service, so the bet is never scored.
    */
-  status: 'placing' | 'open' | 'unhedged' | 'unwound' | 'failed' | 'settled';
+  status: 'placing' | 'open' | 'unhedged' | 'unwound' | 'failed' | 'settled' | 'needs_review';
   legs: LegRecord[];
   /** Net dollars spent (buys minus any unwind proceeds). */
   cost: number;
@@ -51,6 +55,26 @@ export interface BetRecord {
     conditionalPrice: number | null;
     hedged: boolean;
   };
+  /** The offer rule's numbers and verdict at the moment the bet was placed. */
+  offer?: OfferQuote;
+  /** Present when the depth guard shrank the bet so both orders fit at the best price. */
+  stakeReduced?: {
+    requested: number;
+    /** Approximate dollars the smaller bet costs at the quoted price. */
+    reducedTo: number;
+    /** Contracts resting at the best price when the bet was sized. */
+    outcomeAvailable: number;
+    conditionAvailable: number;
+    reason: string;
+  };
+  /** Present on needs_review bets: exactly what Gemini reported for each contract. */
+  review?: {
+    reason: string;
+    checkedAt: string;
+    eventStatus: string | null;
+    condition: ReportedSettlement | null;
+    target: ReportedSettlement | null;
+  };
   settlement?: {
     conditionResolved: 'yes' | 'no';
     targetResolved: 'yes' | 'no';
@@ -59,6 +83,17 @@ export interface BetRecord {
     settledAt: string;
   };
   note?: string;
+}
+
+/** One contract's settlement fields, copied from Gemini as-is. */
+export interface ReportedSettlement {
+  symbol: string;
+  status: string | null;
+  marketState: string | null;
+  resolutionSide: string | null;
+  /** The reference price Gemini settled against (an index level, not a payout). */
+  settlementValue: string | null;
+  resolvedAt: string | null;
 }
 
 export interface IntentRecord {

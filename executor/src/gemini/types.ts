@@ -18,7 +18,8 @@ export interface GeminiContract {
   expiryDate?: string;
   strike?: { type?: string; value?: string } | null;
   prices?: GeminiPrices | null;
-  resolutionSide?: 'yes' | 'no' | null;
+  /** "yes" or "no" for a clean result; Gemini may report something else (or nothing) for a void or fractional settlement. */
+  resolutionSide?: string | null;
   resolvedAt?: string | null;
   settlementValue?: string | null;
 }
@@ -40,6 +41,8 @@ export type Side = 'buy' | 'sell';
 /** A row from POST /v1/prediction-markets/orders/history or /orders/active. */
 export interface GeminiOrderRecord {
   orderId: number | string;
+  /** The same id as text, exact to the last digit. Preferred when present. */
+  globalOrderId?: string;
   clientOrderId?: string;
   status: string;
   symbol: string;
@@ -81,4 +84,14 @@ export interface BookTicker {
   bidSize: number | null;
   ask: number | null;
   askSize: number | null;
+}
+
+/** Resting orders at the top price levels of one contract, in YES prices. Each level is [price, size]. */
+export interface DepthSnapshot {
+  /** Upper-cased instrument symbol. */
+  symbol: string;
+  /** Highest first. */
+  bids: Array<[number, number]>;
+  /** Lowest first. */
+  asks: Array<[number, number]>;
 }

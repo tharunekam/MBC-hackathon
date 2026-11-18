@@ -1,6 +1,9 @@
 import { randomBytes } from 'node:crypto';
 import type { Exchange, OrderRequest, OrderResult } from './exchange.ts';
-import type { BetRecord, Ledger, LegRecord } from './ledger.ts';
+import type { BetRecord, Ledger, LegRecord, ReportedSettlement } from './ledger.ts';
+import type { GeminiContract } from './gemini/types.ts';
+import { capToDepth, planForQuantity } from './offer.ts';
+import type { OfferQuote } from './offer.ts';
 import { findPair, toRung } from './pairs.ts';
 import { conditionalPrice } from './pricing.ts';
 import { PRICE_TICK, clean, feeRate, floorToStep, hedgeQuantity, payoffs, settlementPayout, takerFee } from './pricing.ts';
@@ -29,7 +32,30 @@ export interface Deps {
   newId?: () => string;
   /** Taker fee coefficient; 0 means the venue charges no fees. */
   feeCoef?: number;
+  /**
+   * Sandbox demo switch: allow pairs the offer rule refuses ONLY for markup.
+   * Every other refusal still applies. Off by default.
+   */
+  waiveMarkup?: boolean;
 }
+
+/**
+ * A bet turned down BEFORE any order was sent. `code` says why in one word;
+ * `quote` carries the offer rule's numbers when the pair could be priced.
+ */
+export class BetRefused extends Error {
+  readonly code: 'offer_refused' | 'market_closed' | 'no_depth' | 'insufficient_depth' | 'price_above_limit' | 'stake_too_small';
+  readonly quote?: OfferQuote;
+  constructor(code: BetRefused['code'], message: string, quote?: OfferQuote) {
+    super(message);
+    this.name = 'BetRefused';
+    this.code = code;
+    this.quote = quote;
+  }
+}
+
+/** How long after expiry an unclear settlement is given to turn into a clean yes/no before it is flagged. */
+export const REVIEW_GRACE_MS = 60_000;
 
 const MAX_HEDGE_ATTEMPTS = 3;
 const defaultId = () => randomBytes(4).toString('hex');
@@ -123,20 +149,82 @@ export async function placeConditionalBet(deps: Deps, req: BetRequest): Promise<
   }
 
   const feeCoef = deps.feeCoef ?? 0;
-  const event = await deps.exchange.getEvent(req.eventTicker);
-  const pair = findPair(event, req.conditionSymbol, req.targetSymbol, feeCoef);
-  if (!pair.a.open || !pair.b.open) throw new Error(`${event.ticker} is not open for trading right now.`);
+  // First read: confirms the two contracts really are a linked pair of this event.
+  const first = await deps.exchange.getEvent(req.eventTicker);
+  const named = findPair(first, req.conditionSymbol, req.targetSymbol, feeCoef, deps.waiveMarkup);
+
+  // Immediately before trading: the resting size on both legs, and a fresh read
+  // of the event for prices and market state. Nothing is sent if any of it fails.
+  const [depthA, depthB, event] = await Promise.all([
+    deps.exchange.topOfBook(named.a.symbol),
+    deps.exchange.topOfBook(named.b.symbol),
+    deps.exchange.getEvent(req.eventTicker),
+  ]).catch((err: unknown) => {
+    throw new BetRefused(
+      'no_depth',
+      `Could not read the live order book, so no order was sent (${err instanceof Error ? err.message : String(err)}).`,
+    );
+  });
+  const pair = findPair(event, req.conditionSymbol, req.targetSymbol, feeCoef, deps.waiveMarkup);
+
+  if (!pair.a.open || !pair.b.open) {
+    const closed = [pair.a, pair.b].filter((r) => !r.open).map((r) => `"${r.label}" is ${r.state}`);
+    throw new BetRefused('market_closed', `${event.ticker} is not open for trading right now: ${closed.join(', ')}. No order was sent.`, pair.offer);
+  }
+  if (!pair.offer.offerable) {
+    throw new BetRefused(
+      'offer_refused',
+      `This bet is not offered: ${pair.offer.reasons.map((r) => r.message).join(' ')} No order was sent.`,
+      pair.offer,
+    );
+  }
   const quote = pair.conditionalPrice;
   if (quote === null || pair.a.bid === null || pair.b.ask === null) {
-    throw new Error('No conditional price is available: the book is empty or the outcome costs as much as the condition.');
+    throw new BetRefused(
+      'offer_refused',
+      'No conditional price is available: the book is empty or the outcome costs as much as the condition.',
+      pair.offer,
+    );
   }
   const maxPrice = req.maxPrice ?? Math.min(0.99, clean(quote + 0.05));
   if (quote > maxPrice) {
-    throw new Error(`The live price is ${quote.toFixed(3)} per $1, above your limit of ${maxPrice.toFixed(3)}.`);
+    throw new BetRefused(
+      'price_above_limit',
+      `The live price is ${quote.toFixed(3)} per $1, above your limit of ${maxPrice.toFixed(3)}.`,
+      pair.offer,
+    );
   }
 
-  const quantity = floorToStep(req.stake / quote);
-  if (quantity < 0.01) throw new Error(`A $${req.stake} stake is too small at a price of ${quote.toFixed(3)}.`);
+  const wanted = floorToStep(req.stake / quote);
+  if (wanted < 0.01) throw new BetRefused('stake_too_small', `A $${req.stake} stake is too small at a price of ${quote.toFixed(3)}.`, pair.offer);
+
+  // Depth guard: an immediate-or-cancel order only fills what rests at the best
+  // price, so size the bet to what is really there on BOTH legs. Size only
+  // counts if it sits at the quoted price or better.
+  const outcomeAvailable = depthB.ask !== null && depthB.ask <= pair.b.ask + 1e-9 ? (depthB.askSize ?? 0) : 0;
+  const conditionAvailable = depthA.bid !== null && depthA.bid >= pair.a.bid - 1e-9 ? (depthA.bidSize ?? 0) : 0;
+  const quantity = capToDepth(wanted, pair.b.ask, pair.a.bid, feeCoef, outcomeAvailable, conditionAvailable);
+  if (quantity < 0.01) {
+    throw new BetRefused(
+      'insufficient_depth',
+      `Not enough is on offer at the quoted price right now (${outcomeAvailable} contracts on "${pair.b.label}", ` +
+        `${conditionAvailable} on "${pair.a.label}"). No order was sent; try again in a moment.`,
+      pair.offer,
+    );
+  }
+  let stakeReduced: BetRecord['stakeReduced'];
+  if (quantity < wanted - 1e-9) {
+    const reducedTo = Math.round(planForQuantity(quantity, pair.b.ask, pair.a.bid, feeCoef).cost * 100) / 100;
+    stakeReduced = {
+      requested: req.stake,
+      reducedTo,
+      outcomeAvailable,
+      conditionAvailable,
+      reason:
+        `Only ${outcomeAvailable} contracts were on offer on "${pair.b.label}" and ${conditionAvailable} on "${pair.a.label}" ` +
+        `at the best price, so the bet was reduced from $${req.stake.toFixed(2)} to about $${reducedTo.toFixed(2)}.`,
+    };
+  }
 
   const id = (deps.newId ?? defaultId)();
   const bet: BetRecord = {
@@ -153,6 +241,8 @@ export async function placeConditionalBet(deps: Deps, req: BetRequest): Promise<
     status: 'placing',
     legs: [],
     cost: 0,
+    offer: pair.offer,
+    ...(stakeReduced ? { stakeReduced } : {}),
   };
   deps.ledger.data.bets.push(bet);
   deps.ledger.save();
@@ -286,9 +376,12 @@ async function unwind(deps: Deps, bet: BetRecord, slip: number): Promise<void> {
  * Fills in any order that was sent but whose result was never recorded
  * (for example, the process stopped mid-bet). Looks each one up by its tag.
  */
-export async function recoverBets(deps: Deps): Promise<number> {
+export async function recoverBets(deps: Deps, user?: string): Promise<number> {
   let fixed = 0;
-  for (const bet of deps.ledger.data.bets) {
+  // A copy of the list: bets placed while this runs are in flight, not interrupted, and must not be touched.
+  for (const bet of [...deps.ledger.data.bets]) {
+    // Orders can only be looked up on the account that sent them.
+    if (user !== undefined && bet.user !== user) continue;
     const pending = bet.legs.filter((l) => l.status === 'sent');
     if (pending.length === 0 && bet.status !== 'placing') continue;
     for (const leg of pending) {
@@ -311,33 +404,99 @@ export async function recoverBets(deps: Deps): Promise<number> {
   return fixed;
 }
 
-/** Marks bets settled once Gemini has resolved both contracts, and records the result. */
-export async function settleBets(deps: Deps): Promise<BetRecord[]> {
+const isClean = (side: string | null | undefined): side is 'yes' | 'no' => side === 'yes' || side === 'no';
+const isSettled = (c: GeminiContract | undefined): boolean => c !== undefined && (c.status === 'settled' || Boolean(c.resolvedAt));
+
+function reported(c: GeminiContract | undefined, symbol: string): ReportedSettlement | null {
+  if (!c) return null;
+  return {
+    symbol,
+    status: c.status ?? null,
+    marketState: c.marketState ?? null,
+    resolutionSide: c.resolutionSide ?? null,
+    settlementValue: c.settlementValue ?? null,
+    resolvedAt: c.resolvedAt ?? null,
+  };
+}
+
+export interface SettleResult {
+  /** Bets that settled cleanly on this pass. */
+  settled: BetRecord[];
+  /** Bets newly flagged because Gemini settled them without a clean yes/no. */
+  needsReview: BetRecord[];
+}
+
+/** True when a bet's result may be used for scoring: settled with a clean yes/no on both contracts. */
+export const isScorable = (bet: BetRecord): boolean => bet.status === 'settled' && bet.settlement !== undefined;
+
+/**
+ * Records results once Gemini has resolved both contracts.
+ *
+ *   clean yes/no on both      -> "settled", with payout and profit
+ *   settled, but not clean    -> "needs_review": what Gemini reported is saved,
+ *                                no payout is guessed, the bet is never scored
+ *   not settled yet           -> left alone
+ *
+ * A bet can therefore never sit "open" forever after its event has settled.
+ * Bets in needs_review are re-checked each pass and promoted to "settled" if
+ * Gemini later reports a clean result.
+ */
+export async function settleBets(deps: Deps): Promise<SettleResult> {
   const now = deps.now ?? (() => new Date());
-  const settled: BetRecord[] = [];
+  const result: SettleResult = { settled: [], needsReview: [] };
   const events = new Map<string, Awaited<ReturnType<Exchange['getEvent']>>>();
 
   for (const bet of deps.ledger.data.bets) {
-    if (bet.status !== 'open' && bet.status !== 'unhedged') continue;
+    if (bet.status !== 'open' && bet.status !== 'unhedged' && bet.status !== 'needs_review') continue;
     if (!events.has(bet.eventTicker)) events.set(bet.eventTicker, await deps.exchange.getEvent(bet.eventTicker));
     const event = events.get(bet.eventTicker)!;
-    const aSide = event.contracts.find((c) => c.instrumentSymbol === bet.condition.symbol)?.resolutionSide;
-    const bSide = event.contracts.find((c) => c.instrumentSymbol === bet.target.symbol)?.resolutionSide;
-    if ((aSide !== 'yes' && aSide !== 'no') || (bSide !== 'yes' && bSide !== 'no')) continue;
+    const aContract = event.contracts.find((c) => c.instrumentSymbol === bet.condition.symbol);
+    const bContract = event.contracts.find((c) => c.instrumentSymbol === bet.target.symbol);
+    const aSide = aContract?.resolutionSide;
+    const bSide = bContract?.resolutionSide;
 
-    const b = netHolding(bet, bet.target.symbol, 'yes');
-    const a = netHolding(bet, bet.condition.symbol, 'no');
-    const payout = settlementPayout({ quantity: b.quantity, avgPrice: 0 }, { quantity: a.quantity, avgPrice: 0 }, aSide, bSide);
-    bet.settlement = {
-      conditionResolved: aSide,
-      targetResolved: bSide,
-      payout,
-      pnl: clean(payout - bet.cost),
-      settledAt: now().toISOString(),
+    if (isClean(aSide) && isClean(bSide)) {
+      const b = netHolding(bet, bet.target.symbol, 'yes');
+      const a = netHolding(bet, bet.condition.symbol, 'no');
+      const payout = settlementPayout({ quantity: b.quantity, avgPrice: 0 }, { quantity: a.quantity, avgPrice: 0 }, aSide, bSide);
+      bet.settlement = {
+        conditionResolved: aSide,
+        targetResolved: bSide,
+        payout,
+        pnl: clean(payout - bet.cost),
+        settledAt: now().toISOString(),
+      };
+      if (bet.status === 'needs_review') bet.note = 'Gemini reported a clean result after this bet had been flagged for review.';
+      bet.status = 'settled';
+      result.settled.push(bet);
+      continue;
+    }
+
+    if (bet.status === 'needs_review') continue; // already flagged; still no clean result
+
+    // Settled, but not as a clean yes/no? Both contracts must be settled (or gone from a settled event).
+    const eventSettled = event.status === 'settled';
+    const aDone = isSettled(aContract) || (eventSettled && !aContract);
+    const bDone = isSettled(bContract) || (eventSettled && !bContract);
+    if (!aDone || !bDone) continue; // not settled yet
+    // The result can trail the "settled" flag by a few seconds; give it a minute past expiry.
+    const expiry = bet.expiry ? Date.parse(bet.expiry) : NaN;
+    if (Number.isFinite(expiry) && now().getTime() - expiry < REVIEW_GRACE_MS) continue;
+
+    const unclear = [
+      isClean(aSide) ? null : `condition reported "${aSide ?? 'nothing'}"`,
+      isClean(bSide) ? null : `outcome reported "${bSide ?? 'nothing'}"`,
+    ].filter((x) => x !== null);
+    bet.review = {
+      reason: `Gemini settled this event without a clean yes/no result (${unclear.join(', ')}). The payout is not known to Given; check the account.`,
+      checkedAt: now().toISOString(),
+      eventStatus: event.status ?? null,
+      condition: reported(aContract, bet.condition.symbol),
+      target: reported(bContract, bet.target.symbol),
     };
-    bet.status = 'settled';
-    settled.push(bet);
+    bet.status = 'needs_review';
+    result.needsReview.push(bet);
   }
-  if (settled.length > 0) deps.ledger.save();
-  return settled;
+  if (result.settled.length > 0 || result.needsReview.length > 0) deps.ledger.save();
+  return result;
 }

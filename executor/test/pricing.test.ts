@@ -144,3 +144,14 @@ test('fees: the hedge covers the stake AND both fees at the worst allowed fill',
     }
   }
 });
+
+test('Gemini order ids survive parsing exactly (they are too long for a JavaScript number)', async () => {
+  const { parseGeminiJson } = await import('../src/gemini/rest.ts');
+  // Two real ids from the sandbox on 2026-11-17 that a plain JSON.parse rounds to the same number.
+  const raw = '{"orders":[{"orderId":145853902320997643,"quantity":"0.6"},{"orderId": 145853902320997630,"quantity":"1"}]}';
+  assert.equal(JSON.parse(raw).orders[0].orderId, JSON.parse(raw).orders[1].orderId); // the bug
+  const parsed = parseGeminiJson<{ orders: Array<{ orderId: string; quantity: string }> }>(raw);
+  assert.equal(parsed.orders[0]!.orderId, '145853902320997643');
+  assert.equal(parsed.orders[1]!.orderId, '145853902320997630');
+  assert.equal(parsed.orders[0]!.quantity, '0.6');
+});

@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import WebSocket from 'ws';
 import type { Credentials } from '../config.ts';
 import { wsHeaders } from './auth.ts';
-import type { BookTicker, OrderUpdate } from './types.ts';
+import type { BookTicker, DepthSnapshot, OrderUpdate } from './types.ts';
 
 const TERMINAL = new Set(['FILLED', 'CANCELED', 'REJECTED', 'EXPIRED']);
 
@@ -29,9 +29,23 @@ export interface PlaceOrderAck {
   symbol: string;
 }
 
+/** Gemini sends an empty string for a missing side of the book; that is "nothing there", not zero. */
 const num = (v: unknown): number | null => {
+  if (typeof v === 'string' && v.trim() === '') return null;
   const n = typeof v === 'string' || typeof v === 'number' ? Number(v) : NaN;
   return Number.isFinite(n) ? n : null;
+};
+
+const levels = (v: unknown): Array<[number, number]> => {
+  if (!Array.isArray(v)) return [];
+  const out: Array<[number, number]> = [];
+  for (const row of v) {
+    if (!Array.isArray(row)) continue;
+    const price = num(row[0]);
+    const size = num(row[1]);
+    if (price !== null && size !== null && size > 0) out.push([price, size]);
+  }
+  return out;
 };
 
 /**
@@ -40,6 +54,7 @@ const num = (v: unknown): number | null => {
  * Emits:
  *   'orderUpdate' (OrderUpdate)  - from the private `orders@account` stream
  *   'bookTicker'  (BookTicker)   - best bid/ask for subscribed symbols
+ *   'depth'       (DepthSnapshot) - top five price levels, while a depth read is in progress
  *   'open' / 'close'
  *
  * Lessons from testing against the sandbox that this class encodes:
@@ -59,6 +74,7 @@ export class GeminiWs extends EventEmitter {
   private connecting: Promise<void> | null = null;
   private closedByUs = false;
   private reconnectDelay = 1000;
+  private readonly depthReads = new Map<string, Promise<DepthSnapshot>>();
 
   constructor(creds: Credentials, wsUrl: string) {
     super();
@@ -176,6 +192,13 @@ export class GeminiWs extends EventEmitter {
       return;
     }
 
+    // depth5: {"lastUpdateId":..., "symbol":"gemi-...", "bids":[["0.83","1.00"],...], "asks":[["0.97","22.00"],...]}
+    if (typeof msg.symbol === 'string' && ('bids' in msg || 'asks' in msg)) {
+      const snapshot: DepthSnapshot = { symbol: msg.symbol.toUpperCase(), bids: levels(msg.bids), asks: levels(msg.asks) };
+      this.emit('depth', snapshot);
+      return;
+    }
+
     // bookTicker: {"s":"gemi-...","b":"0.03","B":"64.00","a":"0.10","A":"10.00",...}
     if (typeof msg.s === 'string' && ('b' in msg || 'a' in msg) && !('bids' in msg)) {
       const tick: BookTicker = {
@@ -196,6 +219,56 @@ export class GeminiWs extends EventEmitter {
     this.streams.add(stream);
     await this.connect();
     await this.send('SUBSCRIBE', [stream]);
+  }
+
+  /**
+   * Reads the resting size at the top price levels of one contract, right now.
+   * Subscribes to `{symbol}@depth5` (Gemini pushes a snapshot about every
+   * second, the first within ~300ms), takes one snapshot and unsubscribes, so
+   * expired hourly contracts never pile up as subscriptions. Rejects if nothing
+   * arrives in time: the caller must not trade blind.
+   */
+  depth(symbol: string, timeoutMs = 4000): Promise<DepthSnapshot> {
+    const key = symbol.toUpperCase();
+    const running = this.depthReads.get(key);
+    if (running) return running;
+    const read = this.readDepth(symbol, key, timeoutMs).finally(() => this.depthReads.delete(key));
+    this.depthReads.set(key, read);
+    return read;
+  }
+
+  private async readDepth(symbol: string, key: string, timeoutMs: number): Promise<DepthSnapshot> {
+    await this.connect();
+    const stream = `${symbol}@depth5`;
+    const snapshot = new Promise<DepthSnapshot>((resolve, reject) => {
+      const onDepth = (d: DepthSnapshot) => {
+        if (d.symbol !== key) return;
+        cleanup();
+        resolve(d);
+      };
+      const onClose = () => {
+        cleanup();
+        reject(new Error(`Gemini WebSocket closed before the order book for ${symbol} arrived`));
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error(`No order-book depth arrived for ${symbol} within ${timeoutMs}ms`));
+      }, timeoutMs);
+      const cleanup = () => {
+        clearTimeout(timer);
+        this.off('depth', onDepth);
+        this.off('close', onClose);
+      };
+      this.on('depth', onDepth);
+      this.on('close', onClose);
+    });
+    snapshot.catch(() => undefined); // the awaiting caller reports it; this stops a stray "unhandled" warning
+    try {
+      await this.send('SUBSCRIBE', [stream]);
+      return await snapshot;
+    } finally {
+      if (this.isOpen) this.send('UNSUBSCRIBE', [stream]).catch(() => undefined);
+    }
   }
 
   async placeOrder(params: PlaceOrderParams): Promise<PlaceOrderAck> {

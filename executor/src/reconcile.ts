@@ -15,6 +15,11 @@ export interface ReconcileReport {
   expectedCash: number | null;
   actualCash: number;
   cashDifference: number | null;
+  /**
+   * Bets Gemini settled without a clean yes/no. Their payout is unknown here,
+   * so any cash they paid shows up as a difference until someone reviews them.
+   */
+  betsNeedingReview: string[];
   ok: boolean;
 }
 
@@ -90,6 +95,7 @@ export async function reconcile(exchange: Exchange, ledger: Ledger, user: string
     expectedCash,
     actualCash,
     cashDifference,
+    betsNeedingReview: ledger.data.bets.filter((b) => b.user === user && b.status === 'needs_review').map((b) => b.id),
     ok: mismatches.length === 0 && (cashDifference === null || Math.abs(cashDifference) < 0.005),
   };
 }
