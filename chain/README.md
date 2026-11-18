@@ -30,7 +30,7 @@ test in `test/memo.test.ts`, so a verifier written anywhere else can reproduce i
 
 ```bash
 cd chain && npm install
-npm test                     # 64 tests, no network
+npm test                     # 122 tests, no network
 GIVEN_CHAIN=fake npm start   # in-memory chain: no SOL needed; signatures are not real and are labelled "test chain"
 ```
 
