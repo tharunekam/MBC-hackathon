@@ -32,6 +32,7 @@ import {
 import { findPair, ladder, linkedPairs } from './pairs.ts';
 import type { LinkedPair, Rung } from './pairs.ts';
 import { floorToStep } from './pricing.ts';
+import { createLimiter } from './limiter.ts';
 import { ensureBaseline, reconcile } from './reconcile.ts';
 
 export interface ApiDeps {
@@ -424,20 +425,10 @@ export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResp
   };
 
   // Per-client limiter for the routes that spend money or hit Gemini hard.
-  const hits = new Map<string, number[]>();
+  const limiter = createLimiter(deps.rateLimit, () => now().getTime());
   const limited = (req: IncomingMessage): boolean => {
-    if (!deps.rateLimit) return false;
     const fwd = deps.trustProxy ? String(req.headers['x-forwarded-for'] ?? '').split(',')[0]?.trim() : '';
-    const who = fwd || req.socket.remoteAddress || 'unknown';
-    const t = now().getTime();
-    const recent = (hits.get(who) ?? []).filter((x) => t - x < deps.rateLimit!.windowMs);
-    if (recent.length >= deps.rateLimit.max) {
-      hits.set(who, recent);
-      return true;
-    }
-    recent.push(t);
-    hits.set(who, recent);
-    return false;
+    return limiter.limited(fwd || req.socket.remoteAddress || 'unknown');
   };
 
   const routes: Record<string, Partial<Record<'GET' | 'POST', (q: URLSearchParams, req: IncomingMessage) => Promise<unknown>>>> = {

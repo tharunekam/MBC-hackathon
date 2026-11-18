@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, writeSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { OfferQuote } from './offer.ts';
 
@@ -127,6 +127,18 @@ export interface LedgerData {
 
 const empty = (): LedgerData => ({ version: 1, baselines: {}, bets: [], intents: [] });
 
+/** The ledger file exists but cannot be trusted. Never swallowed. */
+export class LedgerError extends Error {}
+
+function readLedger(path: string): LedgerData | null {
+  try {
+    const v = JSON.parse(readFileSync(path, 'utf8')) as Partial<LedgerData> | null;
+    return v !== null && typeof v === 'object' && v.version === 1 && Array.isArray(v.bets) ? (v as LedgerData) : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The service's own record of what it did, in one JSON file. Gemini positions
  * are netted per account, so per-bet results can only come from here.
@@ -136,19 +148,47 @@ export class Ledger {
   readonly path: string;
   data: LedgerData;
 
-  constructor(path: string) {
+  constructor(path: string, warn: (line: string) => void = (l) => console.error(l)) {
     this.path = path;
-    this.data = existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as LedgerData) : empty();
+    const bak = `${path}.bak`;
+    let loaded: LedgerData | null = null;
+    if (existsSync(path)) {
+      loaded = readLedger(path);
+      if (!loaded) {
+        loaded = existsSync(bak) ? readLedger(bak) : null;
+        if (!loaded) throw new LedgerError(`${path} exists but is not a valid ledger, and there is no usable backup. Refusing to start: an empty ledger would forget every order sent, and the next reconcile would call them mismatches. Restore it from a copy, or move it aside if you really want to begin again.`);
+        warn(`[executor] ${path} was damaged; restored the previous copy (${bak}). Orders sent since that copy was written are NOT in it: run /reconcile before trading.`);
+      }
+    } else if (existsSync(bak)) {
+      loaded = readLedger(bak);
+      if (!loaded) throw new LedgerError(`${path} is missing and ${bak} is not a valid ledger. Refusing to start empty.`);
+      warn(`[executor] ${path} was missing; restored ${bak}. Run /reconcile before trading.`);
+    }
+    this.data = loaded ?? empty();
     this.data.baselines ??= {};
     this.data.bets ??= [];
     this.data.intents ??= [];
   }
 
+  /** Durable: temp file fsynced, the previous good copy kept as .bak, then renamed into place and the directory synced. */
   save(): void {
     mkdirSync(dirname(this.path), { recursive: true });
     const tmp = `${this.path}.tmp`;
-    writeFileSync(tmp, JSON.stringify(this.data, null, 2));
+    const fd = openSync(tmp, 'w', 0o600);
+    try {
+      writeSync(fd, JSON.stringify(this.data, null, 2));
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    if (existsSync(this.path) && readLedger(this.path)) copyFileSync(this.path, `${this.path}.bak`); // never replace a good backup with a bad file
     renameSync(tmp, this.path);
+    const dir = openSync(dirname(this.path), 'r');
+    try {
+      fsyncSync(dir);
+    } finally {
+      closeSync(dir);
+    }
   }
 
   bet(id: string): BetRecord | undefined {
