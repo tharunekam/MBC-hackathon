@@ -63,8 +63,8 @@ contracts listed by Gemini directly, for which Given is the demand evidence.
 | 2:20 | Proof page: reconcile to the cent; Flow to Gemini | "Our books match Gemini's, and this is the order flow we send them." |
 | 2:40 | Leaderboard | "Ranked by edge over the market, fed by a QuickNode Stream." |
 
-Record on real devnet and the Gemini sandbox, not the local test exchange. **FILL** (blocked on funding the wallet and
-Gemini keys).
+Record on real devnet and the Gemini sandbox, not the local test exchange. **FILL** (blocked on Gemini keys; the wallet is funded and the
+devnet path has run for real).
 
 ## Five-minute pitch
 

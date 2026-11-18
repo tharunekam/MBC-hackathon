@@ -47,7 +47,7 @@ settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is a
 | T-V2 host the executor | Protections built and tested (pinned user, stake cap, rate limit, kill switch, refuses unsafe bind); **no deployment yet** |
 | T-V3 `GET /reconcile` | **Done**. Event feed not needed: the chain service reads bets from the executor |
 | T-V4 to T-V8 seeder, history script, maker-first, replay, production quotes | Not started |
-| T-C0 Memo smoke test | Our parser verified on a real devnet Memo transaction; **commit and reveal on real devnet blocked on funding the authority key** |
+| T-C0 Memo smoke test | **Done 2026-11-18**: commit and reveal with our own key on real devnet, Memo only and through Victor's program (`npm run smoke`); the proof page verified real devnet records in a browser |
 | T-C1 Anchor program | **Done; the Wednesday gate is met.** `given_receipts` is deployed on devnet (`8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK`) and recorded a commit and a reveal there on 11-17 through the chain service's smoke test (links in `chain/README.md`). It checks each record in the same transaction as its Memo when `GIVEN_PROGRAM_ID` is set. **Still to do:** set `GIVEN_PROGRAM_ID` where the demo's chain service runs, once its authority key is funded. Memo records stay the fallback |
 | T-C2 chain service | **Done** (commit, reveal, verify, void handling) |
 | T-C3 Stream, filter, webhook | Webhook receiver done and tested; filter written from the docs, **Stream not created** (needs a QuickNode account and a public URL) |
@@ -56,8 +56,7 @@ settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is a
 
 **Blocked on the owners (nothing here can be done by us alone):**
 
-1. Fund the Solana authority key on devnet (`cd chain && npm run keygen` prints the public key; fund it at the faucet;
-   `npm run smoke` then proves the real path).
+1. ~~Fund the Solana authority key~~ **Done** (3 devnet SOL; a smoke run costs about 0.003).
 2. Put Gemini sandbox keys in `.env` (executor README), then `npm run dev:live`. This also unblocks the OAuth test.
 3. Create the QuickNode Stream (steps and filter in `chain/README.md` and `chain/quicknode/filter.js`) and read the real
    credit multiplier.

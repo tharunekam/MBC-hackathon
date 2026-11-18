@@ -244,3 +244,24 @@ describe('the rate limiter', () => {
     assert.equal(l.size(), 0);
   });
 });
+
+describe('more than one trusted authority', () => {
+  it('a public reveal names the key that actually signed it, not always ours', async () => {
+    const OTHER = 'OtherAuthority1111111111111111111111111111111';
+    const chain = new FakeChain();
+    const bets = new FakeBets();
+    const store = new Store(null, () => 'secret', () => {});
+    const service = new ChainService({ chain, store, bets, authorities: [chain.authority, OTHER], ...quiet });
+    const f = { betId: 'b9', event: 'BTC2611190100', condition: 'GEMI-BTC2611190100-HI62500', target: 'GEMI-BTC2611190100-HI63500', entryPrice: 0.4375, fairPrice: 0.41, at: 1763433000 };
+    const { commitHash } = await import('../src/hash.ts');
+    const { encode } = await import('../src/memo.ts');
+    const salt = 'cd'.repeat(16);
+    const commit = chain.forge(encode({ g: 1, t: 'c', h: commitHash(f, salt), u: 'quiet-otter-42', at: f.at }), OTHER);
+    const reveal = chain.forge(encode({ g: 1, t: 'r', c: commit.signature, u: 'quiet-otter-42', b: f.betId, e: f.event, k: f.condition, x: f.target, p: f.entryPrice, f: f.fairPrice, at: f.at, s: salt, o: 1 }), OTHER);
+    assert.equal(await service.ingest(commit.signature, 'rpc'), 'new');
+    assert.equal(await service.ingest(reveal.signature, 'rpc'), 'new');
+    const pub = service.publicReveal(reveal.signature);
+    assert.equal(pub.authority, OTHER);
+    assert.notEqual(pub.authority, chain.authority);
+  });
+});

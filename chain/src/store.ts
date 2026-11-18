@@ -56,6 +56,8 @@ export interface SeenReveal {
   /** Unix seconds of the reveal transaction, else when we first saw it. */
   revealedAt: number;
   via: 'stream' | 'rpc' | 'local';
+  /** The key that signed the reveal transaction. Needed because more than one authority can be trusted. */
+  signer?: string;
   verified: boolean;
   reason?: string;
 }

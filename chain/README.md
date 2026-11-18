@@ -84,11 +84,14 @@ so the payload is never trusted.
 
 | Verified by running | Not yet verified |
 |---|---|
-| Hash, memo format, tamper cases, forged signers, duplicate reveals (46 tests) | A commit and reveal on **real devnet** (needs the funded key; `npm run smoke` does it) |
+| Hash, memo format, tamper cases, forged signers, duplicate reveals (46 tests) | A commit and reveal driven by a **real executor bet** (the devnet runs below use a synthetic bet) |
 | Real executor + chain service over HTTP: win, refund, loss (5 e2e tests) | The filter against a live Stream's payload (`quicknode/filter.js` is written from the docs) |
 | Our parser against a real devnet Memo transaction (`npm run inspect -- --latest`) | QuickNode's HMAC construction (the shared-token header is the dependable path until a live delivery confirms it) |
 | Webhook auth, replay window, size cap, rate limit | Credits: the Solana devnet per-block multiplier and whether Streams runs on the free trial |
-| The program: hash check, tamper cases, double reveal, other signers (8 tests against the built program) | The program with the **demo's authority key** (the devnet run below used the deploy key as authority) |
+| The program: hash check, tamper cases, double reveal, other signers (8 tests against the built program) | |
+| **Our own authority key on real devnet, 2026-11-18**, Memo only and through the program: `npm run smoke` passed both ways. Through the program, a reveal with a changed fair price and a second reveal were refused on chain, and the program's own score matched (edge 0.59). Polled confirmation (no WebSocket) worked against the real network. Commit and reveal: [Memo](https://explorer.solana.com/tx/2dA2XhyJyomMuTVXNhs7CSR2nouBnUp96bd8V54djtNiA1aa8n93sy3ynxjgk3Rv86tDCifDJJ82Fdt4Rq7nKHQo?cluster=devnet) / [program](https://explorer.solana.com/tx/5TpSzKdai8P4DVrS7cneVMeR3nJtYKukwdHMnjNBzqPTUcnmrnUN13GL8VQ3gK8u9Qyh8gHRmpPWdN7NJgY6Sj6g?cluster=devnet) | |
+| **The proof page in a real browser on real devnet data** (Victor's first program call, ingested through the webhook route): all seven checks passed, program row included | |
+| Crash consistency: a salt is saved before its commit is sent; a commit or reveal that landed unrecorded is adopted on retry; a damaged store falls back to its backup or refuses to start (17 tests) | |
 | This service's program instructions against bytes captured from the real program (8 tests) | |
 | Memo + program in one transaction through this service, **on devnet** (`npm run smoke`, 2026-11-17): [commit](https://explorer.solana.com/tx/2DFD8UjXaPofQh82UXFpwsUm47ArcVkteQAxFSeyjp76CRFtr8tNK7JvZD8Th8NepmctkYqnDypHdKRavEJxQnQL?cluster=devnet), [reveal](https://explorer.solana.com/tx/45iRt5TRfiiyBTY8PDJNp4gbscBsTSfmsW4sZkqPSbKLPgAiGcFTLTKX9hvEgA8hYCP6oFx1iGsBL6LoBJ3DT9xU?cluster=devnet); a changed reveal and a repeated reveal were refused by the program | |
 

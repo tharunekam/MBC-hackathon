@@ -359,6 +359,7 @@ export class ChainService {
       edge: edge(memo.o, f.fairPrice),
       revealedAt: tx.blockTime ?? Math.floor(this.now().getTime() / 1000),
       via,
+      signer: tx.signer,
       verified: reason === undefined,
       ...(reason ? { reason } : {}),
     };
@@ -417,7 +418,8 @@ export class ChainService {
       edge: r.edge,
       revealedAt: new Date(r.revealedAt * 1000).toISOString(),
       network: this.chain.network,
-      authority: this.chain.authority,
+      // The key that actually signed THIS reveal: with several trusted authorities it is not always ours.
+      authority: r.signer ?? this.chain.authority,
       /** The on-chain program that checks each record, or null when records are Memos only. */
       program: this.chain.program ?? null,
     };
