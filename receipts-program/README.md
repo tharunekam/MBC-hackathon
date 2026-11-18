@@ -1,6 +1,7 @@
 # given_receipts: the Solana program behind Given's calls
 
-Anchor 1.2.2. Program id `8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK` (**not deployed on devnet yet**).
+Anchor 1.2.2. Program id [`8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK`](https://explorer.solana.com/address/8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK?cluster=devnet), deployed on Solana devnet on 2026-11-17.
+First call recorded through it: [commit](https://explorer.solana.com/tx/2DFD8UjXaPofQh82UXFpwsUm47ArcVkteQAxFSeyjp76CRFtr8tNK7JvZD8Th8NepmctkYqnDypHdKRavEJxQnQL?cluster=devnet), [reveal](https://explorer.solana.com/tx/45iRt5TRfiiyBTY8PDJNp4gbscBsTSfmsW4sZkqPSbKLPgAiGcFTLTKX9hvEgA8hYCP6oFx1iGsBL6LoBJ3DT9xU?cluster=devnet).
 
 The chain service (`../chain`) writes every call to Solana as a Memo. With `GIVEN_PROGRAM_ID` set it calls this program
 in the same transaction, so Solana itself checks the record:
@@ -39,9 +40,11 @@ WRITE_PROGRAM_FIXTURE="$PWD/../chain/test/fixtures/program.json" cargo test
 solana program deploy target/deploy/given_receipts.so --program-id target/deploy/given_receipts-keypair.json --url devnet
 ```
 
-About 1.3 devnet SOL stays locked as the program's rent; have about 1.5 SOL on the deploying key (an upgrade later
-needs the same amount again for a moment). The program id comes from `target/deploy/given_receipts-keypair.json`, which
-is not in git. Deploying from another machine needs that file, or a new id: `anchor keys sync`, rebuild, refresh the
-fixture, and use the new id in `GIVEN_PROGRAM_ID` and the READMEs.
+Already done for devnet; the command above is how. About 0.9 devnet SOL stays locked as the program's rent, and an
+upgrade needs about the same again for a moment. The upgrade authority is the key that deployed it
+(`5fE6B5sFJQURtKiJJepzqvHshJZR9SkKSMgeKB3oaGsN`), so only the machine holding that key can upgrade it. The program id
+comes from `target/deploy/given_receipts-keypair.json`, which is not in git: a fresh deployment from another machine
+needs a new id (`anchor keys sync`, rebuild, refresh the fixture, and use the new id in `GIVEN_PROGRAM_ID` and the
+READMEs).
 
 Then set `GIVEN_PROGRAM_ID` for the chain service and run its smoke test (`../chain/README.md`, "With the program").

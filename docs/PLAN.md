@@ -40,7 +40,7 @@ settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is a
 | T-V3 `GET /reconcile` | **Done**. Event feed not needed: the chain service reads bets from the executor |
 | T-V4 to T-V8 seeder, history script, maker-first, replay, production quotes | Not started |
 | T-C0 Memo smoke test | Our parser verified on a real devnet Memo transaction; **commit and reveal on real devnet blocked on funding the authority key** |
-| T-C1 Anchor program | **Built and tested, not deployed** (`receipts-program/`, 11-17 night, on the machine that has the toolchain). It checks each record in the same transaction as its Memo when `GIVEN_PROGRAM_ID` is set; run through the chain service on a local validator. Devnet deploy **blocked on funding** the deploy key (about 1.5 SOL). Memo records stay the fallback |
+| T-C1 Anchor program | **Done; the Wednesday gate is met.** `given_receipts` is deployed on devnet (`8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK`) and recorded a commit and a reveal there on 11-17 through the chain service's smoke test (links in `chain/README.md`). It checks each record in the same transaction as its Memo when `GIVEN_PROGRAM_ID` is set. **Still to do:** set `GIVEN_PROGRAM_ID` where the demo's chain service runs, once its authority key is funded. Memo records stay the fallback |
 | T-C2 chain service | **Done** (commit, reveal, verify, void handling) |
 | T-C3 Stream, filter, webhook | Webhook receiver done and tested; filter written from the docs, **Stream not created** (needs a QuickNode account and a public URL) |
 | T-C4 leaderboard, backfill | **Done** |

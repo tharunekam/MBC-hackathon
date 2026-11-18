@@ -14,8 +14,8 @@ Memo records are the shipped path and work alone. The memo format is in `src/mem
 test in `test/memo.test.ts`, so a verifier written anywhere else can reproduce it.
 
 **On-chain check (opt-in).** With `GIVEN_PROGRAM_ID` set, every record's transaction also calls our Solana program,
-`given_receipts` (`../receipts-program`, id `8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK`; built and tested, **not deployed on devnet
-yet**). The Memo is unchanged, so everything that reads Memos keeps working. What the program adds:
+`given_receipts` (`../receipts-program`, id [`8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK`](https://explorer.solana.com/address/8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK?cluster=devnet), deployed on devnet
+2026-11-17). The Memo is unchanged, so everything that reads Memos keeps working. What the program adds:
 
 - A commit creates one account holding the hash, the handle and Solana's own clock time. Nothing about the trade.
 - A reveal **fails, and its Memo with it**, unless the revealed fields and salt hash to what was committed. The program
@@ -54,11 +54,8 @@ demo: `SOLANA_RPC_URL=https://<your-endpoint>`.
 ### With the program
 
 ```bash
-# once, from a machine with the Solana and Anchor toolchains and about 1.5 devnet SOL (see ../receipts-program/README.md)
-cd ../receipts-program && anchor build && cargo test
-solana program deploy target/deploy/given_receipts.so --program-id target/deploy/given_receipts-keypair.json --url devnet
-
-# then, on the machine that runs this service: add to the repo-root .env and run the smoke test
+# The program is already deployed on devnet (how: ../receipts-program/README.md).
+# On the machine that runs this service: add to the repo-root .env and run the smoke test
 #   GIVEN_PROGRAM_ID=8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK
 npm run smoke     # as above, plus: the program's record before and after the reveal, a changed reveal refused,
                   # a repeated reveal refused, and the program's running score
@@ -91,9 +88,9 @@ so the payload is never trusted.
 | Real executor + chain service over HTTP: win, refund, loss (5 e2e tests) | The filter against a live Stream's payload (`quicknode/filter.js` is written from the docs) |
 | Our parser against a real devnet Memo transaction (`npm run inspect -- --latest`) | QuickNode's HMAC construction (the shared-token header is the dependable path until a live delivery confirms it) |
 | Webhook auth, replay window, size cap, rate limit | Credits: the Solana devnet per-block multiplier and whether Streams runs on the free trial |
-| The program: hash check, tamper cases, double reveal, other signers (8 tests against the built program) | The program **on devnet**: it is not deployed yet |
+| The program: hash check, tamper cases, double reveal, other signers (8 tests against the built program) | The program with the **demo's authority key** (the devnet run below used the deploy key as authority) |
 | This service's program instructions against bytes captured from the real program (8 tests) | |
-| Memo + program in one transaction, through this service, on a **local validator** (`npm run smoke` with `SOLANA_RPC_URL=http://127.0.0.1:8899`) | |
+| Memo + program in one transaction through this service, **on devnet** (`npm run smoke`, 2026-11-17): [commit](https://explorer.solana.com/tx/2DFD8UjXaPofQh82UXFpwsUm47ArcVkteQAxFSeyjp76CRFtr8tNK7JvZD8Th8NepmctkYqnDypHdKRavEJxQnQL?cluster=devnet), [reveal](https://explorer.solana.com/tx/45iRt5TRfiiyBTY8PDJNp4gbscBsTSfmsW4sZkqPSbKLPgAiGcFTLTKX9hvEgA8hYCP6oFx1iGsBL6LoBJ3DT9xU?cluster=devnet); a changed reveal and a repeated reveal were refused by the program | |
 
 ## Environment
 
