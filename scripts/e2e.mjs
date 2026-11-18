@@ -11,7 +11,7 @@
  * Exit code 0 only when every check passes.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -200,6 +200,20 @@ await check('a revealed call has a proof page with the verdict and the verify co
   await page.waitForSelector('text=Proof of a call');
   need(/Called it/.test(await page.locator('.proofcard').innerText()), 'no verdict on the card');
   need(await page.getByRole('heading', { name: 'Check it on Solana' }).count(), 'no verify section');
+});
+
+await check('the call can be saved as a picture to post', async () => {
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Save image' }).click()]);
+  const name = download.suggestedFilename();
+  need(/^given-[a-z]+-[a-z]+-\d+-[1-9A-HJ-NP-Za-km-z]{8}\.png$/.test(name), `saved as ${name}`);
+  const file = await download.path();
+  const bytes = readFileSync(file);
+  need(bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])), 'the file is not a PNG');
+  need(bytes.readUInt32BE(16) === 2400 && bytes.readUInt32BE(20) === 1260, `the picture is ${bytes.readUInt32BE(16)}x${bytes.readUInt32BE(20)}`);
+  need(bytes.length > 30_000, `the picture is only ${bytes.length} bytes: probably blank`);
+  await page.waitForSelector('text=Image saved');
+  // GIVEN_E2E_KEEP=<folder> keeps the picture so a person can look at it.
+  if (process.env.GIVEN_E2E_KEEP) copyFileSync(file, join(process.env.GIVEN_E2E_KEEP, name));
 });
 
 await check('Proof page reconciles to the cent', async () => {

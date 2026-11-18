@@ -1536,6 +1536,11 @@ button.chip:hover {
   padding-top: 16px;
   border-top: 1px solid var(--line);
 }
+.pc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
 .verify {
   margin-top: 24px;
   display: grid;
