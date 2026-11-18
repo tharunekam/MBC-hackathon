@@ -1,0 +1,112 @@
+# Submission kit
+
+*Draft, 2026-11-17. Everything here must be re-checked against the running product before it goes in Devpost, the video or
+the pitch. Items marked **FILL** need something that does not exist yet.*
+
+## Devpost form
+
+| Field | Value |
+|---|---|
+| Main track | Consumer Apps |
+| Chain award | Best use of Solana (opt in) |
+| Bounties (tick each, and the matching prize opt-in) | Gemini Prediction Markets · QuickNode Streams |
+| Not entering | Arc, ElevenLabs, Grok Bot |
+| Program ID(s) | `MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr` (the Memo program we write through). Authority key `2QfQ15Ha5VxvvwWqdsDdCyf6n8uxKfVDHh9GHZdFHeHz`. **There is no custom program; say so.** |
+| Repo | public GitHub URL **FILL** (the repo is private until the owner switches it) |
+| Demo | hosted URL **FILL** |
+| Video | YouTube unlisted or Drive "anyone with the link", checked logged out **FILL** |
+| Technologies | React, Vite, TypeScript, Node, Gemini Prediction Markets API (REST + WebSocket), Solana (Memo program), QuickNode Streams, WebCrypto |
+
+## The five written answers (draft)
+
+**What did you build?**
+Given is a consumer app for "money back if…" bets on Gemini prediction markets. You pick a condition and a target on a live
+price ladder: if the target is reached you win, if the condition fails you get your stake back, if the condition holds
+but the target is missed you lose the stake. Each bet is two real orders in the user's own Gemini account. Every call is
+recorded on Solana, committed before the result and revealed after, so a player can prove they made it first. A
+leaderboard ranks skill against the market's own odds.
+
+**What problem does it solve?**
+Prediction markets punish you for the half of a hunch you are unsure of. A parlay loses everything when its first leg
+fails. Sportsbooks sell "draw no bet" to fix that, but we found no one-tap version on a regulated exchange. Given builds it
+from contracts that already exist, shows exactly what it costs, and keeps all money and positions on Gemini.
+
+**How does it work?**
+On a ladder of contracts at rising thresholds, buying YES on the higher threshold plus a sized NO on the lower one pays the
+stake back if the lower threshold fails. The executor sizes the hedge so the refund covers the stake and fees, checks the
+book depth, places both orders over Gemini's WebSocket, and keeps a ledger that reconciles to Gemini's balance to the cent.
+A chain service writes a salted hash of each call to Solana through the Memo program and later reveals it; a QuickNode
+Stream delivers those transactions to the leaderboard, and a proof page re-checks them from Solana in the browser.
+
+**What makes it unique?**
+A refund-if-the-condition-fails bet as a one-tap product on a regulated exchange, an honest cost (four numbers on every
+quote, and pairs that cost too much are refused), and a track record that cannot be faked after the fact: commit-reveal
+on Solana, checked in your own browser. Crypto is invisible: no wallet, no gas, no seed phrase.
+
+**What would you build next?**
+A Solana program that validates reveals on chain; maker-first pricing, which roughly halves the cost and adds resting
+liquidity to Gemini's book; Gemini OAuth sign-in once production review allows it; sports ladders; and conditional
+contracts listed by Gemini directly, for which Given is the demand evidence.
+
+## 2–3 minute video (shot list)
+
+| Time | Shot | Say |
+|---|---|---|
+| 0:00 | Landing hero | "Bet on the second half of your hunch. If the first half doesn't happen, you get your money back." |
+| 0:15 | Builder: drag the two markers; numbers move | "Pick the thing that has to hold, then the thing you're betting on. Four numbers, no jargon: the chance, the fair price, what you pay, what you'd get selling now." |
+| 0:45 | "How this bet pays" card | "Win, stake back, or lose. The odds are the market's own." |
+| 1:00 | Place bet; receipt with two Gemini order IDs | "That is two real orders in my Gemini account." |
+| 1:20 | Solana step | "The call is fingerprinted on Solana before the result. The fingerprint shows nothing." |
+| 1:35 | My bets: a win, a refund, a loss | "A win, a refund, and a loss. We keep the loss." |
+| 1:55 | Reveal → proof page → Verify on Solana | "My browser reads both records from Solana and recomputes the fingerprint. Nothing here asks our server." |
+| 2:20 | Proof page: reconcile to the cent; Flow to Gemini | "Our books match Gemini's, and this is the order flow we send them." |
+| 2:40 | Leaderboard | "Ranked by edge over the market, fed by a QuickNode Stream." |
+
+Record on real devnet and the Gemini sandbox, not the local test exchange. **FILL** (blocked on funding the wallet and
+Gemini keys).
+
+## Five-minute pitch
+
+| Time | Beat |
+|---|---|
+| 0:00 | The hunch: "BTC holds 63k, will it reach 64.5k?" Every bet punishes the half you're unsure of |
+| 0:30 | The gap: a parlay loses everything when the first leg fails; we found no one-tap refund-if-fails bet on a regulated exchange |
+| 1:00 | Live demo (the golden path, trimmed) |
+| 2:30 | Under the hood: two Gemini orders, commit-reveal on Solana, the Stream, reconcile to the cent |
+| 3:15 | Honesty: the cost, the refused pairs, what we have not run on production |
+| 4:00 | What it gives Gemini: order flow, and demand evidence for conditional contracts |
+| 4:30 | Close |
+
+Both teammates must be able to explain every component. Rehearse three times aloud, once with the network off using the
+recorded fallback.
+
+## Questions to expect
+
+- **Why would anyone pay more than fair?** The refund is the product, the way "draw no bet" costs more than a straight bet.
+  We show the markup on every quote and refuse pairs where it is too large.
+- **What does it cost?** About 5¢ over fair per $1 on a good pair at production fees (median across Gemini ladders on our
+  2026-11-17 snapshot was about 6.8¢ at production fees, which is why the refusal rule exists). The sandbox charges none.
+- **What if a leg does not fill?** The bet is sized to the book's depth, only what filled is hedged, and if the hedge
+  cannot be completed the position is sold back. Every order is written to the ledger before it is sent.
+- **Is this allowed?** Our reading of Gemini's rules is that a member may trade their own account through the API; we have
+  not asked Gemini and production needs their review. We never imply a partnership. Say this plainly.
+- **Who can see my trades?** Nobody. The commit is a hash. A call becomes public only if the player reveals it, under an
+  anonymous handle, never an account.
+- **Why should the leaderboard be trusted?** Every row is a verified commit-reveal pair, signed by our key, re-read from
+  Solana. The one thing it takes on trust is the result, which our key attests with Gemini's order IDs as evidence.
+- **Why Solana, and why no program?** Cheap, fast records the app can pay for so users never touch a wallet. Memo records
+  made the whole path verifiable now; a program is the upgrade that would validate reveals on chain.
+- **How is this different from a parlay?** A parlay loses everything when its first leg fails. Given returns the stake.
+- **What happens in production?** Real fees, Gemini's OAuth review, and the value rule applies to real books (median spread
+  about 4¢). None of that has been run.
+
+## Before submitting
+
+- [ ] Hosted demo link works logged out and on a phone.
+- [ ] Repo public; secret scan over **history** (`.env`, `executor/data/`, `chain/data/` are ignored; run a scanner anyway).
+- [ ] Video recorded on real devnet + Gemini sandbox; checked logged out.
+- [ ] A real devnet commit and reveal exist, and `/verify/…` passes in the browser against them.
+- [ ] The Stream exists, is not paused, and a screenshot of its dashboard (network, dataset, filter, webhook) is in the README.
+- [ ] README claims re-checked against what is actually running; every "not built" item either built or still listed.
+- [ ] Devpost: track, chain award, both bounties, each prize opt-in ticked, all members, the five answers above.
+- [ ] Travel to Austin for Saturday's finals (in person is required to win any prize).

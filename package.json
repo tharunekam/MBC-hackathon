@@ -1,0 +1,16 @@
+{
+  "name": "given",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Given: money-back bets on Gemini prediction markets, recorded on Solana",
+  "engines": { "node": ">=23.6" },
+  "scripts": {
+    "dev": "node scripts/dev.mjs fake",
+    "dev:live": "node scripts/dev.mjs live",
+    "stop": "node scripts/dev.mjs stop",
+    "status": "node scripts/dev.mjs status",
+    "install:all": "npm --prefix executor install && npm --prefix chain install && npm --prefix web install",
+    "test": "npm --prefix executor test && npm --prefix chain test && npm --prefix web test",
+    "typecheck": "npm --prefix executor run typecheck && npm --prefix chain run typecheck && npm --prefix web run typecheck"
+  }
+}
