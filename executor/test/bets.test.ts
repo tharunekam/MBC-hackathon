@@ -549,3 +549,56 @@ test('settlement: an event marked settled is enough, even if a voided contract c
   assert.equal(bet.review!.condition!.status, 'voided');
   assert.equal(isScorable(bet), false);
 });
+
+/**
+ * Seen on Gemini's sandbox on 2026-11-18: a bet holding 1 YES on "$1,800 or above" (its target) and a second bet
+ * holding 3.52 NO on the same market (its condition) left one position of 2.52 NO and $1.00 more cash than the ledger
+ * expected. Gemini nets YES against NO at once and pays $1 a pair. The reconcile must count that, before and after
+ * settlement, or the proof page shows a difference for any two bets that share a strike.
+ */
+const SHARED_STRIKE = [
+  { strike: 1780, bid: 0.85, ask: 0.87 },
+  { strike: 1800, bid: 0.5, ask: 0.52 },
+  { strike: 1820, bid: 0.2, ask: 0.22 },
+];
+
+for (const [name, finish] of [
+  ['price ends between the strikes', { 1780: 'yes', 1800: 'no', 1820: 'no' }],
+  ['price ends above them all', { 1780: 'yes', 1800: 'yes', 1820: 'yes' }],
+  ['price ends below them all', { 1780: 'no', 1800: 'no', 1820: 'no' }],
+] as const) {
+  test(`two bets sharing a strike: Gemini's YES/NO netting still reconciles (${name})`, async () => {
+    const { exchange, ledger, deps } = setup(SHARED_STRIKE);
+    await ensureBaseline(exchange, ledger, 'primary');
+
+    // Bet 1 buys YES on 1800 (its target). Bet 2 buys NO on 1800 (its condition).
+    const first = await placeConditionalBet(deps, request(exchange, { conditionSymbol: exchange.symbol(1780), targetSymbol: exchange.symbol(1800), stake: 5 }));
+    const second = await placeConditionalBet(deps, request(exchange, { conditionSymbol: exchange.symbol(1800), targetSymbol: exchange.symbol(1820), stake: 5 }));
+    const yes = netHolding(first, exchange.symbol(1800), 'yes').quantity;
+    const no = netHolding(second, exchange.symbol(1800), 'no').quantity;
+    const pairs = Math.min(yes, no);
+    assert.ok(pairs > 0, 'the two bets really do hold opposite sides of one market');
+
+    // The exchange holds only the net position and has already paid out the pairs.
+    near(exchange.positions.get(`${exchange.symbol(1800)}|yes`)!, yes - pairs);
+    near(exchange.positions.get(`${exchange.symbol(1800)}|no`)!, no - pairs);
+    near(await exchange.cash(), 1000 - first.cost - second.cost + pairs);
+
+    const open = await reconcile(exchange, ledger, 'primary');
+    near(open.nettedContracts, pairs);
+    near(open.nettedCash, pairs);
+    near(open.cashDifference!, 0);
+    assert.equal(open.ok, true);
+
+    for (const [strike, side] of Object.entries(finish)) exchange.resolve(Number(strike), side);
+    const done = await settleBets(deps);
+    assert.equal(done.settled.length, 2);
+    assert.equal(done.needsReview.length, 0);
+
+    // After settlement the bets' own payouts cover the same money, so nothing is counted twice.
+    const closed = await reconcile(exchange, ledger, 'primary');
+    assert.equal(closed.nettedContracts, 0);
+    near(closed.cashDifference!, 0);
+    assert.equal(closed.ok, true);
+  });
+}

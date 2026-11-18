@@ -399,9 +399,9 @@ export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResp
       ...flowTotals(deps.ledger, user ?? undefined),
       productionFeeCoef: PRODUCTION_TAKER_FEE_COEF,
       note: deps.venueName
-        ? `These orders ran on ${deps.venueName}, not on Gemini. feesAtProductionRates is what the same fills would pay at Gemini's published taker rate.`
+        ? `These orders ran on ${deps.venueName}, not on Gemini. The fee figure is what the same fills would pay at Gemini's published taker rate.`
         : deps.isSandbox
-          ? 'These orders ran on the Gemini sandbox, which charges no fees. feesAtProductionRates is what the same fills would pay at Gemini\'s published taker rate.'
+          ? 'These orders ran on the Gemini sandbox, which charges no fees. The fee figure is what the same fills would pay at Gemini\'s published taker rate.'
           : 'feesAtProductionRates uses Gemini\'s published taker rate.',
     };
   }

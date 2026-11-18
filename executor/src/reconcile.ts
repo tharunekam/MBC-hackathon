@@ -11,7 +11,15 @@ export interface ReconcileReport {
   /** Net cash those untracked orders moved (negative = spent). Included in expectedCash. */
   untrackedCashFlow: number;
   baselineCash: number | null;
-  /** Baseline, minus buys, plus sells, minus modelled fees, plus settled payouts. */
+  /**
+   * Contracts where open bets hold both YES and NO on the same market. Gemini nets these at once and pays $1 for each
+   * pair straight away instead of at settlement (seen on the sandbox 2026-11-18: 1 YES from one bet and 3.52 NO from
+   * another left a position of 2.52 NO and $1.00 more cash). Typical cause: one bet's target is another bet's condition.
+   */
+  nettedContracts: number;
+  /** Cash Gemini has already paid for those pairs. Included in expectedCash; the bets' own payouts replace it at settlement. */
+  nettedCash: number;
+  /** Baseline, minus buys, plus sells, minus modelled fees, plus early netting payouts, plus settled payouts. */
   expectedCash: number | null;
   actualCash: number;
   cashDifference: number | null;
@@ -30,10 +38,38 @@ export async function ensureBaseline(exchange: Exchange, ledger: Ledger, user: s
   ledger.save();
 }
 
+/** What one contract pays when it resolves in the holder's favour, and so what Gemini pays for a netted YES + NO pair. */
+const SETTLEMENT_VALUE = 1;
+
+/**
+ * Per market, how many contracts the user's unsettled bets hold on BOTH sides. Each bet tracks its own legs, but Gemini
+ * keeps one position per market per account and nets YES against NO as soon as both exist, paying $1 a pair. A settled
+ * bet is left out: its recorded payout already counts every leg in full, which is the same money (the early $1 plus
+ * what the remaining position paid).
+ */
+export function nettedPairs(ledger: Ledger, user: string): Map<string, number> {
+  const held = new Map<string, { yes: number; no: number }>();
+  for (const bet of ledger.data.bets) {
+    if (bet.user !== user || bet.settlement) continue;
+    for (const leg of bet.legs) {
+      if (leg.quantityFilled <= 0) continue;
+      const h = held.get(leg.symbol) ?? { yes: 0, no: 0 };
+      h[leg.outcome] += (leg.side === 'buy' ? 1 : -1) * leg.quantityFilled;
+      held.set(leg.symbol, h);
+    }
+  }
+  const out = new Map<string, number>();
+  for (const [symbol, h] of held) {
+    const pairs = clean(Math.min(h.yes, h.no));
+    if (pairs > 0) out.set(symbol, pairs);
+  }
+  return out;
+}
+
 /**
  * Checks the ledger against Gemini two ways:
  *   1. every order we recorded matches Gemini's record of it (quantity and price), and
- *   2. cash ties out: baseline - buys + sells + payouts = the live balance.
+ *   2. cash ties out: baseline - buys + sells + early netting payouts + settled payouts = the live balance.
  * Orders placed outside this service since the baseline are counted in the cash
  * check and reported; positions they leave open will show up as a difference
  * when they settle.
@@ -71,10 +107,14 @@ export async function reconcile(exchange: Exchange, ledger: Ledger, user: string
     untracked.reduce((sum, o) => sum + (o.side === 'buy' ? -1 : 1) * o.filledQuantity * (o.avgPrice ?? 0), 0),
   );
 
+  const netted = nettedPairs(ledger, user);
+  const nettedContracts = clean([...netted.values()].reduce((sum, q) => sum + q, 0));
+  const nettedCash = clean(nettedContracts * SETTLEMENT_VALUE);
+
   const actualCash = await exchange.cash();
   let expectedCash: number | null = null;
   if (baseline) {
-    let cash = baseline.cash + untrackedCashFlow;
+    let cash = baseline.cash + untrackedCashFlow + nettedCash;
     for (const leg of legs) {
       if (leg.quantityFilled <= 0 || leg.avgPrice === null) continue;
       cash += (leg.side === 'buy' ? -1 : 1) * leg.quantityFilled * leg.avgPrice - (leg.fee ?? 0);
@@ -91,6 +131,8 @@ export async function reconcile(exchange: Exchange, ledger: Ledger, user: string
     mismatches,
     untrackedOrders: untracked.length,
     untrackedCashFlow,
+    nettedContracts,
+    nettedCash,
     baselineCash: baseline?.cash ?? null,
     expectedCash,
     actualCash,
