@@ -122,11 +122,13 @@ Hosts: sandbox REST `https://api.sandbox.gemini.com`, sandbox WebSocket
   inside the few seconds between a bet's two orders; untested.
 - **[verified 2026-11-18]** A contract's state can be `active/post_only`: the
   book is visible but taker orders are not accepted, so the offer rule refuses
-  the pair as `market_closed`. Seen on the hourly BTC and XRP ladders from about
-  30 minutes before expiry, while ETH and SOL in the same hour stayed
-  `active/open` and took orders until at least 25 minutes before. We do not
-  know the rule. **Do not plan a live demo bet inside the last half hour of a
-  ladder.**
+  the pair as `market_closed`. What we saw on the sandbox's hourly ladders:
+  **every newly listed ladder was post-only for at least its first six
+  minutes** (all 45 contracts of the 07:00 UTC ladders, from 06:03 to 06:06),
+  and BTC and XRP also showed it for a few minutes around 25 to 30 minutes
+  before expiry while ETH and SOL stayed `active/open`. We do not know the
+  rule. **For a live demo bet, pick a ladder that has been open a while and
+  check its state first; do not count on the top of the hour.**
 - **[verified]** `clientOrderId` is echoed in `orderUpdate` (`c`) and in REST
   order records. **[docs]** Length limit is 36 characters in one place and 100
   in another; stay under 36.
