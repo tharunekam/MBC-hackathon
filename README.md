@@ -116,7 +116,9 @@ the fair price at entry, summed. Luck on a few calls washes out.
   failed deliveries, so an RPC backfill runs every minute as a safety net.
 
 Status: the receiver is built and tested (authentication, replay window, deduplication). **The Stream itself is not
-created yet** and the filter has not been run against a live Stream. See `chain/README.md` for what is verified.
+created yet** and the filter has not been run against a live Stream. The receiver has been exercised with real devnet
+signatures. A real commit and reveal with our own key has run on devnet, both as Memo records and through the Anchor program
+(`chain/README.md` lists what is verified and what is not).
 
 ## Run it
 
