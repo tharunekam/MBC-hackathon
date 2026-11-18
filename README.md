@@ -67,7 +67,8 @@ web (React/Vite)  ──►  executor (Node)  ──►  Gemini REST + WebSocket
 |---|---|
 | `executor/` | Quotes, the two-leg bet with depth guard and hedge sizing, a ledger written before every order, settlement, and **reconcile to the cent against Gemini** (it counts Gemini's YES/NO netting). 132 tests. |
 | `chain/` | Commit and reveal on Solana, the QuickNode webhook, the leaderboard, a public proof endpoint. 105 tests. |
-| `web/` | The app: a probability ladder with two draggable markers, the four-number quote, bets, leaderboard, proof page. 50 tests. |
+| `web/` | The app: a probability ladder with two draggable markers, the four-number quote, bets, leaderboard, proof page. Pages update on their own over server-sent events. 76 tests. |
+| `scripts/` | The dev stack, the hosted-demo server (`serve.mjs`: the built app plus an allowlist of API paths on one port), the deploy checker, the browser end-to-end test, and the rehearsals. 17 tests. |
 | `docs/` | `PLAN.md`, `GIVEN.md` (decision log), `CONTRACTS.md` (interfaces), `GEMINI_API_NOTES.md`, `SUBMISSION.md`. |
 
 ### Gemini endpoints used
@@ -130,10 +131,11 @@ npm run dev         # whole stack with no keys and no SOL: local test exchange +
 npm run dev:quotes  # REAL Gemini sandbox prices and order books with no keys; every order is refused (read-only)
 node scripts/seed-history.mjs all   # optional: a win, a loss and a refund, committed and revealed
 npm run stop        # stop this project's servers
-npm test            # 324 tests: executor 132, chain service 105, web 70, hosted-demo server 17
+npm test            # 330 tests: executor 132, chain service 105, web 76, hosted-demo server 17
 npm run e2e         # the production build in real Chrome (14 checks; e2e:sabotage must fail)
 npm run rehearse    # (also rehearse:chaos) the whole golden path through the real clients, Gemini and Solana stood in on the wire
 npm run preflight   # what is ready for the real thing and what is missing, with the fix for each
+npm run build && npm start   # the hosted-demo server on one port (see docs/DEPLOY.md); npm run check:deploy -- <url> checks a deployment
 ```
 
 Open http://127.0.0.1:5273. The nav shows what the app is talking to; with `npm run dev` it says "Local test exchange".
@@ -150,14 +152,22 @@ address unless it is on the sandbox with a pinned account, a stake cap and a rat
 wide (production's median is about 4¢), so on the sandbox the value rule would refuse almost everything; `npm run
 start:demo` in `executor/` waives the markup check **on the sandbox only**, and the verdict shown is never softened.
 
+## What has been run for real
+
+On 2026-11-18 the whole stack ran on the **real Gemini sandbox and real Solana devnet** together: three bets placed from the
+web app as two filled orders each, each call committed on devnet through our program, then settled at expiry: one won, one
+lost and one refunded (its reveal correctly refused as void). The two scored calls were revealed, re-verified from chain, and
+reached the leaderboard, and the reconcile tied to $0.00 before and after. That run found one real bug: Gemini nets a YES
+against a NO on the same contract and pays $1 a pair early, which the reconcile now counts. Details: `docs/PLAN.md` and
+`docs/GEMINI_API_NOTES.md`.
+
 ## What is not built
 
-- A hosted demo link (the executor has the protections a hosted demo needs; nothing is deployed).
+- **A deployed demo.** Everything needed is built and tested (`docs/DEPLOY.md`, a `Dockerfile`, `scripts/serve.mjs`, a
+  deployment checker); it needs a host and the live settings.
 - Gemini OAuth sign-in. Bets use demo accounts. Production needs Gemini's review.
-- A custom Solana program, and the QuickNode Stream (above).
-- The executor was exercised against Gemini's sandbox during development (see the verified facts in
-  `docs/GEMINI_API_NOTES.md`), but the full stack here, including the chain service and the web app, has so far been run
-  end to end only against the local test exchange. Production has never been run.
+- The QuickNode Stream itself (above). Without it the leaderboard fills from an RPC backfill, about three minutes behind.
+- Production has never been run. Gemini's sandbox is not production: its books are far thinner and wider.
 - Maker-first pricing, sports ladders and a sandbox liquidity seeder. See `docs/PLAN.md`.
 
 The earlier "Living Tokens" draft is preserved at the git tag `living-tokens-draft`.
