@@ -11,6 +11,7 @@
  */
 import { edge, commitHash, handleFor, newSalt } from './hash.ts';
 import type { CallFields } from './hash.ts';
+import { ChainError } from './chain.ts';
 import type { Chain } from './chain.ts';
 import { ServiceError } from './executor.ts';
 import type { BetSource, ExecutorBet } from './executor.ts';
@@ -31,6 +32,8 @@ export interface ServiceOptions {
   now?: () => Date;
   newId?: () => string;
   sleep?: (ms: number) => Promise<void>;
+  /** Where the real cause of a failed write goes (the API message is deliberately generic). Default: stderr. */
+  log?: (line: string) => void;
 }
 
 /** The shape the web app expects (see web/src/api/types.ts). */
@@ -69,6 +72,7 @@ export class ChainService {
   private readonly now: () => Date;
   private readonly newId: () => string;
   private readonly sleep: (ms: number) => Promise<void>;
+  private readonly log: (line: string) => void;
   /** One commit or reveal per bet at a time, so a double click cannot write twice. */
   private readonly locks = new Map<string, Promise<unknown>>();
   /** Ingestion is serial: the Stream and the backfill can race on the same signature. */
@@ -84,6 +88,7 @@ export class ChainService {
     this.now = o.now ?? (() => new Date());
     this.newId = o.newId ?? (() => `c${Math.random().toString(36).slice(2, 10)}`);
     this.sleep = o.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+    this.log = o.log ?? ((line) => console.error(line));
   }
 
   private locked<T>(key: string, job: () => Promise<T>): Promise<T> {
@@ -121,7 +126,8 @@ export class ChainService {
       return await this.chain.sendMemo(text);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      const broke = /insufficient|lamports|funds|0x1\b|debit an account/i.test(message);
+      this.log(`[chain] write failed: ${message}`);
+      const broke = err instanceof ChainError ? err.kind === 'unfunded' : /insufficient|lamports|funds|0x1\b|debit an account/i.test(message);
       throw new ServiceError(502, broke ? 'chain_unfunded' : 'chain_error', broke ? 'The on-chain wallet is out of funds. Top it up and try again.' : 'Could not write to Solana right now. Nothing was recorded; try again.');
     }
   }

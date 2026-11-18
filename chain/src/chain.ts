@@ -3,7 +3,7 @@
  * so the service is tested against an in-memory chain and run against devnet.
  */
 import { randomBytes } from 'node:crypto';
-import { Connection, Keypair, PublicKey, Transaction, TransactionInstruction, sendAndConfirmTransaction } from '@solana/web3.js';
+import { Connection, Keypair, PublicKey, Transaction, TransactionInstruction } from '@solana/web3.js';
 import { MEMO_PROGRAM_ID } from './memo.ts';
 
 export interface ChainTx {
@@ -15,6 +15,16 @@ export interface ChainTx {
   memo: string;
   /** The fee payer / first signer. */
   signer: string;
+}
+
+/** Why a write to Solana failed, so callers never have to match on message wording. */
+export class ChainError extends Error {
+  readonly kind: 'unfunded' | 'refused' | 'unconfirmed' | 'too_large';
+  constructor(kind: ChainError['kind'], message: string) {
+    super(message);
+    this.name = 'ChainError';
+    this.kind = kind;
+  }
 }
 
 export interface Chain {
@@ -98,17 +108,36 @@ function base58Decode(s: string): Buffer {
   return Buffer.from(bytes);
 }
 
+export interface SolanaChainOptions {
+  /** How often to ask the node whether the transaction landed (ms). */
+  pollMs?: number;
+  /** Give up waiting for one send after this long (ms). The outcome is then unknown, so nothing is retried. */
+  confirmTimeoutMs?: number;
+  /** Sends allowed when a blockhash expires before the transaction lands. */
+  attempts?: number;
+}
+
+const isBlockhashError = (message: string): boolean => /blockhash not found|block height exceeded/i.test(message);
+const isUnfundedError = (message: string): boolean => /no record of a prior credit|AccountNotFound|insufficient funds|InsufficientFunds/i.test(message);
+
 export class SolanaChain implements Chain {
   readonly network = 'devnet' as const;
   readonly authority: string;
   private readonly connection: Connection;
   private readonly keypair: Keypair;
   private readonly memoProgram = new PublicKey(MEMO_PROGRAM_ID);
+  private readonly pollMs: number;
+  private readonly confirmTimeoutMs: number;
+  private readonly attempts: number;
 
-  constructor(rpcUrl: string, keypair: Keypair) {
-    this.connection = new Connection(rpcUrl, 'confirmed');
+  constructor(rpcUrl: string, keypair: Keypair, options: SolanaChainOptions = {}) {
+    // No WebSocket: confirmation is polled over plain HTTP, which public RPCs and proxies handle far more reliably.
+    this.connection = new Connection(rpcUrl, { commitment: 'confirmed' });
     this.keypair = keypair;
     this.authority = keypair.publicKey.toBase58();
+    this.pollMs = options.pollMs ?? 500;
+    this.confirmTimeoutMs = options.confirmTimeoutMs ?? 60_000;
+    this.attempts = options.attempts ?? 3;
   }
 
   async sendMemo(text: string): Promise<{ signature: string; slot: number }> {
@@ -118,9 +147,45 @@ export class SolanaChain implements Chain {
       programId: this.memoProgram,
       data: Buffer.from(text, 'utf8'),
     });
-    const signature = await sendAndConfirmTransaction(this.connection, new Transaction().add(instruction), [this.keypair], { commitment: 'confirmed' });
-    const status = (await this.connection.getSignatureStatuses([signature])).value[0];
-    return { signature, slot: status?.slot ?? 0 };
+    for (let attempt = 1; attempt <= this.attempts; attempt++) {
+      const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash('confirmed');
+      const tx = new Transaction({ feePayer: this.keypair.publicKey, blockhash, lastValidBlockHeight }).add(instruction);
+      let wire: Buffer;
+      try {
+        tx.sign(this.keypair);
+        wire = tx.serialize();
+      } catch {
+        throw new ChainError('too_large', `A ${Buffer.byteLength(text, 'utf8')}-byte memo does not fit in one Solana transaction (the limit is about 566 bytes).`);
+      }
+      let signature: string;
+      try {
+        signature = await this.connection.sendRawTransaction(wire, { preflightCommitment: 'confirmed', maxRetries: 5 });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (isBlockhashError(message) && attempt < this.attempts) continue;
+        if (isUnfundedError(message)) {
+          throw new ChainError('unfunded', `The authority ${this.authority} has no SOL on devnet, so it cannot pay to record a call. Fund it at https://faucet.solana.com (network: devnet).`);
+        }
+        throw new ChainError('refused', `Solana refused the transaction: ${message.slice(0, 300)}`);
+      }
+      const landed = await this.waitToLand(signature, lastValidBlockHeight);
+      if (landed) return landed;
+      // The blockhash expired, so this transaction can never land; a fresh attempt cannot double-write.
+    }
+    throw new ChainError('unconfirmed', `Solana did not confirm the transaction after ${this.attempts} attempts. Check the network and try again.`);
+  }
+
+  /** Polls until the transaction is confirmed (returns it), or its blockhash expires (returns null). Throws if it fails or the wait times out. */
+  private async waitToLand(signature: string, lastValidBlockHeight: number): Promise<{ signature: string; slot: number } | null> {
+    const deadline = Date.now() + this.confirmTimeoutMs;
+    for (;;) {
+      const status = (await this.connection.getSignatureStatuses([signature])).value[0];
+      if (status?.err) throw new ChainError('refused', `Solana accepted the transaction but it failed: ${JSON.stringify(status.err)}`);
+      if (status && (status.confirmationStatus === 'confirmed' || status.confirmationStatus === 'finalized')) return { signature, slot: status.slot };
+      if ((await this.connection.getBlockHeight('confirmed')) > lastValidBlockHeight) return null;
+      if (Date.now() > deadline) throw new ChainError('unconfirmed', `Solana did not confirm ${signature} within ${Math.round(this.confirmTimeoutMs / 1000)}s; it may still land, so check it before retrying.`);
+      await new Promise((r) => setTimeout(r, this.pollMs));
+    }
   }
 
   async getTx(signature: string): Promise<ChainTx | null> {

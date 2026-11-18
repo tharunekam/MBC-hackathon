@@ -40,8 +40,8 @@ export function setup(over: Partial<ServiceOptions> = {}) {
   const bets = new FakeBets();
   const store = new Store(null, () => 'test-secret');
   let n = 0;
-  const service = new ChainService({ chain, store, bets, newId: () => `call${++n}`, now: () => new Date('2026-11-18T01:30:00Z'), sleep: async () => {}, ...over });
+  const service = new ChainService({ chain, store, bets, newId: () => `call${++n}`, now: () => new Date('2026-11-18T01:30:00Z'), sleep: async () => {}, log: () => {}, ...over });
   /** A second, empty service on the same chain: what a verifier with no database sees. */
-  const fresh = (opts: Partial<ServiceOptions> = {}) => new ChainService({ chain, store: new Store(null, () => 'other'), bets, sleep: async () => {}, ...opts });
+  const fresh = (opts: Partial<ServiceOptions> = {}) => new ChainService({ chain, store: new Store(null, () => 'other'), bets, sleep: async () => {}, log: () => {}, ...opts });
   return { chain, bets, store, service, fresh };
 }
