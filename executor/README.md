@@ -15,8 +15,9 @@ misses, the stake is lost.
 The offer rule (below) refuses bets that cost too much over their fair price.
 Gemini's **sandbox** books are run by bots and are usually about 19 cents wide,
 so on the sandbox the rule refuses almost everything: on 2026-11-17 it refused
-all 105 pairs that had a two-sided book. (In the last ten minutes before an
-hourly market expires the books tighten and a handful of pairs pass.)
+all 105 pairs that had a two-sided book. (Seen once, not yet confirmed as a
+pattern: about eight minutes before the 00:00 UTC hourly expiry the books
+tightened to about 3 cents and 5 pairs passed.)
 
 To demo on the sandbox, start the server with `npm run start:demo`, which sets
 `GIVEN_SANDBOX_WAIVE_MARKUP=1`. That switch:
@@ -152,7 +153,8 @@ A bet refused before trading throws `BetRefused` with a `code`:
 - both contracts resolved `yes` or `no`: the bet becomes `settled`, with payout
   and profit;
 - Gemini settled the event but **not** as a clean yes/no (a void or a
-  fractional settlement): the bet becomes `needs_review`. What Gemini reported
+  fractional settlement): the bet becomes `needs_review`. "Settled" here means
+  the event is marked settled, or both contracts are. What Gemini reported
   for each contract is saved in `review`; no payout is guessed; the bet is not
   scorable (`scorable: false` in the API). It can never sit `open` forever;
 - not settled yet: left alone.

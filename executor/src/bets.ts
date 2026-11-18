@@ -474,10 +474,11 @@ export async function settleBets(deps: Deps): Promise<SettleResult> {
 
     if (bet.status === 'needs_review') continue; // already flagged; still no clean result
 
-    // Settled, but not as a clean yes/no? Both contracts must be settled (or gone from a settled event).
+    // Settled, but not as a clean yes/no? Either the event itself is marked settled (whatever each
+    // contract says: a voided contract may carry some other status, or be gone), or both contracts are.
     const eventSettled = event.status === 'settled';
-    const aDone = isSettled(aContract) || (eventSettled && !aContract);
-    const bDone = isSettled(bContract) || (eventSettled && !bContract);
+    const aDone = eventSettled || isSettled(aContract);
+    const bDone = eventSettled || isSettled(bContract);
     if (!aDone || !bDone) continue; // not settled yet
     // The result can trail the "settled" flag by a few seconds; give it a minute past expiry.
     const expiry = bet.expiry ? Date.parse(bet.expiry) : NaN;
