@@ -5,6 +5,8 @@
 import { randomBytes } from 'node:crypto';
 import { Connection, Keypair, PublicKey, Transaction, TransactionInstruction } from '@solana/web3.js';
 import { MEMO_PROGRAM_ID } from './memo.ts';
+import { callAddress, decodeCallAccount, decodeStatsAccount, instructionFor, statsFilters } from './program.ts';
+import type { CallAccount, StatsAccount } from './program.ts';
 
 export interface ChainTx {
   signature: string;
@@ -31,6 +33,8 @@ export interface Chain {
   readonly network: 'devnet' | 'fake';
   /** Public key of the authority that signs and pays for every record. */
   readonly authority: string;
+  /** The given_receipts program checking each record in the same transaction, when one is configured. */
+  readonly program?: string;
   sendMemo(text: string): Promise<{ signature: string; slot: number }>;
   /** A confirmed, successful transaction carrying a memo, or null (missing, failed, or no memo). */
   getTx(signature: string): Promise<ChainTx | null>;
@@ -129,8 +133,11 @@ export class SolanaChain implements Chain {
   private readonly pollMs: number;
   private readonly confirmTimeoutMs: number;
   private readonly attempts: number;
+  private readonly receipts: PublicKey | null;
+  readonly program?: string;
 
-  constructor(rpcUrl: string, keypair: Keypair, options: SolanaChainOptions = {}) {
+  /** `programId`: the deployed given_receipts program. Without it, records are Memos only. */
+  constructor(rpcUrl: string, keypair: Keypair, programId?: string, options: SolanaChainOptions = {}) {
     // No WebSocket: confirmation is polled over plain HTTP, which public RPCs and proxies handle far more reliably.
     this.connection = new Connection(rpcUrl, { commitment: 'confirmed' });
     this.keypair = keypair;
@@ -138,18 +145,47 @@ export class SolanaChain implements Chain {
     this.pollMs = options.pollMs ?? 500;
     this.confirmTimeoutMs = options.confirmTimeoutMs ?? 60_000;
     this.attempts = options.attempts ?? 3;
+    this.receipts = programId ? new PublicKey(programId) : null;
+    if (this.receipts) this.program = this.receipts.toBase58();
   }
 
-  async sendMemo(text: string): Promise<{ signature: string; slot: number }> {
-    const instruction = new TransactionInstruction({
+  /** The instructions of one record: the Memo, and beside it the program's check when a program is configured. */
+  instructions(text: string): TransactionInstruction[] {
+    const memo = new TransactionInstruction({
       // The Memo program requires every listed account to sign; the authority is the only one.
       keys: [{ pubkey: this.keypair.publicKey, isSigner: true, isWritable: false }],
       programId: this.memoProgram,
       data: Buffer.from(text, 'utf8'),
     });
+    const check = this.receipts ? instructionFor(this.receipts, this.keypair.publicKey, text) : null;
+    return check ? [memo, check] : [memo];
+  }
+
+  /** Throws unless the configured program is deployed on this cluster. */
+  async assertProgram(): Promise<void> {
+    if (!this.receipts) return;
+    const info = await this.connection.getAccountInfo(this.receipts, 'confirmed');
+    if (!info?.executable) throw new Error(`GIVEN_PROGRAM_ID ${this.program} is not a deployed program on this cluster.`);
+  }
+
+  /** The program's own record of one call, by its commit hash. Null if there is none (or no program). */
+  async programCall(hashHex: string): Promise<CallAccount | null> {
+    if (!this.receipts) return null;
+    const info = await this.connection.getAccountInfo(callAddress(this.receipts, this.keypair.publicKey, hashHex), 'confirmed');
+    return info ? decodeCallAccount(info.data) : null;
+  }
+
+  /** Each handle's running score as the program holds it, read from its accounts alone. Empty without a program. */
+  async programScores(): Promise<StatsAccount[]> {
+    if (!this.receipts) return [];
+    const accounts = await this.connection.getProgramAccounts(this.receipts, { commitment: 'confirmed', filters: statsFilters(this.keypair.publicKey) });
+    return accounts.map((a) => decodeStatsAccount(a.account.data)).filter((s): s is StatsAccount => s !== null);
+  }
+
+  async sendMemo(text: string): Promise<{ signature: string; slot: number }> {
     for (let attempt = 1; attempt <= this.attempts; attempt++) {
       const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash('confirmed');
-      const tx = new Transaction({ feePayer: this.keypair.publicKey, blockhash, lastValidBlockHeight }).add(instruction);
+      const tx = new Transaction({ feePayer: this.keypair.publicKey, blockhash, lastValidBlockHeight }).add(...this.instructions(text));
       let wire: Buffer;
       try {
         tx.sign(this.keypair);

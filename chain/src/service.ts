@@ -405,6 +405,7 @@ export class ChainService {
       service: 'given-chain',
       network: this.chain.network,
       authority: this.chain.authority,
+      program: this.chain.program ?? null,
       calls: this.store.data.calls.length,
       reveals: { total: reveals.length, verified: reveals.filter((r) => r.verified).length },
     };

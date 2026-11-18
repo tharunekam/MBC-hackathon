@@ -25,13 +25,13 @@ const fast = { pollMs: 20, confirmTimeoutMs: 2000 };
 const funded = (lamports = 1_000_000) => {
   const kp = Keypair.generate();
   rpc.fund(kp.publicKey.toBase58(), lamports);
-  return { kp, chain: new SolanaChain(rpc.url, kp, fast) };
+  return { kp, chain: new SolanaChain(rpc.url, kp, undefined, fast) };
 };
 
 describe('SolanaChain over the wire', () => {
   it('an unfunded authority fails with an instruction a person can follow, and nothing is recorded', async () => {
     const kp = Keypair.generate();
-    const chain = new SolanaChain(rpc.url, kp, fast);
+    const chain = new SolanaChain(rpc.url, kp, undefined, fast);
     const before = rpc.txs().length;
     await assert.rejects(chain.sendMemo('hello'), (err: Error) => {
       assert.match(err.message, new RegExp(kp.publicKey.toBase58()));
@@ -94,7 +94,7 @@ describe('SolanaChain over the wire', () => {
   it('a transaction that is neither confirmed nor expired times out and is NOT retried', async () => {
     const kp = Keypair.generate();
     rpc.fund(kp.publicKey.toBase58(), 1_000_000);
-    const chain = new SolanaChain(rpc.url, kp, { pollMs: 20, confirmTimeoutMs: 250 });
+    const chain = new SolanaChain(rpc.url, kp, undefined, { pollMs: 20, confirmTimeoutMs: 250 });
     rpc.calls.clear();
     rpc.dropNext();
     await assert.rejects(chain.sendMemo('lost'), /may still land/);
@@ -156,7 +156,7 @@ describe('the chain service on the wire', () => {
 
   it('an unfunded wallet turns a commit into a clear error, the log names the wallet, and nothing is half-written', async () => {
     const kp = Keypair.generate(); // never funded
-    const chain = new SolanaChain(rpc.url, kp, fast);
+    const chain = new SolanaChain(rpc.url, kp, undefined, fast);
     const bets = new FakeBets();
     bet(bets);
     const logged: string[] = [];

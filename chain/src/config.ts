@@ -23,6 +23,8 @@ export interface ChainConfig {
   network: 'devnet' | 'fake';
   rpcUrl: string;
   keypairPath: string;
+  /** The deployed given_receipts program (GIVEN_PROGRAM_ID). Unset: records are Memos only. */
+  programId: string | undefined;
   dataDir: string;
   host: string;
   port: number;
@@ -54,8 +56,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   const dataDir = m.GIVEN_CHAIN_DATA_DIR ? resolve(m.GIVEN_CHAIN_DATA_DIR) : resolve(CHAIN_ROOT, 'data');
   return {
     network,
-    rpcUrl: m.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com',
+    rpcUrl: m.SOLANA_RPC_URL || 'https://api.devnet.solana.com',
     keypairPath: m.GIVEN_CHAIN_KEYPAIR ? resolve(m.GIVEN_CHAIN_KEYPAIR) : resolve(dataDir, 'authority.json'),
+    programId: m.GIVEN_PROGRAM_ID || undefined,
     dataDir,
     host: m.GIVEN_CHAIN_HOST ?? '127.0.0.1',
     port: Number(m.GIVEN_CHAIN_PORT ?? 8742),

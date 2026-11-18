@@ -11,11 +11,11 @@ the pitch. Items marked **FILL** need something that does not exist yet.*
 | Chain award | Best use of Solana (opt in) |
 | Bounties (tick each, and the matching prize opt-in) | Gemini Prediction Markets · QuickNode Streams |
 | Not entering | Arc, ElevenLabs, Grok Bot |
-| Program ID(s) | `MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr` (the Memo program we write through). Authority key `2QfQ15Ha5VxvvwWqdsDdCyf6n8uxKfVDHh9GHZdFHeHz`. **There is no custom program; say so.** |
+| Program ID(s) | `8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK` (our program, `given_receipts`, devnet: checks each reveal against its commit) and `MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr` (the Memo program the readable record is written through). Authority key `2QfQ15Ha5VxvvwWqdsDdCyf6n8uxKfVDHh9GHZdFHeHz`. **Only claim the program for the demo if the hosted chain service runs with `GIVEN_PROGRAM_ID` set.** |
 | Repo | public GitHub URL **FILL** (the repo is private until the owner switches it) |
 | Demo | hosted URL **FILL** |
 | Video | YouTube unlisted or Drive "anyone with the link", checked logged out **FILL** |
-| Technologies | React, Vite, TypeScript, Node, Gemini Prediction Markets API (REST + WebSocket), Solana (Memo program), QuickNode Streams, WebCrypto |
+| Technologies | React, Vite, TypeScript, Node, Gemini Prediction Markets API (REST + WebSocket), Solana (our Anchor program + the Memo program), QuickNode Streams, WebCrypto |
 
 ## The five written answers (draft)
 
@@ -35,8 +35,9 @@ from contracts that already exist, shows exactly what it costs, and keeps all mo
 On a ladder of contracts at rising thresholds, buying YES on the higher threshold plus a sized NO on the lower one pays the
 stake back if the lower threshold fails. The executor sizes the hedge so the refund covers the stake and fees, checks the
 book depth, places both orders over Gemini's WebSocket, and keeps a ledger that reconciles to Gemini's balance to the cent.
-A chain service writes a salted hash of each call to Solana through the Memo program and later reveals it; a QuickNode
-Stream delivers those transactions to the leaderboard, and a proof page re-checks them from Solana in the browser.
+A chain service writes a salted hash of each call to Solana and later reveals it; our Solana program, in the same
+transaction, rejects a reveal that does not reproduce its commit. A QuickNode Stream delivers those transactions to the
+leaderboard, and a proof page re-checks them from Solana in the browser.
 
 **What makes it unique?**
 A refund-if-the-condition-fails bet as a one-tap product on a regulated exchange, an honest cost (four numbers on every
@@ -44,8 +45,8 @@ quote, and pairs that cost too much are refused), and a track record that cannot
 on Solana, checked in your own browser. Crypto is invisible: no wallet, no gas, no seed phrase.
 
 **What would you build next?**
-A Solana program that validates reveals on chain; maker-first pricing, which roughly halves the cost and adds resting
-liquidity to Gemini's book; Gemini OAuth sign-in once production review allows it; sports ladders; and conditional
+Maker-first pricing, which roughly halves the cost and adds resting liquidity to Gemini's book; a leaderboard read
+straight from the program's accounts; Gemini OAuth sign-in once production review allows it; sports ladders; and conditional
 contracts listed by Gemini directly, for which Given is the demand evidence.
 
 ## 2–3 minute video (shot list)
@@ -94,8 +95,10 @@ recorded fallback.
   anonymous handle, never an account.
 - **Why should the leaderboard be trusted?** Every row is a verified commit-reveal pair, signed by our key, re-read from
   Solana. The one thing it takes on trust is the result, which our key attests with Gemini's order IDs as evidence.
-- **Why Solana, and why no program?** Cheap, fast records the app can pay for so users never touch a wallet. Memo records
-  made the whole path verifiable now; a program is the upgrade that would validate reveals on chain.
+- **Why Solana, and what does the program do?** Cheap, fast records the app can pay for so users never touch a wallet.
+  The Memo is the readable record; our program, in the same transaction, recomputes the hash and refuses a reveal that
+  does not match its commit or repeats one, and keeps each handle's score. It does not prove the result: our key attests
+  that, with Gemini's order IDs as evidence.
 - **How is this different from a parlay?** A parlay loses everything when its first leg fails. Given returns the stake.
 - **What happens in production?** Real fees, Gemini's OAuth review, and the value rule applies to real books (median spread
   about 4¢). None of that has been run.
