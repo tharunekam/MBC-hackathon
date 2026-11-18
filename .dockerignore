@@ -1,0 +1,13 @@
+node_modules
+**/node_modules
+web/dist
+.git
+.env
+.env.*
+executor/data
+chain/data
+research_notes
+tools
+receipts-program/target
+*.log
+.playwright-mcp

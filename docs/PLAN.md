@@ -86,7 +86,7 @@ settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is a
 | T-P7, T-P8 landing copy, polish, design review | First pass only; the polish pass is still to do |
 | T-P9 README, Devpost, video, pitch | Not started |
 | T-V1 OAuth test | Not started. The sandbox key is on Victor's laptop; registering a sandbox OAuth app needs the account owner |
-| T-V2 host the executor | Protections built and tested (pinned user, stake cap, rate limit, kill switch, refuses unsafe bind); **no deployment yet** |
+| T-V2 host the executor | **Built, not yet deployed.** `scripts/serve.mjs` serves the built app and a fixed allowlist of API paths from one public port with the backends on loopback; `Dockerfile`; `npm run check:deploy` checks a deployed URL from outside; the guide is `docs/DEPLOY.md`. The image builds and runs here (non-root, real sandbox prices). **Needs a host, then the live settings** |
 | T-V3 `GET /reconcile` | **Done**. Event feed not needed: the chain service reads bets from the executor |
 | T-V4 to T-V8 seeder, history script, maker-first, replay, production quotes | Not started |
 | T-C0 Memo smoke test | **Done 2026-11-18**: commit and reveal with our own key on real devnet, Memo only and through Victor's program (`npm run smoke`); the proof page verified real devnet records in a browser |

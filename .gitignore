@@ -9,3 +9,4 @@ research_notes/*/census_data/
 tools/census/census_data/
 chain/data/
 web/dist/
+.env.deploy

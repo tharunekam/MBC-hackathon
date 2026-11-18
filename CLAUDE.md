@@ -75,6 +75,8 @@ npm run dev:quotes # REAL Gemini sandbox prices and order books, no keys, every 
 npm run dev:live   # real Gemini sandbox + Solana devnet; needs .env keys and a funded chain/data/authority.json
 npm run preflight  # which of the above is ready, and the exact fix for what is not (places nothing)
 npm run rehearse   # the golden path through the real executor + chain code, Gemini and Solana stood in on the wire
+npm run build      # production web build; npm start serves it with both backends on one public port (see docs/DEPLOY.md)
+npm run check:deploy -- https://your-demo   # checks a deployed demo from outside (add --bet to place one small bet)
 npm test           # every package
 npm run typecheck
 ```

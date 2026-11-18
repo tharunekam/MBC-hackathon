@@ -103,8 +103,12 @@ const handler = () =>
     refreshMs: 1500,
     autoSettleMs: 3000, // a resolved event settles its bets within seconds, so the page updates by itself
     quoteCacheMs: 1000,
-    pinnedUser: 'primary',
-    maxStake: 100,
+    pinnedUser: process.env.GIVEN_PINNED_USER || 'primary',
+    maxStake: Number(process.env.GIVEN_MAX_STAKE ?? 100),
+    // The same settings the real executor reads, so a hosted staging run exercises the same protections.
+    corsOrigins: (process.env.GIVEN_CORS_ORIGINS ?? '').split(',').map((o) => o.trim().replace(/\/+$/, '')).filter(Boolean),
+    trustProxy: process.env.GIVEN_TRUST_PROXY === '1',
+    ...(process.env.GIVEN_RATE_LIMIT_PER_MIN ? { rateLimit: { max: Number(process.env.GIVEN_RATE_LIMIT_PER_MIN), windowMs: 60_000 } } : {}),
     newId: () => `f${(++n).toString(36)}${Math.random().toString(36).slice(2, 5)}`,
   });
 let api = handler();
