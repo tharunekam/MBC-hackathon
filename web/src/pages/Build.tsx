@@ -10,28 +10,12 @@ import { cents, money, pct, timeLeft, trunc, usd, usdSigned } from '../lib/forma
 import { useDebounced, useNow, useResource } from '../lib/hooks';
 import { execLive } from '../lib/liveClients';
 import { MIN_BET, buttonState } from '../lib/betState';
+import { defaultPair } from '../lib/defaultPair';
 import { estimate, outcomesFor } from '../lib/pricing';
 import { useVenue } from '../lib/venue';
 
 const PRESETS = [5, 10, 25, 50];
 const shortTitle = (t: string) => t.replace(/ price today at /, ' · ').replace(/ price on /, ' · ');
-
-/** A sensible starting pair: a condition that is likely (so the refund is real) and a target with a fair chance. */
-function defaultPair(ev: MarketEvent): { c: string; t: string } | null {
-  const ok = ev.pairs.filter((p) => p.quote.offerable && p.quote.chanceBothHappen !== null);
-  if (ok.length === 0) {
-    // Nothing is on offer right now. Start from two rungs that at least have two-sided, open markets and a sensible gap,
-    // rather than the two lowest rungs, which on a real ladder are often both near-certain.
-    const r = [...ev.rungs].sort((a, b) => a.strike - b.strike);
-    const live = r.filter((x) => x.open && x.bid !== null && x.ask !== null && (x.bid + x.ask) / 2 > 0.1 && (x.bid + x.ask) / 2 < 0.95);
-    const pool = live.length >= 2 ? live : r;
-    return pool.length >= 2 ? { c: pool[0]!.symbol, t: pool[1]!.symbol } : null;
-  }
-  const score = (p: (typeof ok)[number]) => Math.abs((p.quote.chanceCondition ?? 0) - 0.74) + Math.abs((p.quote.chanceBothHappen ?? 0) - 0.36);
-  ok.sort((a, b) => score(a) - score(b));
-  const best = ok[0]!;
-  return { c: best.condition.symbol, t: best.target.symbol };
-}
 
 function friendly(err: unknown): string {
   if (err instanceof ApiError) {

@@ -124,7 +124,7 @@ describe('each refusal says what to do, and only suggests moving the target when
     ['no_price', /higher target/i, /further above/],
     ['price_too_high', /higher target/i, /further above/],
     ['markup_too_high', /another pair/i, /too far apart/],
-    ['market_closed', /not open/i, /few minutes/],
+    ['market_closed', /not open/i, /not open for trading/],
     ['ladder_out_of_order', /out of step/i, /out of order/],
     ['one_sided_book', /no market/i, /Nobody is buying or selling/],
   ];
@@ -179,5 +179,26 @@ describe('before the executor answers, only what the local numbers settle is ref
   it('an executor refusal overrules a hopeful estimate', () => {
     const s = buttonState(base({ answer: refused('market_closed') }));
     expect(s.canPlace).toBe(false);
+  });
+});
+
+describe('"not open" says what kind of not open', () => {
+  const closed = (state: string): Rung => ({ ...rung(63500, 0.3, 0.34, false), state });
+  it('a new listing that is post-only opens soon', () => {
+    const s = buttonState(base({ answer: refused('market_closed'), target: closed('active/post_only') }));
+    expect(s.label).toMatch(/not open for bets yet/i);
+    expect(s.notice?.text).toMatch(/few minutes/);
+  });
+  it('a settled or closed market will not reopen, and says so', () => {
+    for (const state of ['settled', 'closed', 'active/closed', 'expired']) {
+      const s = buttonState(base({ answer: refused('market_closed'), target: closed(state) }));
+      expect(s.label).toMatch(/has closed/i);
+      expect(s.notice?.text).not.toMatch(/few minutes/);
+    }
+  });
+  it('an unknown state makes no promise about reopening', () => {
+    const s = buttonState(base({ answer: null, target: closed('mystery') }));
+    expect(s.blockedBy).toBe('market_closed');
+    expect(s.notice?.text).not.toMatch(/few minutes|reopen/);
   });
 });

@@ -81,6 +81,22 @@ const PRIORITY: RefusalCode[] = ['market_closed', 'ladder_out_of_order', 'one_si
 
 export const refusalCopy = (code: RefusalCode) => COPY[code];
 
+/**
+ * "Not open" means different things, and what to do differs: a newly listed market opens in a few minutes (Gemini lists
+ * them post-only first), but one that has closed or settled will not open again.
+ */
+export function closedCopy(condition: Rung | undefined, target: Rung | undefined): { label: string; text: string } {
+  const states = [condition, target].filter((r): r is Rung => !!r && !r.open).map((r) => r.state.toLowerCase());
+  if (states.some((s) => /settled|closed|expired|resolved/.test(s))) {
+    return { label: 'This market has closed', text: 'This market has closed and will not reopen. Pick the next ladder above.' };
+  }
+  if (states.some((s) => /post_only|post-only/.test(s))) return COPY.market_closed;
+  return {
+    label: 'Not open for bets',
+    text: 'One of these prices is not open for trading right now. Pick other prices, or check back in a minute.',
+  };
+}
+
 export function firstReason(codes: RefusalCode[]): RefusalCode | null {
   for (const c of PRIORITY) if (codes.includes(c)) return c;
   return codes[0] ?? null;
@@ -112,6 +128,10 @@ export function buttonState(i: BetInputs): ButtonState {
   if (a) {
     if (!a.quote.offerable) {
       const code = firstReason(a.quote.reasons.map((r) => r.code));
+      if (code === 'market_closed') {
+        const c = closedCopy(i.condition, i.target);
+        return blocked(code, c.label, c.text);
+      }
       if (code) return blocked(code, COPY[code].label, COPY[code].text);
       return blocked('markup_too_high', 'Not on offer', a.quote.reasons[0]?.message ?? 'This pair is not on offer right now.');
     }
@@ -126,6 +146,10 @@ export function buttonState(i: BetInputs): ButtonState {
 
   // No answer for this pair and stake yet. Refuse early only on what the local numbers already settle.
   const early = localRefusal(i.condition, i.target, i.est);
+  if (early === 'market_closed') {
+    const c = closedCopy(i.condition, i.target);
+    return blocked(early, c.label, c.text);
+  }
   if (early) return blocked(early, COPY[early].label, COPY[early].text);
   if (i.answerError) return blocked('unreachable', 'Prices unavailable', 'We could not get a price for this pair. Check your connection and try again.');
   return blocked('checking', 'Checking the price', null);

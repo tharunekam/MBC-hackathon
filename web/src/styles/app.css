@@ -1648,3 +1648,24 @@ button.chip:hover {
     display: none;
   }
 }
+
+/* On a phone the quote and the Place bet button come straight after the chart, and the payoff table after them. Without this
+   they sat a thousand pixels down, under the table, so a person who had just dragged the markers could not see what it cost. */
+@media (max-width: 960px) {
+  .left-col {
+    display: contents;
+  }
+  .chart-card {
+    order: 1;
+  }
+  .quote-card {
+    order: 2;
+  }
+  .payoff {
+    order: 3;
+  }
+}
+
+.band .lede + .btn {
+  margin-top: 24px;
+}

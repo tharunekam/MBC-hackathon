@@ -243,7 +243,14 @@ export default function LadderChart({ rungs, condition, target, onChange }: Prop
                 <rect className="lc-grab" x={-18} y={pad.top - 10} width={36} height={plotH + 20} />
                 <circle className="lc-dot-ring" cx={0} cy={y} r={11} />
                 <circle className="lc-dot" cx={0} cy={y} r={6} />
-                <text className="lc-chance" x={x > width - pad.right - 44 ? -14 : 14} y={y - 12} textAnchor={x > width - pad.right - 44 ? 'end' : 'start'}>
+                <text
+                  className="lc-chance"
+                  // Near the top of the plot the label goes below its dot, out from under the pills; two close handles put
+                  // theirs on opposite sides so the numbers never sit on each other; at the right edge it flips inward.
+                  x={(x > width - pad.right - 44 || (which === 'condition' && xT - xC < 56 && x > pad.left + 40)) ? -14 : 14}
+                  y={y < pad.top + 18 ? y + 26 : y - 12}
+                  textAnchor={(x > width - pad.right - 44 || (which === 'condition' && xT - xC < 56 && x > pad.left + 40)) ? 'end' : 'start'}
+                >
                   {Math.round(m * 100)}%
                 </text>
               </g>
