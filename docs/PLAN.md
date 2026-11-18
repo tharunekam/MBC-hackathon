@@ -43,6 +43,12 @@ midnight CST; branch `run/live-sandbox-devnet`).** This is the machine that hold
 - **Found and fixed:** Gemini nets YES against NO on one contract and pays $1 a pair early, so two bets sharing a
   strike left the reconcile off by exactly $1.00. Fixed in the executor with tests; the Proof page is back to $0.00 on
   the live account. Details in `docs/GEMINI_API_NOTES.md`.
+- **All three outcomes on the real stack (07:00 UTC ladders).** Won (`196968b1`, +$1.31), lost (`3e179ffd`, −$3.16) and
+  **refunded** (`dc55923f`: SOL ended below $75, payout $3.24 on a $3.18 cost). The refunded call's reveal was refused
+  with `409 void_call` and its state became `void`; the other two revealed and verified from chain. `reconcile` tied to
+  $0.00 again, My bets showed "Money back", and the leaderboard showed 4 calls, 50% hit rate, edge +0.78. The first
+  settle attempt failed with `gemini_error: fetch failed` because the laptop had slept; the retry worked. **A demo
+  machine must not sleep** (the app's keep-awake lapses when the session goes idle).
 - **Found, not fixed (Product lane):** on a refused pair the button always says "Pick a closer target", even when the
   reason is a post-only market or an out-of-order ladder, where moving the target does not help; the default pair on
   a ladder can be two near-certain rungs showing "Fair price per $1: 101¢"; the Proof page does not yet show the
@@ -54,8 +60,7 @@ midnight CST; branch `run/live-sandbox-devnet`).** This is the machine that hold
   condition held and the target missed), `reconcile` tied to $0.00 before and after, both calls were revealed through
   the program and `GET /calls/:id/verify` recomputed both hashes from chain, and the leaderboard showed the handle with
   2 calls and edge 0.3934 once the RPC backfill ran (about 3 minutes; there is no Stream yet, and one backfill attempt
-  failed on the public devnet RPC before the next succeeded). **Not yet exercised on the real stack:** a refunded
-  (void) call.
+  failed on the public devnet RPC before the next succeeded). A refunded call followed an hour later (next bullet but one).
 - **A bet placed by clicking in the web app, on the real stack (06:16 UTC).** Dragged both markers on the ETH ladder,
   clicked Place bet, and the receipt showed both Gemini orders filled and the Solana record with its explorer link
   (bet `196968b1`). Two more bets sharing its strike then netted 3 contracts and the reconcile still tied to $0.00.
