@@ -321,6 +321,30 @@ export class ChainService {
       .reverse();
   }
 
+  /**
+   * A revealed call as the world may see it: the plaintext the player chose to publish, never the salt and never an
+   * account. Only verified reveals are served, so this page cannot show a call the chain does not back.
+   */
+  publicReveal(signature: string) {
+    const r = this.store.data.reveals[signature];
+    if (!r || !r.verified) throw new ServiceError(404, 'unknown_reveal', 'No such revealed call.');
+    return {
+      signature: r.signature,
+      commitSignature: r.commitSignature,
+      handle: r.handle,
+      event: r.event,
+      condition: r.condition,
+      target: r.target,
+      entryPrice: r.entryPrice,
+      fairPrice: r.fairPrice,
+      outcome: r.outcome,
+      edge: r.edge,
+      revealedAt: new Date(r.revealedAt * 1000).toISOString(),
+      network: this.chain.network,
+      authority: this.chain.authority,
+    };
+  }
+
   leaderboard() {
     const by = new Map<string, { calls: number; wins: number; edge: number; last: number }>();
     for (const r of Object.values(this.store.data.reveals)) {

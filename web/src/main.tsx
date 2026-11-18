@@ -9,6 +9,8 @@ import './styles/app.css';
 try {
   const forced = new URLSearchParams(window.location.search).get('theme');
   if (forced === 'light' || forced === 'dark') document.documentElement.dataset.theme = forced;
+  // `?still` turns animation off, so screenshots and accessibility audits see the settled page.
+  if (new URLSearchParams(window.location.search).has('still')) document.documentElement.dataset.still = '1';
 } catch {
   /* ignore */
 }

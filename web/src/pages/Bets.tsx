@@ -149,7 +149,7 @@ export default function Bets() {
                     <span className="status" data-outcome={o}>
                       {LABEL[o]}
                     </span>
-                    <b className={result ? (result.pnl > 0.004 ? 'good' : result.pnl < -0.004 ? 'bad' : 'back') : ''}>
+                    <b className={result ? (o === 'back' ? 'back' : result.pnl > 0.004 ? 'good' : result.pnl < -0.004 ? 'bad' : 'back') : ''}>
                       {result ? (o === 'back' ? 'Stake back' : usdSigned(result.pnl)) : `Wins ${usdSigned(b.payoffs?.ifBothHit ?? 0)}`}
                     </b>
                   </div>
@@ -192,9 +192,14 @@ export default function Bets() {
                     <p>
                       Revealed. Edge scored: <b>{call.reveal.edge !== null ? `${call.reveal.edge > 0 ? '+' : '−'}${Math.abs(call.reveal.edge).toFixed(2)}` : '–'}</b>.
                     </p>
-                    <Link to="/leaderboard" className="btn btn-ghost">
-                      Leaderboard
-                    </Link>
+                    <div className="row-actions">
+                      <Link to={`/verify/${call.reveal.signature}`} className="btn btn-ghost">
+                        Proof page
+                      </Link>
+                      <Link to="/leaderboard" className="btn btn-ghost">
+                        Leaderboard
+                      </Link>
+                    </div>
                   </div>
                 )}
                 {o === 'back' && (

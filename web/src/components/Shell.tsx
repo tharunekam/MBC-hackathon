@@ -82,6 +82,7 @@ export function Nav() {
 }
 
 export function Footer() {
+  const venue = useVenue();
   return (
     <footer className="foot">
       <div className="wrap foot-in">
@@ -93,7 +94,7 @@ export function Footer() {
           <p>Bets that give your money back if the first half of your hunch doesn’t happen.</p>
         </div>
         <p className="fine">
-          Given uses Gemini’s prediction market API and is not affiliated with Gemini. Bets here run on Gemini’s sandbox with practice money. Prediction markets involve risk and can lose the amount you stake.
+          Given uses Gemini’s prediction market API and is not affiliated with Gemini. {venue.footnote} Prediction markets involve risk and can lose the amount you stake.
         </p>
       </div>
     </footer>
@@ -109,7 +110,7 @@ export default function Shell() {
   return (
     <>
       <Nav />
-      <nav className="tabbar" aria-label="Main">
+      <nav className="tabbar" aria-label="Primary">
         {LINKS.map((l) => (
           <NavLink key={l.to} to={l.to} end={l.end} className={({ isActive }) => (isActive ? 'is-on' : '')}>
             {l.label}

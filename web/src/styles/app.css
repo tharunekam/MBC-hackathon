@@ -439,7 +439,7 @@ button.chip:hover {
   --bg-2: #14110d;
   --accent-text: #f2b440;
   --good: #6fcf9a;
-  --bad: #ee8b72;
+  --bad: #f39a82;
   background: var(--band-dark-bg);
   color: var(--ink);
 }
@@ -647,7 +647,7 @@ button.chip:hover {
 .lc-xtick {
   font-family: var(--font-mono);
   font-size: 11px;
-  fill: var(--faint);
+  fill: var(--muted);
 }
 .lc-window {
   fill: var(--accent-soft);
@@ -1469,4 +1469,116 @@ button.chip:hover {
   .tabbar {
     display: flex;
   }
+}
+
+/* ------------------------------------------------------------ proof of a call */
+.page.narrow {
+  width: min(720px, 100% - 48px);
+}
+.proofcard {
+  display: grid;
+  gap: 20px;
+  padding: 32px;
+}
+.pc-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.pc-verdict {
+  font-family: var(--font-display);
+  font-size: clamp(44px, 7vw, 64px);
+  line-height: 1;
+  letter-spacing: -0.025em;
+  color: var(--good);
+}
+.proofcard[data-outcome='missed'] .pc-verdict {
+  color: var(--bad);
+}
+.pc-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.verify {
+  margin-top: 24px;
+  display: grid;
+  gap: 4px;
+}
+.verify > p {
+  color: var(--soft);
+  margin-bottom: 12px;
+}
+.verify .btn {
+  justify-self: start;
+}
+.checks {
+  display: grid;
+  gap: 4px;
+  margin: 20px 0 8px;
+}
+.checks li {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.checks .mark {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--good-soft);
+  color: var(--good);
+}
+.checks li[data-ok='false'] .mark {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+.checks b {
+  font-weight: 600;
+  font-size: 15px;
+}
+.checks p {
+  color: var(--muted);
+  font-size: 13px;
+}
+.verify .links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+.verify .links .mono-chip {
+  margin-top: 0;
+}
+@media (max-width: 720px) {
+  .page.narrow {
+    width: calc(100% - 32px);
+  }
+  .proofcard {
+    padding: 20px;
+  }
+  .pc-foot {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* ?still: no animation, for screenshots and audits of the settled page. */
+:root[data-still] *,
+:root[data-still] *::before,
+:root[data-still] *::after {
+  animation: none !important;
+  transition: none !important;
+}
+:root[data-still] .lc-curve {
+  stroke-dasharray: none;
 }

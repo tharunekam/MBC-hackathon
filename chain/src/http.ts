@@ -7,7 +7,8 @@
  *   POST /calls/:id/reveal                           reveal after settlement
  *   GET  /calls/:id/verify                           re-read both records from Solana and recompute the hash
  *   GET  /leaderboard
- *   POST /hooks/quicknode                            QuickNode Stream deliveries
+ *   GET  /reveals/:signature     a verified, revealed call (public: no salt, no account)
+ *   POST /hooks/quicknode                           QuickNode Stream deliveries
  *   POST /admin/backfill                             re-scan our authority's recent transactions
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -138,6 +139,9 @@ export function createHandler(deps: HttpDeps): (req: IncomingMessage, res: Serve
         }
         if (req.method === 'GET' && path === '/calls') return send(200, { calls: deps.service.listCalls(deps.user) });
         if (req.method === 'GET' && path === '/leaderboard') return send(200, deps.service.leaderboard());
+
+        const pub = /^\/reveals\/([1-9A-HJ-NP-Za-km-z]{64,90})$/.exec(path);
+        if (pub && req.method === 'GET') return send(200, deps.service.publicReveal(pub[1]!));
 
         const m = /^\/calls\/([A-Za-z0-9_-]{1,64})\/(reveal|verify)$/.exec(path);
         if (m) {

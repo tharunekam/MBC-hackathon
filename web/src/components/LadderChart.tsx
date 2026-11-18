@@ -176,9 +176,9 @@ export default function LadderChart({ rungs, condition, target, onChange }: Prop
   }
 
   return (
-    <div className="lc" ref={wrapRef}>
+    <div className="lc" ref={wrapRef} role="group" aria-label="Chance of finishing at or above each price, with two handles to choose your bet">
       {width > 0 && (
-        <svg ref={svgRef} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label="Chance of finishing at or above each price, with two handles to choose your bet">
+        <svg ref={svgRef} width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
           {/* grid and axes */}
           {[0, 0.25, 0.5, 0.75, 1].map((p) => (
             <g key={p}>

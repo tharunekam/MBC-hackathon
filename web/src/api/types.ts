@@ -271,6 +271,24 @@ export interface CallRecord {
   };
 }
 
+/** A revealed call as the public sees it (`GET /reveals/:signature`): no salt, no account. */
+export interface PublicReveal {
+  signature: string;
+  commitSignature: string;
+  handle: string;
+  event: string;
+  condition: string;
+  target: string;
+  entryPrice: number;
+  fairPrice: number;
+  outcome: 0 | 1;
+  edge: number;
+  revealedAt: string;
+  network: 'devnet' | 'fake';
+  /** Public key of the key that signed the records. The proof page checks every transaction was signed by it. */
+  authority: string;
+}
+
 export interface LeaderboardRow {
   rank: number;
   handle: string;

@@ -5,6 +5,7 @@ import Build from './pages/Build';
 import Landing from './pages/Landing';
 import Leaderboard from './pages/Leaderboard';
 import Proof from './pages/Proof';
+import Verify from './pages/Verify';
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
         <Route path="app/bets" element={<Bets />} />
         <Route path="leaderboard" element={<Leaderboard />} />
         <Route path="proof" element={<Proof />} />
+        <Route path="verify/:signature" element={<Verify />} />
         <Route path="*" element={<Landing />} />
       </Route>
     </Routes>

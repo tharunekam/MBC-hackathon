@@ -217,6 +217,49 @@ test('rate limit: spending on-chain fees is limited per client; reads are not', 
   }
 });
 
+test('a revealed call has a public page: plaintext and result, never the salt or an account', async () => {
+  const s = await start({}, { selfIngest: true });
+  try {
+    s.bets.add();
+    const made = await s.call('POST', '/calls', { betId: 'b1' });
+    s.bets.settle('b1', 'yes', 'yes');
+    const rev = (await s.call('POST', `/calls/${made.json.id}/reveal`)).json;
+    const pub = await s.call('GET', `/reveals/${rev.reveal.signature}`);
+    assert.equal(pub.status, 200);
+    assert.equal(pub.json.handle, made.json.handle);
+    assert.equal(pub.json.condition, 'GEMI-BTC2611190100-HI62500');
+    assert.equal(pub.json.outcome, 1);
+    assert.equal(pub.json.edge, 0.59);
+    assert.equal(pub.json.commitSignature, made.json.commitSignature);
+    assert.equal(pub.json.authority, s.chain.authority);
+    const text = JSON.stringify(pub.json);
+    assert.ok(!text.includes(s.service.store.data.calls[0]!.salt), 'the salt is not served');
+    assert.ok(!text.includes('primary'), 'no account name');
+    // a commit signature, an unknown signature and a malformed one are all 404 (the commit alone reveals nothing)
+    assert.equal((await s.call('GET', `/reveals/${made.json.commitSignature}`)).status, 404);
+    assert.equal((await s.call('GET', `/reveals/${'3'.repeat(88)}`)).status, 404);
+    assert.equal((await s.call('GET', '/reveals/short')).status, 404);
+  } finally {
+    await s.close();
+  }
+});
+
+test('an unverified reveal is never served publicly', async () => {
+  const s = await start({}, { selfIngest: false });
+  try {
+    s.bets.add();
+    const made = await s.call('POST', '/calls', { betId: 'b1' });
+    s.bets.settle('b1', 'yes', 'yes');
+    const rev = (await s.call('POST', `/calls/${made.json.id}/reveal`)).json;
+    // Not indexed yet (no Stream, no backfill): not public either.
+    assert.equal((await s.call('GET', `/reveals/${rev.reveal.signature}`)).status, 404);
+    await s.service.backfill();
+    assert.equal((await s.call('GET', `/reveals/${rev.reveal.signature}`)).status, 200);
+  } finally {
+    await s.close();
+  }
+});
+
 test('health reports the network, the authority and counts, never a key', async () => {
   const s = await start({ balance: async () => 2_500_000_000 });
   try {

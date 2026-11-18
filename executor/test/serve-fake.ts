@@ -38,11 +38,11 @@ const STRIKES = Array.from({ length: 8 }, (_, i) => 61500 + i * 500);
 function build() {
   const rungs = STRIKES.map((strike) => {
     const mid = 1 - cdf(Math.log(strike / SPOT) / SIGMA);
-    const half = 0.02 - 0.01 * 4 * mid * (1 - mid);
+    // A flat 2 cent spread: tighter than Gemini production (median about 4 cents) so most pairs pass the value rule.
     return {
       strike,
-      bid: Math.max(0.01, Math.round(Math.floor((mid - half) * 100)) / 100),
-      ask: Math.min(0.99, Math.round(Math.ceil((mid + half) * 100)) / 100),
+      bid: Math.max(0.01, Math.round((mid - 0.01) * 100) / 100),
+      ask: Math.min(0.99, Math.round((mid + 0.01) * 100) / 100),
       bidSize: 400,
       askSize: 400,
     };

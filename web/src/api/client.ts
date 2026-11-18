@@ -8,6 +8,7 @@ import type {
   MarketsResponse,
   PlaceBetRequest,
   PlaceBetResponse,
+  PublicReveal,
   QuoteResponse,
   ReconcileResponse,
 } from './types';
@@ -39,6 +40,7 @@ export interface Api {
   revealCall(callId: string): Promise<CallRecord>;
   calls(): Promise<{ calls: CallRecord[] }>;
   leaderboard(): Promise<LeaderboardResponse>;
+  reveal(signature: string): Promise<PublicReveal>;
 }
 
 async function request<T>(base: string, path: string, init?: RequestInit): Promise<T> {
@@ -84,5 +86,6 @@ export function liveApi(base = '/api', chainBase = '/chain', defaultUser = 'prim
     revealCall: (callId) => ch(`/calls/${callId}/reveal`, { method: 'POST' }),
     calls: () => ch('/calls'),
     leaderboard: () => ch('/leaderboard'),
+    reveal: (signature) => ch(`/reveals/${signature}`),
   };
 }

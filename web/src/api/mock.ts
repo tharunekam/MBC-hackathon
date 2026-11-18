@@ -443,6 +443,29 @@ export function mockApi(): Api {
       return call;
     },
 
+    async reveal(signature) {
+      seed();
+      await sleep(120);
+      const call = calls.find((c) => c.reveal?.signature === signature);
+      const bet = call && bets.find((b) => b.id === call.betId);
+      if (!call?.reveal || !bet) throw new ApiError(404, { error: 'No such revealed call.', code: 'unknown_reveal' }, 'missing');
+      return {
+        signature,
+        commitSignature: call.commitSignature,
+        handle: call.handle,
+        event: bet.eventTicker,
+        condition: bet.condition.symbol,
+        target: bet.target.symbol,
+        entryPrice: bet.quotedPrice,
+        fairPrice: call.reveal.fairPriceAtEntry,
+        outcome: call.reveal.outcome ?? 0,
+        edge: call.reveal.edge ?? 0,
+        revealedAt: call.reveal.revealedAt,
+        network: 'fake',
+        authority: 'DemoAuthority11111111111111111111111111111111',
+      };
+    },
+
     async calls() {
       seed();
       await sleep(80);
