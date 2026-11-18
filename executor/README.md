@@ -112,8 +112,23 @@ Otherwise the verdict is **ok**. The refuse limits were loosened from 5 cents /
 15% so that enough production pairs pass; all four numbers are named constants.
 
 `ladder_out_of_order` looks at the whole event, not just the two contracts in
-the bet. On the sandbox the far end of a ladder is sometimes out by one cent
-(ask 0.20 then 0.21), which refuses every pair in that event until it corrects.
+the bet. That was reviewed on 2026-11-17 and kept, on these measurements:
+
+- On the saved production snapshot (18 "or above" ladders, 557 pairs) it cost
+  nothing: 91 pairs pass with the check, and the same 91 pass without it. The
+  three ladders that were out of order had no acceptable pair anyway.
+- On the sandbox, over two minutes of reading four live ladders every 8
+  seconds, a ladder was out of order in 3 of 56 reads, by one cent each time.
+  The check removed 38 of 711 otherwise-tradable pair-reads (about 5%). At one
+  earlier moment two of four ladders were out at once, so it varies.
+- Checking only the two contracts in the bet would do nothing: if the outcome
+  is priced above the condition, `no_price` already refuses the pair. The only
+  real alternative (refuse a pair only when one of its own contracts is out of
+  order against some other strike) would have won back 14 of those 38.
+
+So while a ladder is out of order, every pair in that event is refused, usually
+for a few seconds; the other events stay available. A frontend should treat it
+like any other 422: try again.
 
 Worked example (also the first test in `test/offer.test.ts`): condition 0.80 /
 0.84, outcome 0.40 / 0.42. Fair is 0.41 / 0.82 = 0.50. Price paid with no fees
