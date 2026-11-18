@@ -48,3 +48,40 @@ needs a new id (`anchor keys sync`, rebuild, refresh the fixture, and use the ne
 READMEs).
 
 Then set `GIVEN_PROGRAM_ID` for the chain service and run its smoke test (`../chain/README.md`, "With the program").
+
+## Is the deployed program this source?
+
+```bash
+anchor build && scripts/verify-deployed.sh     # downloads the deployed program and compares it byte for byte
+```
+
+Checked 2026-11-18: **match**. The program on devnet is `5462d1fc620dd1a1b83cc32e0e7f7be40f66d641a388121ae9764d4d0a444ac7`
+(SHA-256, 172,968 bytes, deployed in slot 523513183), the same file this folder builds on the machine that deployed it.
+The program source has not changed since that deployment (commit `e220756`). A second copy of the committed source,
+checked out into an empty folder and built with `anchor build --ignore-keys`, produced the same bytes, so the build
+repeats on that machine. Use `anchor build`: a bare `cargo build-sbf` targets a different SBPF version by default and
+gives a different, larger file.
+
+What that does and does not show:
+
+- It was built with anchor-cli 1.2.2, solana-cli 4.1.2 (cargo-build-sbf 4.1.0, platform-tools v1.54) and Rust 1.89.0 on
+  macOS (arm64), with the `Cargo.lock` in this folder.
+- It is **not** a Docker-reproducible ("verified") build: the build machine has no Docker. A different machine or
+  toolchain may produce different bytes from the same source, so a mismatch elsewhere is not by itself a sign of
+  tampering. Rebuild with the versions above before drawing a conclusion.
+- The program's interface (its Anchor IDL) is published on chain, in the metadata account
+  `CwzE3vPRsWMH8T8oJHZjnwM2vwxVEZsXkqXe1ioMSzHz`, so tools that read on-chain IDLs can decode its instructions,
+  accounts and errors: `anchor idl fetch 8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK --provider.cluster devnet`.
+
+## Who can change it
+
+The program is upgradeable, and the upgrade authority is the deploy key (`5fE6B5sF…`), held on one machine. Until that
+changes, whoever holds that key can replace the program, which is the honest limit on "the chain checks it". The plan is
+to make it final once features are frozen (Thursday 2026-11-19, 15:00 CST), after the hosted demo has run through it:
+
+```bash
+solana program set-upgrade-authority 8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK --final --url devnet
+```
+
+That cannot be undone. If a fault turned up afterwards, the chain service would go back to Memo records alone by
+unsetting `GIVEN_PROGRAM_ID`; a fixed program would need a new id.
