@@ -3,6 +3,7 @@ import { createHmac } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { test } from 'node:test';
+import { gzipSync } from 'node:zlib';
 import { createHandler } from '../src/http.ts';
 import type { HttpDeps } from '../src/http.ts';
 import { hookAuthentic, signaturesIn } from '../src/webhook.ts';
@@ -19,7 +20,8 @@ async function start(extra: Partial<HttpDeps> = {}, over: Parameters<typeof setu
     const res = await fetch(base + path, {
       method,
       headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...headers },
-      body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
+      // Bytes (a gzipped delivery) go out as they are; fetch accepts them, though its types here do not say so.
+      body: body === undefined ? undefined : typeof body === 'string' ? body : body instanceof Uint8Array ? (body as unknown as string) : JSON.stringify(body),
     });
     const text = await res.text();
     return { status: res.status, headers: res.headers, json: (text ? JSON.parse(text) : null) as Json };
@@ -107,6 +109,48 @@ test('webhook: a delivery without the secret is refused, with it the signatures 
     await s.call('POST', '/hooks/quicknode', payload, { 'X-Given-Token': 'hook-secret' });
     await s.service.idle();
     assert.equal((await s.call('GET', '/leaderboard')).json.rows[0].calls, 1);
+  } finally {
+    await s.close();
+  }
+});
+
+test('webhook: a gzipped delivery is inflated first, and QuickNode\'s signature is checked over the inflated JSON', async () => {
+  const s = await start({ hook: { qnSecurityToken: 'qn-secret-of-at-least-32-characters' } }, { selfIngest: false });
+  try {
+    s.bets.add();
+    const made = await s.call('POST', '/calls', { betId: 'b1' });
+    const json = JSON.stringify([{ sig: made.json.commitSignature, slot: 1 }]);
+    const zipped = gzipSync(json);
+    const ts = String(Math.floor(Date.now() / 1000));
+    const sign = (over: string | Buffer) => createHmac('sha256', 'qn-secret-of-at-least-32-characters').update('n1' + ts).update(over).digest('hex');
+    const headers = (signature: string) => ({ 'Content-Encoding': 'gzip', 'X-QN-Nonce': 'n1', 'X-QN-Timestamp': ts, 'X-QN-Signature': signature });
+
+    // Signed the way QuickNode documents it: over the uncompressed payload.
+    const ok = await s.call('POST', '/hooks/quicknode', zipped, headers(sign(json)));
+    assert.equal(ok.status, 202);
+    assert.equal(ok.json.accepted, 1);
+    // A signature over the compressed bytes is not QuickNode's, and is refused.
+    assert.equal((await s.call('POST', '/hooks/quicknode', zipped, headers(sign(zipped)))).status, 401);
+    // The same payload uncompressed still works.
+    const plain = { 'X-QN-Nonce': 'n1', 'X-QN-Timestamp': ts, 'X-QN-Signature': sign(json) };
+    assert.equal((await s.call('POST', '/hooks/quicknode', json, plain)).status, 202);
+  } finally {
+    await s.close();
+  }
+});
+
+test('webhook: a body marked gzip that is not, or that inflates past the cap, is refused cleanly', async () => {
+  const s = await start();
+  try {
+    const auth = { Authorization: 'Bearer hook-secret', 'Content-Encoding': 'gzip' };
+    const notGzip = await s.call('POST', '/hooks/quicknode', '[{"sig":"x"}]', auth);
+    assert.equal(notGzip.status, 400);
+    assert.equal(notGzip.json.code, 'invalid_encoding');
+    // 8 MB of zeros is a few kilobytes compressed: small enough to be read, far too large once inflated.
+    const bomb = await s.call('POST', '/hooks/quicknode', gzipSync(Buffer.alloc(8 * 1024 * 1024)), auth);
+    assert.equal(bomb.status, 413);
+    // other routes do not inflate anything
+    assert.equal((await s.call('GET', '/health')).status, 200);
   } finally {
     await s.close();
   }
