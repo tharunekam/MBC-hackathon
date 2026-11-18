@@ -1,0 +1,94 @@
+/* One token layer. Everything else inherits from it. Light is warm paper, dark is warm ink. */
+:root {
+  --bg: #f5f1e8;
+  --bg-2: #ece7da;
+  --surface: #fffdf7;
+  --surface-2: #f9f5ea;
+  --ink: #17150f;
+  --soft: #3a362d;
+  --muted: #6b6558;
+  --faint: #9a9384;
+  --line: rgba(23, 21, 15, 0.12);
+  --line-strong: rgba(23, 21, 15, 0.24);
+
+  --accent: #f0ac2b;
+  --accent-ink: #1b1204;
+  --accent-text: #8a5300;
+  --accent-soft: rgba(240, 172, 43, 0.18);
+
+  --good: #23764a;
+  --good-soft: rgba(35, 118, 74, 0.12);
+  --bad: #b8402a;
+  --bad-soft: rgba(184, 64, 42, 0.11);
+
+  --band-dark-bg: #15130e;
+
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 16px;
+  --shadow: 0 1px 0 rgba(23, 21, 15, 0.04), 0 18px 40px -22px rgba(23, 21, 15, 0.28);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --font-display: 'Instrument Serif', 'Iowan Old Style', Georgia, serif;
+  --font-ui: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  color-scheme: light;
+  color: var(--ink);
+  background: var(--bg);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+
+:root[data-theme='dark'] {
+  --bg: #12100c;
+  --bg-2: #0d0b08;
+  --surface: #1b1814;
+  --surface-2: #221e18;
+  --ink: #f3efe6;
+  --soft: #d4cebf;
+  --muted: #a39c8b;
+  --faint: #756f61;
+  --line: rgba(243, 239, 230, 0.12);
+  --line-strong: rgba(243, 239, 230, 0.26);
+
+  --accent: #f2b440;
+  --accent-ink: #1b1204;
+  --accent-text: #f2b440;
+  --accent-soft: rgba(242, 180, 64, 0.16);
+
+  --good: #6fcf9a;
+  --good-soft: rgba(111, 207, 154, 0.14);
+  --bad: #ee8b72;
+  --bad-soft: rgba(238, 139, 114, 0.14);
+
+  --band-dark-bg: #0d0b08;
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.03), 0 20px 44px -22px rgba(0, 0, 0, 0.7);
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #12100c;
+    --bg-2: #0d0b08;
+    --surface: #1b1814;
+    --surface-2: #221e18;
+    --ink: #f3efe6;
+    --soft: #d4cebf;
+    --muted: #a39c8b;
+    --faint: #756f61;
+    --line: rgba(243, 239, 230, 0.12);
+    --line-strong: rgba(243, 239, 230, 0.26);
+    --accent: #f2b440;
+    --accent-text: #f2b440;
+    --accent-soft: rgba(242, 180, 64, 0.16);
+    --good: #6fcf9a;
+    --good-soft: rgba(111, 207, 154, 0.14);
+    --bad: #ee8b72;
+    --bad-soft: rgba(238, 139, 114, 0.14);
+    --band-dark-bg: #0d0b08;
+    --shadow: 0 1px 0 rgba(255, 255, 255, 0.03), 0 20px 44px -22px rgba(0, 0, 0, 0.7);
+    color-scheme: dark;
+  }
+}
