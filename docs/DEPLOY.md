@@ -79,6 +79,17 @@ synthetic first row from `npm run smoke` (same authority key), so either use a f
 - Logs: the container prints both backends' output, each line tagged `[exec ]` or `[chain]`.
 - If either backend exits, the whole process exits so the host restarts a known-good state.
 
+## A fallback for the stage
+
+The first real run showed the sandbox can have no bettable ladder for a few minutes at the top of the hour (new ladders are
+post-only first) and often fills only a few dollars. Two things keep a presentation safe:
+
+- Have a ladder already chosen and checked: open `/app`, confirm the button reads "Place bet", and place the bet before
+  the pitch if you can. `npm run check:deploy -- <url> --bet` does the same from a terminal.
+- If the sandbox is unusable, a second deployment with `GIVEN_MODE=fake` and `GIVEN_I_KNOW_THIS_IS_A_TEST=1` runs the
+  whole flow on the local test exchange with an in-memory chain. It labels itself "Local test exchange" in the nav and
+  footer, and **must be presented as exactly that**: it shows the product working, not Gemini. Say so on stage.
+
 ## Without a host
 
 `npm run build && npm start` runs the same server on this machine. Behind a tunnel (any HTTPS tunnel to port 8080, with
