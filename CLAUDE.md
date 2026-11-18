@@ -11,9 +11,9 @@ bets on Gemini prediction markets: you bet on the second half of a hunch and
 get your stake back if the first half doesn't happen. Each bet is two real
 orders in the user's own Gemini account.
 
-The repo started as "Living Tokens" (root `README.md`, `docs/ARCHITECTURE.md`,
-`programs/`, `hedge-engine/`, `relay/`). That draft is kept for reference; the
-current direction is described in `docs/GIVEN.md`.
+The repo started as "Living Tokens" (a vault-and-token design). That draft was removed from the working tree on
+2026-11-17 and is preserved at the git tag `living-tokens-draft`; the current direction is described in `docs/GIVEN.md`.
+The root `README.md` is the public description of Given.
 
 ## Read these, in this order
 

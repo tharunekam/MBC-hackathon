@@ -375,7 +375,7 @@ build problems? Is Playground's Anchor version current?
 | D2 | Chain award: Solana or Arc | **Solana** ($1,500 vs $1,000; QuickNode Streams supports Solana devnet, which we verified in the docs) |
 | D3 | Lane owners | Frontend-leaning teammate: Product. Executor author: Venue, then Chain |
 | D4 | Both travel to Austin for Sat Nov 21? | Yes: required for any prize. Decide today; flights get dearer |
-| D5 | Living Tokens folders | Tag the current `main` as `living-tokens-draft`, then remove `programs/`, `hedge-engine/`, `relay/` and the three old docs from the submitted branch. One story for the judges |
+| D5 | Living Tokens folders | **Done 2026-11-17** on this branch: tagged `living-tokens-draft` (pushed), removed `programs/`, `hedge-engine/`, `relay/` and the three old docs. The root README now describes Given. Revert by restoring from the tag if the two of you disagree |
 | D6 | ElevenLabs voice entry | No by default; revisit Wednesday night only if the frontend is ahead |
 | D7 | Production read-only quote view | Wait for Gemini's answer on price display |
 

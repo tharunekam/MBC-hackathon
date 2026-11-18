@@ -1,150 +1,152 @@
-> **Current direction (2026-11-17): the project is now "Given"** — "money back
-> if…" bets on Gemini prediction markets, placed as real orders in the user's own
-> Gemini account. Start with [`CLAUDE.md`](CLAUDE.md), then
-> [`docs/GIVEN.md`](docs/GIVEN.md), [`docs/PLAN.md`](docs/PLAN.md) and
-> [`executor/README.md`](executor/README.md). The working code is on the
-> `feat/gemini-executor` branch.
->
-> Everything below is the earlier "Living Tokens" draft, kept for reference. It
-> has not been updated and should not be read as the current plan.
+# Given
 
-# ⚡ Living Tokens
-### *A Gemini Prediction Market Becomes an Economy You Can Hold, Trade, and Build On.*
+**Bet on the second half of your hunch. If the first half doesn't happen, you get your money back.**
 
-[![Solana](https://img.shields.io/badge/Blockchain-Solana%20Token--2022-14F195?style=flat&logo=solana)](https://solana.com/)
-[![Gemini](https://img.shields.io/badge/Exchange-Gemini%20Prediction%20Markets-00DCFA?style=flat)](https://www.gemini.com/)
-[![QuickNode](https://img.shields.io/badge/Infrastructure-QuickNode%20Streams-0052FF?style=flat)](https://www.quicknode.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+Given builds "money back if…" bets on [Gemini](https://www.gemini.com) prediction markets from two ordinary orders in the
+user's own Gemini account, then records each call on Solana so it can be proven later without trusting us.
 
----
+> Given uses Gemini's prediction market API and is **not affiliated with Gemini**. Everything runs on Gemini's sandbox
+> with practice money. Prediction markets involve risk and can lose the amount you stake.
 
-## 🎯 Executive Summary & The Pitch
+*Built for the UBC 2026 hackathon. Tracks: Consumer Apps. Awards: Best use of Solana. Bounties: Gemini Prediction Markets,
+QuickNode Streams.*
 
-> **Living Tokens are programmable Solana assets that react to Gemini’s live prediction markets. Tokens, collectibles, and community applications share one unified underlying liquidity pool, while their financial demand flows directly back to Gemini through real market-making and automated hedging.**
+## What it is
 
-Prediction markets represent the most accurate forward-looking pricing of truth in the world. However, they are traditionally trapped in static trading interfaces designed for institutional orderbook traders. 
+On a Gemini price ladder (contracts on one number at rising thresholds), pick a **condition** (BTC finishes the hour at or
+above $62,500) and a **target** (at or above $63,500):
 
-**Living Tokens solves this by transforming any Gemini prediction market into a living onchain community economy:**
-- A community token whose **balance and metadata visually swell with market belief**.
-- An underdog stamp that **immutably proves you believed when the odds were sub-10%**.
-- A trophy that **autonomously moves itself to the victor's treasury upon settlement**.
+- if the target is reached, you win;
+- if the condition fails, you get your stake back;
+- if the condition holds but the target is missed, you lose the stake.
 
-### 💡 The Central Innovation: Shared Canonical Liquidity
-**A creator should never have to bootstrap a new financial market to launch a new expressive token behavior.**
+Nobody we found sells that refund as a one-tap retail bet. (The idea of building a conditional bet from linked contracts
+is published; sportsbooks sell the same payoff as "draw no bet". Our claim is the product, not the maths.)
 
-Instead of fragmenting liquidity across dozens of isolated AMM pools, **every living asset connected to a Gemini event shares the exact same funded collateral claims (`1 USDC ↔ 1 YES + 1 NO`)**. 
+### How a bet works, with numbers
 
-```
-                                      ┌───► $HORNS (Liquid Community Token)
-                                      │
-[ 1 USDC Collateral Vault ] ◄──► [ Canonical YES/NO Claims ] ───┼───► Underdog Stamp (Wrapped Collectible)
-                                      │
-                                      └───► Autonomous Victory Trophy
-```
+Condition A is priced 0.80 / 0.84 (bid / ask) and target B is 0.40 / 0.42. A $100 bet buys:
 
-All user demand routes into this shared engine, collapsing fragmented consumer derivatives into a single net directional risk profile that is **automatically hedged on Gemini**.
+| Order | What | Result |
+|---|---|---|
+| 1 | YES on B: 190.5 contracts at 42¢ | pays $1 each if the target is reached |
+| 2 | NO on A: 100 contracts at 20¢ | pays $1 each if the condition fails, returning the stake |
 
----
+| Outcome | Result |
+|---|---|
+| Target reached | **+$90.48** |
+| Condition fails | **stake back** (the NO pays $100) |
+| Condition holds, target missed | **−$100** |
 
-## 🏛️ The Three Living Objects
+The fair price (no spread, no fees) is 50¢ per $1 and you pay 52.5¢, or 55.4¢ with Gemini's production fees. Every quote
+shows four numbers: the chance both happen, the fair price, what you pay, and what you would get selling right now. The
+app **refuses** pairs that cost too much over fair (all-in 95¢ or more, or more than 8¢ and 20% over). See
+`executor/README.md` for the rule and the sizing maths.
 
-| Object | Asset Type | What Changes with Gemini Odds | Financial Backing |
-| :--- | :--- | :--- | :--- |
-| **$HORNS** | SPL Token-2022 (Scaled UI Amount) | **Balance & Metadata Swell/Shrink**: Wallet display reflects live belief; visual aura shifts through Underdog → Contender → Champion tiers. | 1:1 backed by canonical YES outcome claims (redeemable for 1 USDC on win). |
-| **Underdog Stamp** | Wrapped NFT / Token-2022 Non-Fungible | **Mint Eligibility & Provenance**: Only mintable when Gemini odds are <10%. Permanently seals the exact entry odds and timestamp into the metadata. | Wraps 100 YES claims inside. 1-click unwrap back to liquid claims at any time. |
-| **The Trophy** | Escrowed Autonomous NFT + Prize Vault | **Ownership Destination**: Programmatic Solana escrow automatically releases the Trophy and cash pot to the winner's treasury upon Gemini resolution. | Escrowed cash prize + commemorative championship NFT. |
+### Fees and disclosures
 
----
+- Gemini's published taker fee is `0.07 × contracts × price × (1 − price)`, rounded up to the cent. The sandbox charges
+  none, so every quote is also shown **at production fee rates**. We have not run anything on production.
+- We never say "risk-free" or "guaranteed". The cost over fair price is shown on every quote.
+- Money and positions stay in the user's Gemini account. Nothing is held by Given, nothing is tokenised, and users are
+  never matched against each other.
 
-## 🔄 How Value Accrues Back to Gemini
-
-The core thesis of Living Tokens is that **Solana is the distribution and retail engagement layer, while Gemini is the institutional execution and liquidity engine.**
-
-```mermaid
-flowchart TB
-    subgraph Solana ["Solana Onchain Ecosystem"]
-        U["Wallets, DAOs, & Fans"] -->|"Buy / Sell / Wrap"| LT["Living Tokens Engine"]
-        LT <-->|"1 USDC = 1 YES + 1 NO"| V["Solana Collateral Vault & Shared Router"]
-        LT -.->|"Emits Trade & Mint Events"| QN["QuickNode Streams"]
-    end
-
-    subgraph Offchain ["Automated Market Making & Hedging Core"]
-        QN -->|"Real-Time Webhook (<250ms)"| HEDGE["Delta-Neutral Hedging Engine"]
-        HEDGE <-->|"REST Order Execution & Sub-Broker Tag"| GEMINI["Gemini Prediction Markets (CLOB)"]
-        RELAY["Gemini Market State Relay"] <-->|"WebSocket Price & Status Feed"| GEMINI
-    end
-
-    RELAY -->|"Push Live Odds & Settled State"| LT
-```
-
-### 1. Direct Taker Volume & Fee Accrual
-When users buy $HORNS or mint Underdog Stamps, the Solana Vault accumulates net directional imbalance (e.g., long Texas YES). The Hedge Engine immediately executes matching taker orders on Gemini's Central Limit Order Book (CLOB), generating **direct taker trading fees** for Gemini.
-
-### 2. Orderbook Deepening (Two-Sided Resting Liquidity)
-To minimize spread costs for Solana users, the Market Maker maintains resting limit bids and asks on Gemini. This deepens Gemini's orderbook, narrows market spreads, and helps qualify for Gemini's **Liquidity Rewards Program**.
-
-### 3. Sub-Broker Attribution (`living-tokens-v1`)
-Every order sent to Gemini's API carries a dedicated partner identifier header (`gemini-client: living-tokens-v1`). Gemini can cryptographically and programmatically attribute 100% of the institutional volume and retail flow generated by our platform.
-
-### 4. Retail Distribution for Gemini's Event Catalog
-Gemini gains access to sports fans, NFT collectors, and Web3 communities who would never otherwise open a traditional trading terminal. Every event Gemini lists becomes an immediate playground for community tokens and collectibles.
-
----
-
-## ⚙️ Technical Architecture
-
-### 1. Solana Smart Contract (`Anchor` + `SPL Token-2022`)
-- **Split / Merge Core**: Implements standard binary outcome token mechanics.
-  $$\text{Deposit } 1\ \text{USDC} \longrightarrow 1\ \text{YES Claim} + 1\ \text{NO Claim}$$
-  $$\text{Merge } 1\ \text{YES Claim} + 1\ \text{NO Claim} \longrightarrow 1\ \text{USDC}$$
-- **Token-2022 `ScaledUiAmount` Extension**: Enables the swelling balance visual effect. The user's underlying claim count remains fixed (guaranteeing 100% solvency), while the displayed UI balance expands and contracts with Gemini's live probability multiplier.
-- **Dynamic Metadata Pointer**: The token metadata URI updates dynamically across tier thresholds (Underdog, Contender, Favorite, Winner).
-- **Underdog Stamp Mint Guard**: Enforces an onchain invariant checking the current Oracle Relay timestamp and odds before permitting a stamp to mint.
-
-### 2. QuickNode Streams Integration
-- QuickNode Streams monitors the Solana Living Tokens Program ID on mainnet/devnet.
-- Any `ClaimPurchased`, `StampMinted`, or `ClaimRedeemed` instruction triggers an immediate webhook to the Hedge Engine.
-- Sub-second delivery guarantees the hedge is placed on Gemini before adverse price movements occur.
-
-### 3. Gemini Market State Relay
-- Connects to Gemini's prediction market WebSocket stream (`wss://api.gemini.com/v1/marketdata`).
-- Relays price observations, bid/ask depth, and final resolution events (`Closed`, `Settled`, `Invalid`) onchain to Solana.
-
----
-
-## 📊 Lifecycle Walkthrough: Texas Longhorns Game
+## Architecture
 
 ```
-   [ Texas at 8% ] ──► [ Texas Comeback: 35% ] ──► [ Fourth Quarter: 70% ] ──► [ Final Whistle: YES ]
-         │                        │                           │                         │
-  • $HORNS in Underdog     • $HORNS visual balance    • $HORNS in Favorite      • Gemini settles YES
-    state                    swells 4.3x                state                   • 1 $HORNS = 1 USDC
-  • Underdog Stamp mint    • Underdog Stamp mint      • Maker deepens Gemini      redemption
-    window OPEN              CLOSES                     resting quotes          • Trophy moves to
-  • Maker hedges delta     • Provenance locked for                              Texas Treasury
-    on Gemini                early minters                                      • Hedger reconciles
+web (React/Vite)  ──►  executor (Node)  ──►  Gemini REST + WebSocket (sandbox)
+      │                    │
+      │                    ▼ bet details, read by the chain service
+      └────────────►  chain service (Node)  ──►  Solana devnet (Memo program)
+                           ▲                            │ program logs
+                           │ POST /hooks/quicknode      ▼
+                           └──────────────────  QuickNode Stream (filter + webhook)
 ```
 
----
+| Package | Role |
+|---|---|
+| `executor/` | Quotes, the two-leg bet with depth guard and hedge sizing, a ledger written before every order, settlement, and **reconcile to the cent against Gemini**. 71 tests. |
+| `chain/` | Commit and reveal on Solana, the QuickNode webhook, the leaderboard, a public proof endpoint. 56 tests. |
+| `web/` | The app: a probability ladder with two draggable markers, the four-number quote, bets, leaderboard, proof page. 18 tests. |
+| `docs/` | `PLAN.md`, `GIVEN.md` (decision log), `CONTRACTS.md` (interfaces), `GEMINI_API_NOTES.md`, `SUBMISSION.md`. |
 
-## 🛠️ Repository Roadmap & Contents
+### Gemini endpoints used
 
+Market data (REST, no key): `GET /v1/prediction-markets/events` and `/events/{ticker}`. Order entry (WebSocket):
+`order.place`, with the `orders@account` stream for fills. Depth: `{symbol}@depth5` and `@bookTicker` streams. Account reads
+(REST): `/v1/prediction-markets/positions`, `/orders/active`, `/orders/history`, and `/v1/balances`. Details and every
+sandbox quirk we found are in `docs/GEMINI_API_NOTES.md`. Each fact there is marked verified, read in the docs, or unknown.
+
+## How Solana is used
+
+Every call is recorded on Solana in two steps, so a player can prove they made it **before** the result:
+
+1. **Commit**, when the bet is placed: a salted SHA-256 of the call, written through the **Memo program**
+   (`MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr`). It shows nothing about the bet or the player.
+2. **Reveal**, after settlement and only if the player chooses: the plaintext fields and the salt. Anyone can recompute the
+   hash and compare it to the commit.
+
+The app is the fee payer, so users never see a wallet, gas or a seed phrase. Records are signed by one authority key:
+`2QfQ15Ha5VxvvwWqdsDdCyf6n8uxKfVDHh9GHZdFHeHz` (devnet). Only memos signed by that key count; a reveal counts only if it
+reproduces its commit and is the first for it. The **proof page** (`/verify/:signature`) checks all of this in the browser by
+reading the records straight from a Solana node and recomputing the hash with WebCrypto, without asking our server.
+What it proves: the call was fixed before the result. What it does not: the result itself (called it or missed) is
+attested by our key, with Gemini's order IDs as the evidence. Calls whose first half failed are refunded, void, and never
+scored.
+
+**There is no custom Solana program yet.** Memo records are the shipped path; a program that validates reveals on chain is
+a planned upgrade (`docs/GIVEN.md`, decision 9).
+
+The leaderboard ranks **edge**, not profit or volume: for each revealed call, outcome (1 if the target hit, else 0) minus
+the fair price at entry, summed. Luck on a few calls washes out.
+
+## QuickNode Streams
+
+- **Network:** Solana devnet. **Dataset:** Programs + Logs.
+- **Filter:** `chain/quicknode/filter.js` keeps only successful transactions that logged a Given memo and delivers
+  `{ sig, slot }`.
+- **Destination:** webhook to `POST /hooks/quicknode` on the chain service, authenticated by a shared-token header (or
+  QuickNode's HMAC headers).
+- **Why:** it is the live feed behind the leaderboard. The webhook is only a hint: the service re-reads every signature from
+  Solana and verifies it, so a forged delivery cannot add a row. Solana Streams cannot backfill and pause after repeated
+  failed deliveries, so an RPC backfill runs every minute as a safety net.
+
+Status: the receiver is built and tested (authentication, replay window, deduplication). **The Stream itself is not
+created yet** and the filter has not been run against a live Stream. See `chain/README.md` for what is verified.
+
+## Run it
+
+Node 23.6 or newer.
+
+```bash
+npm run install:all
+npm run dev        # whole stack with no keys and no SOL: local test exchange + in-memory chain + web
+node scripts/seed-history.mjs all   # optional: a win, a loss and a refund, committed and revealed
+npm run stop       # stop this project's servers
+npm test           # 145 tests across the three packages
 ```
-├── programs/
-│   └── living_tokens/       # Solana Anchor program (Vault, Claims, Stamps, Escrow)
-├── hedge-engine/            # QuickNode Stream listener & Gemini execution bot
-├── relay/                   # Gemini WebSocket listener & Solana Oracle publisher
-├── app/                     # Next.js frontend with live Solana wallet & odds visualization
-└── docs/
-    ├── ARCHITECTURE.md      # In-depth technical specification & data structures
-    ├── GEMINI_VALUE_ACCRUAL.md # Detailed economic analysis & fee modeling
-    └── DEMO_WALKTHROUGH.md  # 3-minute hackathon judge demo script
-```
 
----
+Open http://127.0.0.1:5273. The nav shows what the app is talking to; with `npm run dev` it says "Local test exchange".
 
-## 🏆 Why Living Tokens Wins the Hackathon
-1. **True Innovation**: Moves beyond boring betting screens to create interactive, dynamic onchain assets with emotional and financial resonance.
-2. **Economic Coherence**: No unbacked algorithmic rebasing; 100% backed by segregated USDC collateral and delta-hedged on Gemini.
-3. **Genuine Mutual Value**: Directly aligns with Gemini's strategic goal of expanding prediction-market trading volume and institutional liquidity.
-4. **Native Solana Power**: Leverages cutting-edge Solana features (SPL Token-2022 Extensions, Scaled UI Amount, QuickNode Streams).
+Real services (Gemini sandbox + Solana devnet): put sandbox keys in `.env` (see `executor/README.md`), create the authority
+wallet with `cd chain && npm run keygen`, fund it on devnet, check it with `npm run status`, prove the real path with
+`npm run smoke`, then `npm run dev:live`.
+
+### Sandbox versus production
+
+The executor refuses to run against production unless `GIVEN_ALLOW_PRODUCTION=1`, and refuses to listen on a network
+address unless it is on the sandbox with a pinned account, a stake cap and a rate limit. The sandbox's books are about 20¢
+wide (production's median is about 4¢), so on the sandbox the value rule would refuse almost everything; `npm run
+start:demo` in `executor/` waives the markup check **on the sandbox only**, and the verdict shown is never softened.
+
+## What is not built
+
+- A hosted demo link (the executor has the protections a hosted demo needs; nothing is deployed).
+- Gemini OAuth sign-in. Bets use demo accounts. Production needs Gemini's review.
+- A custom Solana program, and the QuickNode Stream (above).
+- The executor was exercised against Gemini's sandbox during development (see the verified facts in
+  `docs/GEMINI_API_NOTES.md`), but the full stack here, including the chain service and the web app, has so far been run
+  end to end only against the local test exchange. Production has never been run.
+- Maker-first pricing, sports ladders and a sandbox liquidity seeder. See `docs/PLAN.md`.
+
+The earlier "Living Tokens" draft is preserved at the git tag `living-tokens-draft`.
