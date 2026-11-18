@@ -132,11 +132,21 @@ await run('solana', `RPC answers (${new URL(cconf.rpcUrl).hostname})`, async () 
   return pass(`block height ${body.result}`);
 });
 if (kp) {
-  chain = new SolanaChain(cconf.rpcUrl, kp);
-  await run('solana', 'Authority funded (needs about 0.01 SOL)', async () => {
+  chain = new SolanaChain(cconf.rpcUrl, kp, cconf.programId);
+  // Memo-only records cost a fee (about 0.00001 SOL). Through the program each call also holds rent (about 0.002 SOL).
+  const need = cconf.programId ? 0.05 : 0.01;
+  await run('solana', `Authority funded (needs about ${need} SOL for a demo)`, async () => {
     const sol = ((await chain.balanceLamports()) ?? 0) / 1e9;
-    return sol >= 0.01 ? pass(`${sol} SOL`) : fail(`${sol} SOL`, `Fund ${kp.publicKey.toBase58()} at https://faucet.solana.com (network: devnet), then: cd chain && npm run smoke`);
+    return sol >= need ? pass(`${sol} SOL`) : fail(`${sol} SOL`, `Fund ${kp.publicKey.toBase58()} at https://faucet.solana.com (network: devnet), then: cd chain && npm run smoke`);
   });
+  if (cconf.programId) {
+    await run('solana', 'On-chain program is deployed (GIVEN_PROGRAM_ID)', async () => {
+      await chain.assertProgram();
+      return pass(cconf.programId);
+    });
+  } else {
+    console.log('[ skip ] On-chain program  GIVEN_PROGRAM_ID is not set, so records are Memos only');
+  }
 }
 
 // ------------------------------------------------------------------ stream

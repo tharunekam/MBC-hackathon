@@ -11,6 +11,9 @@
  * Then the checks that decide whether a first run with real keys is smooth: signatures on the wire, only the authority's
  * memos on chain, a leaderboard rebuilt from Solana, no secret in any response, and both services surviving a restart.
  *
+ * `--chaos` injects failures while the flow runs (a rate-limited Solana node, a dropped transaction whose blockhash expires,
+ * a Gemini socket that dies right after accepting an order) and requires the same end state: six orders, five records, no
+ * duplicates.
  * `--sabotage` gives the executor a wrong secret, to prove this script fails when something is broken (it should).
  * It touches no network and spends nothing. It proves our code is self-consistent and survives the failures we know
  * about; it cannot prove Gemini or devnet agree. `npm run preflight` and the real sandbox run do that.
@@ -41,6 +44,8 @@ const check = (name, ok, detail = '') => {
 const freePort = () => new Promise((res) => { const s = netServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); }); });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const children = [];
+const chaos = process.argv.includes('--chaos');
+const chaosLog = [];
 
 async function until(url, what, ms = 15_000) {
   const end = Date.now() + ms;
@@ -99,6 +104,20 @@ try {
       res.writeHead(200, { 'content-type': 'application/json' });
       return res.end('{"ok":true}');
     }
+    if (chaos && req.method === 'POST') {
+      // Faults are injected just before the matching request is forwarded.
+      if (url.pathname === '/chain/calls') {
+        const n = (chaosLog.filter((x) => x.startsWith('commit')).length);
+        if (n === 0) { rpc.rateLimitNext(1); chaosLog.push('commit#1: node answers 429 once'); }
+        else if (n === 1) { rpc.dropNext(); setTimeout(() => rpc.expireBlockhashes(), 200); chaosLog.push('commit#2: transaction dropped, blockhash expires'); }
+        else chaosLog.push(`commit#${n + 1}: clean`);
+      }
+      if (url.pathname === '/api/bets') {
+        const n = chaosLog.filter((x) => x.startsWith('bet')).length;
+        if (n === 2) { gem.state.dropAfterPlace = true; chaosLog.push('bet#3: Gemini socket dies right after accepting an order'); }
+        else chaosLog.push(`bet#${n + 1}: clean`);
+      }
+    }
     const [, which, ...rest] = url.pathname.split('/');
     const target = which === 'api' ? execPort : which === 'chain' ? chainPort : null;
     if (!target) { res.writeHead(404); return res.end(); }
@@ -121,6 +140,10 @@ try {
   });
   console.log(out.text.trim().split('\n').map((l) => `        ${l}`).join('\n'), '\n');
   check('seed script placed, settled, committed and revealed', out.code === 0, out.code === 0 ? '' : out.text.slice(-300));
+  if (chaos) {
+    console.log(chaosLog.filter((x) => !x.endsWith('clean')).map((x) => `        injected: ${x}`).join('\n'));
+    check('the faults really happened', chaosLog.length >= 3 && (rpc.calls.get('sendTransaction') ?? 0) > 5, `${rpc.calls.get('sendTransaction') ?? 0} sendTransaction calls`);
+  }
 
   // ---------------------------------------------------------------- the checks
   const { bets } = await get('/api/bets');

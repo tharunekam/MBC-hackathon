@@ -265,3 +265,40 @@ describe('more than one trusted authority', () => {
     assert.notEqual(pub.authority, chain.authority);
   });
 });
+
+describe('a double click or a retry storm', () => {
+  it('ten simultaneous commits of one bet write exactly one record', async () => {
+    const chain = new FakeChain();
+    const bets = new FakeBets();
+    bets.add();
+    const { service, store } = boot(join(tmp(), 'calls.json'), chain, bets);
+    const results = await Promise.all(Array.from({ length: 10 }, () => service.commitCall('b1', 'primary')));
+    assert.equal(chain.txs.length, 1);
+    assert.equal(store.data.calls.length, 1);
+    assert.equal(new Set(results.map((r) => r.id)).size, 1, 'everyone got the same call back');
+  });
+
+  it('ten simultaneous reveals write exactly one record', async () => {
+    const chain = new FakeChain();
+    const bets = new FakeBets();
+    bets.add();
+    const { service } = boot(join(tmp(), 'calls.json'), chain, bets);
+    const call = await service.commitCall('b1', 'primary');
+    bets.settle('b1', 'yes', 'yes');
+    const results = await Promise.all(Array.from({ length: 10 }, () => service.revealCall(call.id, 'primary')));
+    assert.equal(chain.txs.length, 2, 'one commit, one reveal');
+    assert.ok(results.every((r) => r.state === 'revealed'));
+  });
+
+  it('a failing attempt in the middle of a storm does not wedge the bet', async () => {
+    const chain = new FakeChain();
+    const bets = new FakeBets();
+    bets.add();
+    const { service } = boot(join(tmp(), 'calls.json'), chain, bets);
+    chain.failNext = 'rpc 500';
+    const settled = await Promise.allSettled(Array.from({ length: 5 }, () => service.commitCall('b1', 'primary')));
+    assert.ok(settled.some((r) => r.status === 'fulfilled'), 'a later attempt in the storm succeeds');
+    assert.equal(chain.txs.length, 1);
+    assert.equal(service.listCalls('primary').length, 1);
+  });
+});
