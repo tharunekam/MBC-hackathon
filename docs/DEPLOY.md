@@ -42,7 +42,7 @@ Set these as the host's secrets/environment. Nothing is read from a `.env` file 
 | `GIVEN_AUTHORITY_KEY` | live | The Solana authority key as the JSON array of its 64 bytes (the contents of `chain/data/authority.json`). Written once to `/data/chain/authority.json` with mode 600, never overwritten |
 | `GIVEN_PROGRAM_ID` | live, optional | `8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK`: each record is also checked on chain by our program. Costs about 0.002 SOL of rent per call |
 | `SOLANA_RPC_URL` | live, recommended | A private devnet RPC (a free QuickNode endpoint works). The public one rate-limits and failed a backfill in the first real run |
-| `GIVEN_HOOK_TOKEN` | for the Stream | Shared secret QuickNode sends to `/chain/hooks/quicknode` |
+| `GIVEN_HOOK_TOKEN`, `QN_SECURITY_TOKEN` | for the Stream | Made by `npm run quicknode -- keys`. The Stream sends the first as an `Authorization: Bearer` header and signs each delivery with the second; the receiver accepts either. Deliveries are refused until one is set |
 | `GIVEN_MAX_STAKE` | no | Dollars per bet, default 25 |
 | `GIVEN_RATE_LIMIT_PER_MIN` | no | Bets and settles per client per minute, default 20 |
 | `GIVEN_PINNED_USER` | no | Account every request acts as, default `primary` |

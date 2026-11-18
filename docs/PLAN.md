@@ -92,7 +92,7 @@ settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is a
 | T-C0 Memo smoke test | **Done 2026-11-18**: commit and reveal with our own key on real devnet, Memo only and through Victor's program (`npm run smoke`); the proof page verified real devnet records in a browser |
 | T-C1 Anchor program | **Done; the Wednesday gate is met.** `given_receipts` is deployed on devnet (`8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK`) and recorded a commit and a reveal there on 11-17 through the chain service's smoke test (links in `chain/README.md`). It checks each record in the same transaction as its Memo when `GIVEN_PROGRAM_ID` is set. **Still to do:** set `GIVEN_PROGRAM_ID` where the demo's chain service runs, once its authority key is funded. Memo records stay the fallback |
 | T-C2 chain service | **Done** (commit, reveal, verify, void handling) |
-| T-C3 Stream, filter, webhook | Webhook receiver done and tested; filter written from the docs, **Stream not created** (needs a QuickNode account and a public URL) |
+| T-C3 Stream, filter, webhook | Webhook receiver done and tested; `npm run quicknode` (keys, plan, test-delivery, create, activate, pause) and the filter written from the docs and OpenAPI spec; **Stream not created** (needs `QUICKNODE_API_KEY` and a public URL) |
 | T-C4 leaderboard, backfill | **Done** |
 | T-C5 verify-from-chain page | **Done** (`web/src/pages/Verify.tsx`, `web/src/lib/verify.ts`); verified in a browser against real devnet records |
 

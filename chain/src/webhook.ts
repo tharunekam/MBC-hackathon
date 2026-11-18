@@ -7,9 +7,9 @@
  *  1. A shared token sent as `Authorization: Bearer <token>` or `X-Given-Token` (set it as a custom
  *     header on the Stream's destination). This needs nothing from QuickNode beyond custom headers.
  *  2. QuickNode's signature headers (`X-QN-Nonce`, `X-QN-Timestamp`, `X-QN-Signature`): an HMAC-SHA256 of
- *     nonce + timestamp + body keyed by the stream's security token. NOTE: that exact construction comes from
- *     QuickNode's docs as summarised in our notes and has NOT been checked against a live delivery; confirm it
- *     on the first real one. Until then the shared token is the dependable path.
+ *     nonce + timestamp + body keyed by the stream's security token. The construction (hex digest, key = the
+ *     token's UTF-8 bytes) is from QuickNode's webhook-validation guide and is tested here, but has NOT been checked against
+ *     a live delivery; confirm it on the first real one. The shared token is the path that does not depend on it.
  * With neither configured, deliveries are refused unless GIVEN_HOOK_INSECURE=1 (local testing only).
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
