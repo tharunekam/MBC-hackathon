@@ -75,6 +75,12 @@ export default function Proof() {
               </div>
             </dl>
           )}
+          {rec && (rec.nettedCash ?? 0) > 0 && (
+            <p className="fine">
+              Gemini cancels a YES and a NO on the same contract against each other the moment you hold both, and pays {usd(1)} for each pair straight away.
+              Here that is {usd(rec.nettedCash ?? 0)} on {rec.nettedContracts} contracts. It is the same money arriving sooner, and it is already counted above.
+            </p>
+          )}
         </section>
 
         <section className="card">

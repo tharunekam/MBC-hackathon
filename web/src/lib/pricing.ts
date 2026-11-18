@@ -44,6 +44,8 @@ export interface Estimate {
   verdict: 'ok' | 'warn' | 'refuse';
   /** Why it is refused, in plain words, or null. */
   refusal: string | null;
+  /** The executor's code for that refusal, so the page can say what to do about it. */
+  code: 'price_too_high' | 'markup_too_high' | null;
   chanceCondition: number;
   chanceBothHappen: number;
   fairPrice: number;
@@ -71,11 +73,14 @@ export function estimate(condition: Book, target: Book, venueFeeCoef: number): E
   const markupPct = markup / fair;
   let verdict: Estimate['verdict'] = 'ok';
   let refusal: string | null = null;
+  let code: Estimate['code'] = null;
   if (prod >= MAX_ALL_IN_PRICE) {
     verdict = 'refuse';
+    code = 'price_too_high';
     refusal = 'The payout is too small for the price. Pick a higher target.';
   } else if (markup > REFUSE_MARKUP_DOLLARS || markupPct > REFUSE_MARKUP_FRACTION) {
     verdict = 'refuse';
+    code = 'markup_too_high';
     refusal = 'The spread on this pair is too wide to be a fair deal.';
   } else if (markup >= WARN_MARKUP_DOLLARS || markupPct >= WARN_MARKUP_FRACTION) {
     verdict = 'warn';
@@ -83,6 +88,7 @@ export function estimate(condition: Book, target: Book, venueFeeCoef: number): E
   return {
     verdict,
     refusal,
+    code,
     chanceCondition,
     chanceBothHappen,
     fairPrice: clean(fair),

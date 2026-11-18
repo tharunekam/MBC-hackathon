@@ -235,6 +235,10 @@ export interface ReconcileResponse {
   mismatches: { clientOrderId: string; ledger: string; gemini: string }[];
   untrackedOrders: number;
   untrackedCashFlow: number;
+  /** YES and NO on one contract that Gemini cancelled against each other at once, paying $1 a pair early. */
+  nettedContracts?: number;
+  /** The cash those pairs already paid. Included in `expectedCash`. */
+  nettedCash?: number;
   baselineCash: number | null;
   /** What cash should be, from our ledger. */
   expectedCash: number | null;

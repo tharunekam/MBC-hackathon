@@ -9,6 +9,7 @@ import ProbBar from '../components/ProbBar';
 import { cents, money, pct, timeLeft, trunc, usd, usdSigned } from '../lib/format';
 import { useDebounced, useNow, useResource } from '../lib/hooks';
 import { execLive } from '../lib/liveClients';
+import { MIN_BET, buttonState } from '../lib/betState';
 import { estimate, outcomesFor } from '../lib/pricing';
 import { useVenue } from '../lib/venue';
 
@@ -19,8 +20,12 @@ const shortTitle = (t: string) => t.replace(/ price today at /, ' · ').replace(
 function defaultPair(ev: MarketEvent): { c: string; t: string } | null {
   const ok = ev.pairs.filter((p) => p.quote.offerable && p.quote.chanceBothHappen !== null);
   if (ok.length === 0) {
+    // Nothing is on offer right now. Start from two rungs that at least have two-sided, open markets and a sensible gap,
+    // rather than the two lowest rungs, which on a real ladder are often both near-certain.
     const r = [...ev.rungs].sort((a, b) => a.strike - b.strike);
-    return r.length >= 2 ? { c: r[0]!.symbol, t: r[1]!.symbol } : null;
+    const live = r.filter((x) => x.open && x.bid !== null && x.ask !== null && (x.bid + x.ask) / 2 > 0.1 && (x.bid + x.ask) / 2 < 0.95);
+    const pool = live.length >= 2 ? live : r;
+    return pool.length >= 2 ? { c: pool[0]!.symbol, t: pool[1]!.symbol } : null;
   }
   const score = (p: (typeof ok)[number]) => Math.abs((p.quote.chanceCondition ?? 0) - 0.74) + Math.abs((p.quote.chanceBothHappen ?? 0) - 0.36);
   ok.sort((a, b) => score(a) - score(b));
@@ -33,16 +38,18 @@ function friendly(err: unknown): string {
     switch (err.code) {
       case 'offer_refused':
       case 'markup_too_high':
+        return 'This pair is not good value right now. Nothing was bought. Try other prices.';
       case 'price_too_high':
       case 'no_price':
-        return 'This pair is not good value right now. Try a closer target.';
+        return 'The payout would be too small for the price. Nothing was bought. Move the target further above the condition.';
       case 'no_depth':
+        return 'We could not read the market just now, so nothing was bought. Try again in a moment.';
       case 'insufficient_depth':
-        return 'There is not enough on the market to fill that bet. Try a smaller stake.';
+        return 'There is not enough resting on the market to fill that bet right now. Nothing was bought. Try a smaller stake or other prices.';
       case 'market_closed':
-        return 'This market has closed. Pick the next one.';
+        return 'This market is not open for trading right now. Nothing was bought. Pick other prices or check back shortly.';
       case 'price_above_limit':
-        return 'The price moved against you before the order went through. Nothing was bought, try again.';
+        return 'The price moved against you before the order went through. Nothing was bought. Try again.';
       case 'stake_too_small':
         return 'That stake is too small to place.';
       default:
@@ -97,6 +104,8 @@ export default function Build() {
     { live: [[execLive, 'markets']], pollMs: 5000, minGapMs: 1500 },
   );
   const server = quoteQ.data && sel && quoteQ.data.condition.symbol === sel.c && quoteQ.data.target.symbol === sel.t ? quoteQ.data : null;
+  // The button may rely on the executor's answer only when it is for this pair AND this stake, not one a moment ago.
+  const current = !!server && dSel?.c === sel?.c && dSel?.t === sel?.t && dStake === stake;
   const settling = !server; // showing the estimate
 
   const offer = server?.quote;
@@ -107,20 +116,8 @@ export default function Build() {
   const pricePaid = offer?.pricePaid ?? est?.pricePaid ?? null;
   const cashOut100 = offer?.cashOutPer100 ?? est?.cashOutPer100 ?? null;
   const verdict = offer?.verdict ?? est?.verdict ?? null;
-  const refusal = offer && !offer.offerable ? offer.reasons[0]?.message ?? 'This pair is not on offer.' : est?.refusal ?? null;
-  const offerable = offer ? offer.offerable : est ? est.verdict !== 'refuse' : false;
-
-  const plan = server?.stake;
-  const depth = server?.depth && 'maxStake' in server.depth ? server.depth : null;
-  const out = plan
-    ? { win: plan.ifBothHit, back: plan.ifConditionFails, lose: plan.ifConditionOnly, cost: plan.cost }
-    : pricePaid
-      ? (() => {
-          const o = outcomesFor(stake, pricePaid);
-          return { win: o.ifBothHit, back: o.ifConditionFails, lose: o.ifConditionOnly, cost: o.cost };
-        })()
-      : null;
-  const feeNote = allIn !== null && pricePaid !== null && allIn - pricePaid >= 0.01 ? Math.round((allIn - pricePaid) * 100) : null;
+  // A "fair price" above $1 means the two prices are out of step; it is not a number to show.
+  const fairShown = fair !== null && fair < 1 ? fair : null;
 
   // ------------------------------------------------------------------ place flow
   const [phase, setPhase] = useState<'idle' | 'placing' | 'placed'>('idle');
@@ -129,12 +126,40 @@ export default function Build() {
   const [call, setCall] = useState<CallRecord | null>(null);
   const [callError, setCallError] = useState<string | null>(null);
 
+  const plan = server?.stake;
+  const depth = server?.depth && 'maxStake' in server.depth ? server.depth : null;
+  // Once a bet is placed the panel shows that bet's figures, which may be smaller than the stake that was asked for.
+  const placedBet = phase === 'placed' ? bet : null;
+  const out = placedBet?.payoffs
+    ? { win: placedBet.payoffs.ifBothHit, back: placedBet.payoffs.ifConditionFails, lose: placedBet.payoffs.ifConditionOnly, cost: placedBet.cost }
+    : plan
+    ? plan.cost >= MIN_BET
+      ? { win: plan.ifBothHit, back: plan.ifConditionFails, lose: plan.ifConditionOnly, cost: plan.cost }
+      : null // the market cannot fill a bet of any real size: no figures rather than $0.00s
+    : pricePaid
+      ? (() => {
+          const o = outcomesFor(stake, pricePaid);
+          return { win: o.ifBothHit, back: o.ifConditionFails, lose: o.ifConditionOnly, cost: o.cost };
+        })()
+      : null;
+  const feeNote = allIn !== null && pricePaid !== null && allIn - pricePaid >= 0.01 ? Math.round((allIn - pricePaid) * 100) : null;
+
   // A message about one pair must not outlive a change of pair or stake.
   useEffect(() => {
     setError(null);
   }, [sel?.c, sel?.t, stake]);
 
-  const canPlace = !!event && !!sel && offerable && stake >= 1 && phase === 'idle' && !!out && !venue.readOnly;
+  const state = buttonState({
+    phase,
+    readOnly: venue.readOnly,
+    stake,
+    condition: cRung,
+    target: tRung,
+    answer: current ? server : null,
+    answerError: !!quoteQ.error && !quoteQ.data,
+    est,
+  });
+  const canPlace = state.canPlace && !!event && !!sel;
 
   async function place() {
     if (!event || !sel) return;
@@ -149,6 +174,8 @@ export default function Build() {
     } catch (e) {
       setError(friendly(e));
       setPhase('idle');
+      quoteQ.reload(); // the market has moved on from the answer the button was built on
+      markets.reload();
     }
   }
 
@@ -278,7 +305,7 @@ export default function Build() {
                 </div>
                 <div>
                   <dt>Fair price per $1</dt>
-                  <dd>{fair !== null ? cents(fair) : '–'}</dd>
+                  <dd>{fairShown !== null ? cents(fairShown) : '–'}</dd>
                 </div>
                 <div>
                   <dt>You pay per $1</dt>
@@ -290,13 +317,7 @@ export default function Build() {
                 </div>
               </dl>
 
-              {verdict === 'warn' && !refusal && <p className="note note-warn">Costs a little more than fair value. You can see exactly how much above.</p>}
-              {!offerable && (offer || est) && (
-                <p className="note note-bad" role="alert">
-                  {refusal ?? 'This pair is not on offer right now.'}
-                  {/out of order/i.test(refusal ?? '') ? '' : ' Try moving the target closer.'}
-                </p>
-              )}
+              {verdict === 'warn' && !state.notice && <p className="note note-warn">Costs a little more than fair value. You can see exactly how much above.</p>}
 
               <div className="stake">
                 <label htmlFor="stake">Stake</label>
@@ -320,32 +341,28 @@ export default function Build() {
                   </div>
                 </div>
                 <p id="stake-note" className="fine">
-                  {plan?.reduced
+                  {plan?.reduced && state.blockedBy !== 'thin'
                     ? `The market can only fill about ${usd(plan.cost)} at this price, so the bet will be that size.`
-                    : depth
+                    : depth && depth.maxStake >= 1
                       ? `Up to ${usd(depth.maxStake, 0)} fits right now.`
                       : 'The two orders are sized so your stake comes back if the first part fails.'}
                 </p>
               </div>
 
-              {error && offerable && (
+              {error && (
                 <p className="note note-bad" role="alert">
                   {error}
                 </p>
               )}
+              {state.notice && !error && (
+                <p className={`note note-${state.notice.tone}`} role={state.notice.tone === 'bad' ? 'alert' : undefined}>
+                  {state.notice.text}
+                </p>
+              )}
 
               <button className="btn btn-primary btn-wide" disabled={!canPlace} onClick={place}>
-                {phase === 'placing' ? (
-                  <>
-                    <span className="spin" aria-hidden="true" /> Placing both orders
-                  </>
-                ) : venue.readOnly ? (
-                  'Bets are switched off'
-                ) : !offerable ? (
-                  'Pick a closer target'
-                ) : (
-                  `Place bet · ${usd(plan?.cost ?? stake)}`
-                )}
+                {phase === 'placing' ? <span className="spin" aria-hidden="true" /> : null}
+                {state.label}
               </button>
               <p className="fine center">
                 {venue.footnote}
@@ -371,6 +388,12 @@ function Receipt({ bet, call, callError, onAgain }: { bet: Bet; call: CallRecord
           {usd(bet.cost)} on <em>{money(bet.target.strike)}</em>, given <em>{money(bet.condition.strike)}</em>
         </h2>
       </div>
+
+      {bet.stakeReduced && (
+        <p className="note note-info">
+          Only part of your {usd(bet.stakeReduced.requested)} stake was on the market at this price, so the bet is {usd(bet.cost)}. The figures below are for that size.
+        </p>
+      )}
 
       <ol className="steps">
         <li className="is-done">
@@ -418,6 +441,10 @@ function Receipt({ bet, call, callError, onAgain }: { bet: Bet; call: CallRecord
         <li data-kind="back">
           <span>If it falls below {money(bet.condition.strike)}</span>
           <b>Stake back</b>
+        </li>
+        <li data-kind="lose">
+          <span>If it holds {money(bet.condition.strike)} but stops short</span>
+          <b>{usdSigned(bet.payoffs?.ifConditionOnly ?? -bet.cost)}</b>
         </li>
       </ul>
 
