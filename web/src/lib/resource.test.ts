@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { KEEP_MS, acquire, clearResources, createResource, resourceCount } from './resource';
+import { KEEP_MS, acquire, clearResources, createBackoff, createResource, resourceCount } from './resource';
 
 /** A fetcher the test settles by hand. */
 function manual<T>() {
@@ -166,5 +166,55 @@ describe('the shared cache', () => {
     expect(resourceCount()).toBe(500);
     vi.advanceTimersByTime(KEEP_MS + 1000);
     expect(resourceCount()).toBe(0);
+  });
+});
+
+describe('poll backoff', () => {
+  /** How many polls actually happen over n ticks when every one fails. */
+  const polls = (b: ReturnType<typeof createBackoff>, n: number, ok: boolean) => {
+    let count = 0;
+    for (let i = 0; i < n; i++) {
+      if (b.skip()) continue;
+      count++;
+      b.record(ok);
+    }
+    return count;
+  };
+
+  it('polls every tick while things work', () => {
+    expect(polls(createBackoff(), 20, true)).toBe(20);
+  });
+
+  it('backs off while polls keep failing, to a ceiling, instead of hitting a dead server every tick', () => {
+    const b = createBackoff();
+    const attempts = polls(b, 100, false);
+    expect(attempts).toBeLessThan(15);
+    expect(attempts).toBeGreaterThan(4);
+    expect(b.level()).toBe(4);
+  });
+
+  it('the gaps grow 1, 3, 7, 15 ticks and then hold', () => {
+    const b = createBackoff();
+    const gaps: number[] = [];
+    let since = 0;
+    for (let i = 0; i < 80; i++) {
+      if (b.skip()) {
+        since++;
+        continue;
+      }
+      if (i > 0) gaps.push(since);
+      since = 0;
+      b.record(false);
+    }
+    expect(gaps.slice(0, 5)).toEqual([1, 3, 7, 15, 15]);
+  });
+
+  it('returns to the normal pace on the first success', () => {
+    const b = createBackoff();
+    polls(b, 30, false);
+    while (b.skip()) { /* wait out the gap */ }
+    b.record(true);
+    expect(b.level()).toBe(0);
+    expect(polls(b, 10, true)).toBe(10);
   });
 });

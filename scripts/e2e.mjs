@@ -45,25 +45,31 @@ const internal = `http://127.0.0.1:${EXEC}`;
 // ---------------------------------------------------------------------------------------------------- the server
 const env = { ...process.env, PORT: String(PORT), HOST: '127.0.0.1', GIVEN_MODE: 'fake', GIVEN_INTERNAL_EXECUTOR_PORT: String(EXEC), GIVEN_INTERNAL_CHAIN_PORT: String(CHAIN), GIVEN_PUBLIC_URL: base, GIVEN_RATE_LIMIT_PER_MIN: '1000', GIVEN_DATA_ROOT: mkdtempSync(join(tmpdir(), 'given-e2e-')) };
 for (const k of ['GEMINI_API_KEY', 'GEMINI_API_SECRET', 'GIVEN_PROGRAM_ID', 'GIVEN_EDGE_TRUST_PROXY']) delete env[k];
-const server = spawn('node', ['scripts/serve.mjs'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
+let server = null;
 let serverLog = '';
-server.stdout.on('data', (d) => (serverLog += d));
-server.stderr.on('data', (d) => (serverLog += d));
-const stopServer = async () => {
-  if (server.exitCode !== null) return;
+/** Starts the server and waits until it says it is up. Can be called again after stopServer, to simulate a host restart. */
+async function bootServer() {
+  serverLog = '';
+  server = spawn('node', ['scripts/serve.mjs'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  server.stdout.on('data', (d) => (serverLog += d));
+  server.stderr.on('data', (d) => (serverLog += d));
+  for (let i = 0; !/Given is up/.test(serverLog); i++) {
+    if (server.exitCode !== null || i > 200) {
+      console.error(`The server did not start:\n${serverLog}`);
+      await stopServer();
+      process.exit(1);
+    }
+    await sleep(200);
+  }
+}
+async function stopServer() {
+  if (!server || server.exitCode !== null) return;
   const gone = new Promise((r) => server.once('exit', r));
   server.kill('SIGTERM');
   await Promise.race([gone, sleep(4000)]);
   if (server.exitCode === null) server.kill('SIGKILL');
-};
-for (let i = 0; !/Given is up/.test(serverLog); i++) {
-  if (server.exitCode !== null || i > 200) {
-    console.error(`The server did not start:\n${serverLog}`);
-    await stopServer();
-    process.exit(1);
-  }
-  await sleep(200);
 }
+await bootServer();
 
 // ---------------------------------------------------------------------------------------------------- the checks
 let failures = 0;
@@ -248,7 +254,25 @@ await check('under moving prices and slow fills, a click is never silent', async
   return `${live} real clicks, none silent`;
 });
 
-// ---- 5. phones
+// ---- 5. the host restarts while a page is open
+await check('when the server restarts under an open page, the page recovers by itself', async () => {
+  await page.goto(`${base}/app`);
+  await placeable();
+  if (!process.argv.includes('--sabotage')) await page.waitForSelector('.live[data-state="live"]', { timeout: 8000 });
+  const mark = problems.length;
+  await stopServer();
+  await sleep(3000); // down for a few seconds: the page keeps what it had and shows that it is reconnecting
+  const stale = await button().innerText();
+  need(/^Place bet/.test(stale) || /Checking/.test(stale), `the page lost its state while the server was away ("${stale}")`);
+  await bootServer();
+  await until('the live badge to return without a reload', async () => (await page.locator('.live[data-state="live"]').count()) === 1, 30_000);
+  await until('the builder to be usable again', async () => /^Place bet/.test(await button().innerText()), 10_000);
+  // Failed requests while the server was away are expected and are not counted against the run. Anything else still is.
+  const expected = (p) => /Failed to load resource.*net::ERR_/.test(p);
+  problems.splice(mark, problems.length - mark, ...problems.slice(mark).filter((p) => !expected(p)));
+});
+
+// ---- 6. phones
 await check('on a phone: no sideways scroll on any page, and the quote follows the chart', async () => {
   await dev('/dev/reset');
   await page.setViewportSize({ width: 390, height: 844 });
@@ -267,7 +291,7 @@ await check('on a phone: no sideways scroll on any page, and the quote follows t
   need(btn.y + btn.height - chart.y < 1100, 'the Place bet button is more than a screen and a bit below the chart');
 });
 
-// ---- 6. nothing broke quietly
+// ---- 7. nothing broke quietly
 await check('no console errors or page errors during the whole run', async () => {
   const real = problems.filter((p) => !/Failed to load resource.*(422|409)/.test(p));
   need(real.length === 0, `${real.length}: ${real.slice(0, 3).join(' || ')}`);

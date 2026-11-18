@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { Live } from './live';
-import { resourceFor, retain } from './resource';
+import { createBackoff, resourceFor, retain } from './resource';
 
 export interface Async<T> {
   data: T | null;
@@ -125,11 +125,13 @@ export function useResource<T>(key: string, fetcher: () => Promise<T>, options: 
     const lives = (o.live ?? []).filter((x): x is [Live, string] => x[0] !== null);
     const unsubs = lives.map(([l, topic]) => l.subscribe(topic, kick));
 
+    const backoff = createBackoff();
     const poll = o.pollMs
       ? window.setInterval(() => {
           if (document.hidden) return;
           if (lives.length > 0 && lives.every(([l]) => l.status() === 'live')) return; // live events are covering it
-          void res.refresh();
+          if (backoff.skip()) return; // the last tries failed: wait longer before the next
+          void res.refresh().then(() => backoff.record(res.getState().error === null));
         }, o.pollMs)
       : undefined;
 

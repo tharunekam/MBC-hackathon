@@ -81,6 +81,36 @@ export function createResource<T>(initialFetcher: () => Promise<T>, now: () => n
   return res;
 }
 
+/**
+ * Slows a poll down while it keeps failing, so a server that is restarting or unreachable is not hit at full speed by every
+ * open tab, and returns to the normal pace on the first success. Counts in poll ticks: after the first failure it skips 1
+ * tick, then 3, 7, 15, and stays at 15.
+ */
+export function createBackoff(maxLevel = 4): { skip(): boolean; record(ok: boolean): void; level(): number } {
+  let level = 0;
+  let wait = 0;
+  return {
+    /** True when this tick should not poll. Call once per tick. */
+    skip() {
+      if (wait > 0) {
+        wait--;
+        return true;
+      }
+      return false;
+    },
+    record(ok) {
+      if (ok) {
+        level = 0;
+        wait = 0;
+      } else {
+        level = Math.min(level + 1, maxLevel);
+        wait = 2 ** level - 1;
+      }
+    },
+    level: () => level,
+  };
+}
+
 // ---------------------------------------------------------------------------------------------------- registry
 
 interface Entry {
