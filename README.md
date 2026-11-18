@@ -1,3 +1,13 @@
+> **Current direction (2026-11-17): the project is now "Given"** — "money back
+> if…" bets on Gemini prediction markets, placed as real orders in the user's own
+> Gemini account. Start with [`CLAUDE.md`](CLAUDE.md), then
+> [`docs/GIVEN.md`](docs/GIVEN.md), [`docs/PLAN.md`](docs/PLAN.md) and
+> [`executor/README.md`](executor/README.md). The working code is on the
+> `feat/gemini-executor` branch.
+>
+> Everything below is the earlier "Living Tokens" draft, kept for reference. It
+> has not been updated and should not be read as the current plan.
+
 # ⚡ Living Tokens
 ### *A Gemini Prediction Market Becomes an Economy You Can Hold, Trade, and Build On.*
 

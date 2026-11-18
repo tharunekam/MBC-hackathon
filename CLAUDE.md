@@ -1,0 +1,71 @@
+# Given — project context
+
+This file is loaded automatically by Claude Code sessions in this repo. It is
+also the fastest way for a person to get oriented.
+
+## What this is
+
+**Given** is our entry for the UBC 2026 hackathon (submission due
+**Fri 2026-11-20, 12:00 PM CST**). It is a consumer app for "money back if…"
+bets on Gemini prediction markets: you bet on the second half of a hunch and
+get your stake back if the first half doesn't happen. Each bet is two real
+orders in the user's own Gemini account.
+
+The repo started as "Living Tokens" (root `README.md`, `docs/ARCHITECTURE.md`,
+`programs/`, `hedge-engine/`, `relay/`). That draft is kept for reference; the
+current direction is described in `docs/GIVEN.md`.
+
+## Read these, in this order
+
+1. `docs/GIVEN.md` — the concept, the decision log, open questions and ideas
+   worth exploring.
+2. `docs/PLAN.md` — the build plan to Friday, gates, cut list and submission
+   checklist.
+3. `docs/GEMINI_API_NOTES.md` — what Gemini's API actually does, verified
+   against the sandbox. Read before touching anything that talks to Gemini.
+4. `executor/README.md` — the working code: what it does and how to run it.
+
+## Nothing here is locked
+
+The docs record the **current best version and the evidence behind it**, not a
+contract. Anyone working here — either teammate, or a Claude session on any
+machine — is expected to keep exploring and to change direction when the
+evidence supports it.
+
+- Every decision in `docs/GIVEN.md` has a status (decided, provisional or open)
+  and a "what would change this" column. Use it: if you learn something that
+  meets that bar, change the decision.
+- When you change a decision, update the log in the same commit and say what
+  you observed. A one-line reason beats a silent rewrite.
+- Prefer evidence you produced yourself (a sandbox run, a data pull, a test)
+  over anything written in these docs. Several facts here came from documents
+  read second-hand and are marked as such.
+- Ideas that were cut are listed with the reason. A cut is "not now, for this
+  reason", so reopening one is fine once the reason no longer holds.
+
+## Working conventions
+
+- **Branches:** work on a feature branch and push it; `main` only changes by
+  agreement between the two teammates.
+- **Secrets:** Gemini credentials live in `.env` at the repo root, which is
+  git-ignored. Never print, log or commit them. Each machine needs its own
+  copy; it does not travel through git.
+- **Sandbox only:** the executor refuses to run against production Gemini
+  unless `GIVEN_ALLOW_PRODUCTION=1` is set. Don't set it without both
+  teammates agreeing; production means real money.
+- **Prove it:** a change to anything that places orders or moves money is done
+  when it has been run and the result observed, not when it compiles. For the
+  executor that means `npm test`, `npm run typecheck`, and for order-path
+  changes a real sandbox run followed by `node src/cli.ts reconcile`.
+- **The repo will be public** for submission. Don't commit anything you
+  wouldn't want a judge to read: no credentials, no personal details, and no
+  raw research notes (the conclusions belong in `docs/`).
+
+## Wording guardrails (from our reading of Gemini's rules; re-verify before the pitch)
+
+- Never say "risk-free" or "guaranteed". Say "money back if…" and show the cost.
+- Never imply a partnership with Gemini. Say "uses Gemini's API; not affiliated
+  with Gemini".
+- Never match users against each other, and never rank or reward by volume.
+- Don't put Gemini's price feeds, or anything that identifies a user's trades,
+  on a public chain.
