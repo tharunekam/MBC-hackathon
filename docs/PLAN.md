@@ -82,9 +82,9 @@ settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is a
 | Task | State |
 |---|---|
 | T-P1 to T-P5 shell, ladder, quote, place flow, My bets, Proof, Flow | **Done** on mock and live (local test exchange) |
-| T-P6 leaderboard, call page, share card, explorer links | Leaderboard and explorer links done; **share card and call page not built**; verify page not built (the `verify` endpoint exists) |
-| T-P7, T-P8 landing copy, polish, design review | First pass only; the polish pass is still to do |
-| T-P9 README, Devpost, video, pitch | Not started |
+| T-P6 leaderboard, call page, share card, explorer links | **Done** except a downloadable image: the leaderboard, a call page (`/verify/:signature`, a shareable card with a copy-link button) and explorer links are built. No saved-image export |
+| T-P7, T-P8 landing copy, polish, design review | **Review pass done 2026-11-18** at 1280 and 390 wide, both themes: no sideways scroll anywhere; fixed the phone order (quote right after the chart), refusal wording, chart labels, and the default pair on a closed ladder. `npm run e2e` guards it. A second look by someone who did not build it is still worth an hour |
+| T-P9 README, Devpost, video, pitch | README current; Devpost answers and shot list drafted in `docs/SUBMISSION.md`; **video not recorded** (needs a live ladder on the hosted demo) |
 | T-V1 OAuth test | Not started. The sandbox key is on Victor's laptop; registering a sandbox OAuth app needs the account owner |
 | T-V2 host the executor | **Built, not yet deployed.** `scripts/serve.mjs` serves the built app and a fixed allowlist of API paths from one public port with the backends on loopback; `Dockerfile`; `npm run check:deploy` checks a deployed URL from outside; the guide is `docs/DEPLOY.md`. The image builds and runs here (non-root, real sandbox prices). **Needs a host, then the live settings** |
 | T-V3 `GET /reconcile` | **Done**. Event feed not needed: the chain service reads bets from the executor |
@@ -94,7 +94,7 @@ settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is a
 | T-C2 chain service | **Done** (commit, reveal, verify, void handling) |
 | T-C3 Stream, filter, webhook | Webhook receiver done and tested; filter written from the docs, **Stream not created** (needs a QuickNode account and a public URL) |
 | T-C4 leaderboard, backfill | **Done** |
-| T-C5 verify-from-chain page | API done, page not built |
+| T-C5 verify-from-chain page | **Done** (`web/src/pages/Verify.tsx`, `web/src/lib/verify.ts`); verified in a browser against real devnet records |
 
 **Blocked on the owners (nothing here can be done by us alone):**
 
