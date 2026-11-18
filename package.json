@@ -8,6 +8,8 @@
     "dev": "node scripts/dev.mjs fake",
     "dev:quotes": "node scripts/dev.mjs quotes",
     "dev:live": "node scripts/dev.mjs live",
+    "preflight": "node scripts/preflight.mjs",
+    "rehearse": "node scripts/rehearse.mjs",
     "stop": "node scripts/dev.mjs stop",
     "status": "node scripts/dev.mjs status",
     "install:all": "npm --prefix executor install && npm --prefix chain install && npm --prefix web install",

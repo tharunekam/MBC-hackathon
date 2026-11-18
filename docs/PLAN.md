@@ -25,6 +25,14 @@ feature and polish the golden path.
 
 ## Build status (end of Tuesday 2026-11-17)
 
+**Added that night, for the day the keys arrive:**
+`npm run dev:quotes` (real Gemini sandbox prices and order books with no keys; running it on real data found and fixed three
+web bugs the fake exchange hid), `npm run rehearse` (the golden path through the real executor and chain code with Gemini and
+Solana stood in on the wire: 16 checks, fails when sabotaged), `npm run preflight` (what is ready and the fix for what is not),
+`.env.example`, polled Solana confirmation with typed errors, and the Solana and Gemini wire stand-ins with their tests
+(186 tests). Real devnet and real sandbox runs are still the only proof of the parts the stand-ins cannot cover. Our chain lane
+overlaps Victor's deployed Anchor program: see `docs/CHAIN_RECONCILE.md`. Name candidates: `docs/NAMES.md`.
+
 **Verified by running** (130 tests across the three packages; the golden path was also driven in a real browser against
 the real executor handler and chain service): bet builder on the probability ladder, quote, place, receipt, My bets,
 settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is and is not verified: `chain/README.md`.

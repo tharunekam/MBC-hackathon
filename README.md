@@ -65,8 +65,8 @@ web (React/Vite)  ──►  executor (Node)  ──►  Gemini REST + WebSocket
 
 | Package | Role |
 |---|---|
-| `executor/` | Quotes, the two-leg bet with depth guard and hedge sizing, a ledger written before every order, settlement, and **reconcile to the cent against Gemini**. 71 tests. |
-| `chain/` | Commit and reveal on Solana, the QuickNode webhook, the leaderboard, a public proof endpoint. 56 tests. |
+| `executor/` | Quotes, the two-leg bet with depth guard and hedge sizing, a ledger written before every order, settlement, and **reconcile to the cent against Gemini**. 100 tests. |
+| `chain/` | Commit and reveal on Solana, the QuickNode webhook, the leaderboard, a public proof endpoint. 68 tests. |
 | `web/` | The app: a probability ladder with two draggable markers, the four-number quote, bets, leaderboard, proof page. 18 tests. |
 | `docs/` | `PLAN.md`, `GIVEN.md` (decision log), `CONTRACTS.md` (interfaces), `GEMINI_API_NOTES.md`, `SUBMISSION.md`. |
 
@@ -120,17 +120,21 @@ Node 23.6 or newer.
 
 ```bash
 npm run install:all
-npm run dev        # whole stack with no keys and no SOL: local test exchange + in-memory chain + web
+npm run dev         # whole stack with no keys and no SOL: local test exchange + in-memory chain + web
+npm run dev:quotes  # REAL Gemini sandbox prices and order books with no keys; every order is refused (read-only)
 node scripts/seed-history.mjs all   # optional: a win, a loss and a refund, committed and revealed
-npm run stop       # stop this project's servers
-npm test           # 145 tests across the three packages
+npm run stop        # stop this project's servers
+npm test            # 186 tests across the three packages
+npm run rehearse    # the whole golden path through the real clients, Gemini and Solana stood in on the wire
+npm run preflight   # what is ready for the real thing and what is missing, with the fix for each
 ```
 
 Open http://127.0.0.1:5273. The nav shows what the app is talking to; with `npm run dev` it says "Local test exchange".
 
 Real services (Gemini sandbox + Solana devnet): put sandbox keys in `.env` (see `executor/README.md`), create the authority
 wallet with `cd chain && npm run keygen`, fund it on devnet, check it with `npm run status`, prove the real path with
-`npm run smoke`, then `npm run dev:live`.
+`npm run smoke`, then `npm run dev:live`. `.env.example` lists every setting, and `npm run preflight` checks them against
+the real services (keys accepted, terms accepted, order session opens, authority funded) without placing anything.
 
 ### Sandbox versus production
 

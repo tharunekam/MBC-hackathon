@@ -71,7 +71,10 @@ npm run install:all
 npm run dev        # whole stack with NO keys and no SOL: local test exchange + in-memory chain + web
 npm run status     # who is listening on this project's ports (web 5273, executor 8741, chain 8742)
 npm run stop       # stop this project's servers (never touches another project's)
+npm run dev:quotes # REAL Gemini sandbox prices and order books, no keys, every order refused
 npm run dev:live   # real Gemini sandbox + Solana devnet; needs .env keys and a funded chain/data/authority.json
+npm run preflight  # which of the above is ready, and the exact fix for what is not (places nothing)
+npm run rehearse   # the golden path through the real executor + chain code, Gemini and Solana stood in on the wire
 npm test           # every package
 npm run typecheck
 ```

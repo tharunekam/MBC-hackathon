@@ -23,7 +23,7 @@ sandbox.
 
 | Endpoint | Used by | Notes |
 |---|---|---|
-| `GET /health` | venue label | `service: "given-executor"`; the chain service checks this at startup |
+| `GET /health` | venue label | `service: "given-executor"`; the chain service checks this at startup. `readOnly: true` when started with `GIVEN_READONLY=1` (real prices, no account): `POST /bets`, `POST /settle` and `GET /reconcile` then answer 403 `read_only` |
 | `GET /markets` | ladder chart | Polled every 4 s. Rungs carry `bid`/`ask`; pairs carry the offer quote |
 | `GET /quote?event&condition&target&stake` | quote panel | Authoritative. The UI shows its own estimate (`web/src/lib/pricing.ts`, pinned to the README example by a test) until this answers |
 | `POST /bets` | place bet | ~4 s on the sandbox. A refusal is HTTP 422 with `code` and `quote` |
