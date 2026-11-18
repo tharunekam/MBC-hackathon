@@ -30,7 +30,7 @@ test in `test/memo.test.ts`, so a verifier written anywhere else can reproduce i
 
 ```bash
 cd chain && npm install
-npm test                     # 122 tests, no network
+npm test                     # 127 tests, no network
 GIVEN_CHAIN=fake npm start   # in-memory chain: no SOL needed; signatures are not real and are labelled "test chain"
 ```
 
@@ -59,6 +59,7 @@ demo: `SOLANA_RPC_URL=https://<your-endpoint>`.
 #   GIVEN_PROGRAM_ID=8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK
 npm run smoke     # as above, plus: the program's record before and after the reveal, a changed reveal refused,
                   # a repeated reveal refused, and the program's running score
+npm run drill     # a crash drill: forget a commit and a reveal that landed, cut off history, and recover both
 ```
 
 The program's accounts hold rent, so a call costs about 0.002 SOL (plus about 0.0015 SOL the first time a handle
@@ -122,6 +123,7 @@ QuickNode keeps its place, is filled by `POST /admin/backfill` (`X-Admin-Token`)
 | **The proof page in a real browser on real devnet data** (Victor's first program call, ingested through the webhook route): all seven checks passed, program row included | |
 | Crash consistency: a salt is saved before its commit is sent; a commit or reveal that landed unrecorded is adopted on retry; a damaged store falls back to its backup or refuses to start (17 tests) | |
 | This service's program instructions against bytes captured from the real program (8 tests) | |
+| **A record that landed but was never saved, with the program on** (`npm run drill`, local validator and devnet, 2026-11-18): the service forgets a commit and a reveal, cannot read its own history, and still finds each through the call's own account and adopts it, sending nothing twice. Without that lookup the program refuses the retry and the call stays pending until history can be read (5 tests model this) | |
 | Memo + program in one transaction through this service, **on devnet** (`npm run smoke`, 2026-11-17): [commit](https://explorer.solana.com/tx/2DFD8UjXaPofQh82UXFpwsUm47ArcVkteQAxFSeyjp76CRFtr8tNK7JvZD8Th8NepmctkYqnDypHdKRavEJxQnQL?cluster=devnet), [reveal](https://explorer.solana.com/tx/45iRt5TRfiiyBTY8PDJNp4gbscBsTSfmsW4sZkqPSbKLPgAiGcFTLTKX9hvEgA8hYCP6oFx1iGsBL6LoBJ3DT9xU?cluster=devnet); a changed reveal and a repeated reveal were refused by the program | |
 
 ## Environment

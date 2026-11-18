@@ -42,6 +42,13 @@ export interface Chain {
   recentSignatures(limit: number, before?: string): Promise<string[]>;
   /** Lamports, or null when unknown. */
   balanceLamports(): Promise<number | null>;
+  /**
+   * Signatures of the successful transactions that touched one call's own on-chain record, oldest first, when the
+   * chain keeps one (the program does: one account per call, found from the commit hash). Empty when there is no
+   * record. Lets the service learn in one lookup whether a commit or reveal it lost track of did land, however long
+   * ago. Anyone can mention an account in a transaction, so each signature still has to be read and verified.
+   */
+  recordsFor?(hashHex: string): Promise<string[]>;
 }
 
 const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -181,6 +188,15 @@ export class SolanaChain implements Chain {
     if (!this.receipts) return null;
     const info = await this.connection.getAccountInfo(callAddress(this.receipts, this.keypair.publicKey, hashHex), 'confirmed');
     return info ? decodeCallAccount(info.data) : null;
+  }
+
+  async recordsFor(hashHex: string): Promise<string[]> {
+    if (!this.receipts) return [];
+    const address = callAddress(this.receipts, this.keypair.publicKey, hashHex);
+    if (!(await this.connection.getAccountInfo(address, 'confirmed'))) return [];
+    // The commit created this account and a reveal, if any, changed it. A handful of signatures at most.
+    const rows = await this.connection.getSignaturesForAddress(address, { limit: 25 }, 'confirmed');
+    return rows.filter((r) => !r.err).map((r) => r.signature).reverse();
   }
 
   /** Each handle's running score as the program holds it, read from its accounts alone. Empty without a program. */

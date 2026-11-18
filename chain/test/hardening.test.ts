@@ -8,7 +8,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
-import { FakeChain } from '../src/chain.ts';
+import { ChainError, FakeChain } from '../src/chain.ts';
 import { ServiceError } from '../src/executor.ts';
 import { createLimiter } from '../src/limiter.ts';
 import { ChainService } from '../src/service.ts';
@@ -300,5 +300,123 @@ describe('a double click or a retry storm', () => {
     assert.ok(settled.some((r) => r.status === 'fulfilled'), 'a later attempt in the storm succeeds');
     assert.equal(chain.txs.length, 1);
     assert.equal(service.listCalls('primary').length, 1);
+  });
+});
+
+/**
+ * A chain that behaves like the real one with the program on: each call has one record, a second commit of the same
+ * hash and a second reveal of the same call are refused, and (when `lookup` is on) a call's own record can be read.
+ * `historyDown` makes the authority's transaction history unreadable, as a rate-limited public RPC does.
+ */
+class ProgramLikeChain extends FakeChain {
+  historyDown = false;
+  refusals = 0;
+  constructor(lookup: boolean) {
+    super();
+    if (lookup) this.recordsFor = async (hash: string) => this.touching(hash);
+  }
+  recordsFor?: (hash: string) => Promise<string[]>;
+
+  private memos() {
+    return this.txs.map((t) => ({ t, m: JSON.parse(t.memo) as { t: string; h?: string; c?: string } }));
+  }
+  /** Every transaction that mentions this call's record: its commit, its reveal, and anything a stranger sent. */
+  private touching(hash: string): string[] {
+    const commits = this.memos().filter((x) => x.m.t === 'c' && x.m.h === hash).map((x) => x.t.signature);
+    return this.memos().filter((x) => (x.m.t === 'c' && x.m.h === hash) || (x.m.t === 'r' && commits.includes(x.m.c ?? ''))).map((x) => x.t.signature);
+  }
+  override async sendMemo(text: string): Promise<{ signature: string; slot: number }> {
+    const m = JSON.parse(text) as { t: string; h?: string; c?: string };
+    const mine = this.memos().filter((x) => x.t.signer === this.authority);
+    const repeat = m.t === 'c' ? mine.some((x) => x.m.t === 'c' && x.m.h === m.h) : mine.some((x) => x.m.t === 'r' && x.m.c === m.c);
+    if (repeat) {
+      this.refusals++;
+      throw new ChainError('refused', 'Solana refused the transaction: custom program error');
+    }
+    return super.sendMemo(text);
+  }
+  override async recentSignatures(limit: number, before?: string): Promise<string[]> {
+    if (this.historyDown) throw new Error('429 Too Many Requests');
+    return super.recentSignatures(limit, before);
+  }
+}
+
+describe('with the program on, a call that landed is found by its own record', () => {
+  it('a commit that landed is adopted even when the authority\'s history cannot be read', async () => {
+    const chain = new ProgramLikeChain(true);
+    const bets = new FakeBets();
+    bets.add();
+    const { service } = boot(join(tmp(), 'calls.json'), chain, bets);
+    chain.landThenFailNext = 'Solana did not confirm within 60s';
+    await assert.rejects(service.commitCall('b1', 'primary'));
+    chain.historyDown = true;
+    const call = await service.commitCall('b1', 'primary');
+    assert.equal(call.state, 'committed');
+    assert.equal(call.commitSignature, chain.txs[0]!.signature);
+    assert.equal(chain.txs.length, 1, 'nothing was sent again');
+    assert.equal(chain.refusals, 0, 'and so nothing was refused');
+  });
+
+  it('without that lookup the same retry is refused by the program and the call stays pending: the case this closes', async () => {
+    const chain = new ProgramLikeChain(false);
+    const bets = new FakeBets();
+    bets.add();
+    const { service, store } = boot(join(tmp(), 'calls.json'), chain, bets);
+    chain.landThenFailNext = 'Solana did not confirm within 60s';
+    await assert.rejects(service.commitCall('b1', 'primary'));
+    chain.historyDown = true;
+    await assert.rejects(service.commitCall('b1', 'primary'));
+    assert.equal(chain.refusals, 1);
+    assert.equal(store.data.calls[0]!.state, 'pending');
+    // once history can be read again the old path still recovers it
+    chain.historyDown = false;
+    assert.equal((await service.commitCall('b1', 'primary')).state, 'committed');
+  });
+
+  it('a reveal that landed is adopted the same way', async () => {
+    const chain = new ProgramLikeChain(true);
+    const bets = new FakeBets();
+    bets.add();
+    const { service } = boot(join(tmp(), 'calls.json'), chain, bets);
+    const call = await service.commitCall('b1', 'primary');
+    bets.settle('b1', 'yes', 'yes');
+    chain.landThenFailNext = 'lost reply';
+    await assert.rejects(service.revealCall(call.id, 'primary'));
+    chain.historyDown = true;
+    const again = await service.revealCall(call.id, 'primary');
+    assert.equal(again.state, 'revealed');
+    assert.equal(again.reveal!.signature, chain.txs[1]!.signature);
+    assert.equal(chain.txs.length, 2, 'one commit, one reveal');
+    assert.equal(chain.refusals, 0);
+    assert.equal(service.leaderboard().rows.length, 1);
+  });
+
+  it('a stranger\'s transaction that mentions the record is read and ignored, not adopted', async () => {
+    const chain = new ProgramLikeChain(true);
+    const bets = new FakeBets();
+    bets.add();
+    const { service, store } = boot(join(tmp(), 'calls.json'), chain, bets);
+    chain.failNext = 'network down'; // our commit never lands
+    await assert.rejects(service.commitCall('b1', 'primary'));
+    const row = store.data.calls[0]!;
+    // Someone else writes a commit with our hash and handle. Only our authority's records count.
+    chain.forge(JSON.stringify({ g: 1, t: 'c', h: row.hash, u: row.handle, at: row.fields.at }), 'Stranger11111111111111111111111111111111111');
+    chain.historyDown = true;
+    const call = await service.commitCall('b1', 'primary');
+    assert.equal(call.state, 'committed');
+    assert.equal(chain.txs.length, 2, 'ours was sent, because theirs is not ours');
+    assert.equal(call.commitSignature, chain.txs[1]!.signature);
+  });
+
+  it('a call with no record yet is simply sent', async () => {
+    const chain = new ProgramLikeChain(true);
+    const bets = new FakeBets();
+    bets.add();
+    const { service } = boot(join(tmp(), 'calls.json'), chain, bets);
+    chain.failNext = 'rpc 500';
+    await assert.rejects(service.commitCall('b1', 'primary'));
+    chain.historyDown = true;
+    assert.equal((await service.commitCall('b1', 'primary')).state, 'committed');
+    assert.equal(chain.txs.length, 1);
   });
 });

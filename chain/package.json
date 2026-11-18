@@ -13,6 +13,7 @@
     "keygen": "node scripts/keygen.ts",
     "status": "node scripts/status.ts",
     "smoke": "node scripts/devnet-smoke.ts",
+    "drill": "node scripts/recovery-drill.ts",
     "rehearse": "node scripts/rehearse.ts",
     "test": "node --test \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
