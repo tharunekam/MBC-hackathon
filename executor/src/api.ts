@@ -56,6 +56,8 @@ export interface ApiDeps {
   corsOrigins?: string[];
   /** How long a /markets answer is reused, in ms. Default 5000. */
   marketsCacheMs?: number;
+  /** True when no account is connected: ladders and quotes are live, but nothing can be ordered, settled or reconciled. */
+  readOnly?: boolean;
   /** Name shown for the venue. Set it when the exchange is not Gemini (the local test exchange), so nothing claims to be Gemini. */
   venueName?: string;
   /**
@@ -245,6 +247,7 @@ export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResp
       service: 'given-executor',
       venue,
       sandbox: deps.isSandbox,
+      readOnly: deps.readOnly === true,
       users: deps.users.map((user) => ({ user, connected: deps.isConnected ? deps.isConnected(user) : null })),
       feeCoefCharged: deps.feeCoef,
       offerRule: offerRule(),
@@ -416,6 +419,10 @@ export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResp
     });
   }
 
+  const refuseIfReadOnly = (): void => {
+    if (deps.readOnly) throw new HttpError(403, 'read_only', 'Quotes only: no Gemini API keys are connected, so bets are switched off. Add sandbox keys to .env and restart.');
+  };
+
   // Per-client limiter for the routes that spend money or hit Gemini hard.
   const hits = new Map<string, number[]>();
   const limited = (req: IncomingMessage): boolean => {
@@ -437,10 +444,10 @@ export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResp
     '/health': { GET: () => health() },
     '/markets': { GET: (q) => markets(q) },
     '/quote': { GET: (q) => quote(q) },
-    '/bets': { GET: (q) => listBets(q), POST: async (_q, req) => placeBet(await readJson(req)) },
-    '/settle': { POST: () => settle() },
+    '/bets': { GET: (q) => listBets(q), POST: async (_q, req) => (refuseIfReadOnly(), placeBet(await readJson(req))) },
+    '/settle': { POST: async () => (refuseIfReadOnly(), settle()) },
     '/flow': { GET: (q) => flow(q) },
-    '/reconcile': { GET: (q) => reconcileRoute(q) },
+    '/reconcile': { GET: async (q) => (refuseIfReadOnly(), reconcileRoute(q)) },
   };
 
   return (req, res) => {

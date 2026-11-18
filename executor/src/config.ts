@@ -44,6 +44,8 @@ export interface Config {
   rateLimitPerMin: number | null;
   /** GIVEN_TRUST_PROXY=1: take the client address from X-Forwarded-For. */
   trustProxy: boolean;
+  /** GIVEN_READONLY=1: real Gemini prices and order books with no account. Quotes work; every order is refused. */
+  readOnly: boolean;
 }
 
 /** True for loopback addresses: the only ones that may run without the hosted-demo protections. */
@@ -116,6 +118,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     maxStake: merged.GIVEN_MAX_STAKE ? Number(merged.GIVEN_MAX_STAKE) : null,
     rateLimitPerMin: merged.GIVEN_RATE_LIMIT_PER_MIN ? Number(merged.GIVEN_RATE_LIMIT_PER_MIN) : null,
     trustProxy: merged.GIVEN_TRUST_PROXY === '1',
+    readOnly: merged.GIVEN_READONLY === '1',
   };
 }
 

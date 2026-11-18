@@ -13,8 +13,10 @@ import { createApi } from './api.ts';
 import { recoverBets } from './bets.ts';
 import { isLoopback, loadConfig, requireUser } from './config.ts';
 import { GeminiExchange } from './exchange.ts';
+import type { Exchange } from './exchange.ts';
 import { GeminiPublic } from './gemini/rest.ts';
 import { Ledger } from './ledger.ts';
+import { ReadOnlyExchange } from './readonly.ts';
 
 const config = loadConfig();
 
@@ -33,11 +35,14 @@ if (!isLoopback(config.host)) {
 const pausedFile = resolve(config.dataDir, 'PAUSED');
 const ledger = new Ledger(resolve(config.dataDir, 'ledger.json'));
 const pub = new GeminiPublic(config.baseUrl);
-const users = config.users.map((u) => u.user);
+// GIVEN_READONLY=1: real prices and order books with no account. One stand-in user, no keys, every order refused.
+const readOnlyExchange = config.readOnly ? new ReadOnlyExchange(config.baseUrl, config.wsUrl) : null;
+const users = config.readOnly ? ['primary'] : config.users.map((u) => u.user);
 
 /** One exchange session per user, created on first use and kept for the life of the process. */
 const sessions = new Map<string, GeminiExchange>();
-function exchangeFor(user: string): GeminiExchange {
+function exchangeFor(user: string): Exchange {
+  if (readOnlyExchange) return readOnlyExchange;
   let session = sessions.get(user);
   if (!session) {
     session = new GeminiExchange(config, requireUser(config, user));
@@ -51,6 +56,7 @@ const api = createApi({
   users,
   exchangeFor,
   isConnected: (user) => sessions.get(user)?.connected ?? false,
+  readOnly: config.readOnly,
   markets: { listEvents: () => pub.listEvents('active'), getEvent: (ticker) => pub.getEvent(ticker) },
   isSandbox: config.isSandbox,
   feeCoef: config.takerFeeCoef,
@@ -64,7 +70,7 @@ const api = createApi({
 });
 
 // Before taking requests: repair anything a previous run left half-done, each bet on its own user's account.
-for (const user of users) {
+for (const user of config.readOnly ? [] : users) {
   try {
     const fixed = await recoverBets({ exchange: exchangeFor(user), ledger, feeCoef: config.takerFeeCoef }, user);
     if (fixed > 0) console.log(`Repaired ${fixed} order(s) for "${user}" left unfinished by a previous run.`);
@@ -80,12 +86,13 @@ server.on('error', (err) => {
 });
 server.listen(config.port, config.host, () => {
   console.log(`Given executor API on http://${config.host}:${config.port}  (${config.isSandbox ? 'Gemini SANDBOX' : 'Gemini PRODUCTION'})`);
-  console.log(`Accounts: ${users.join(', ') || 'none configured'}   fee coefficient charged: ${config.takerFeeCoef}`);
+  console.log(`Accounts: ${config.readOnly ? 'none (READ-ONLY: real prices, no orders)' : users.join(', ') || 'none configured'}   fee coefficient charged: ${config.takerFeeCoef}`);
+  if (!config.readOnly && users.length === 0) console.warn('No Gemini keys found in .env. Quotes will fail and nothing can be traded. For real prices without keys, set GIVEN_READONLY=1.');
   if (config.waiveMarkup) console.log('Sandbox demo mode: pairs refused only for markup can be traded (GIVEN_SANDBOX_WAIVE_MARKUP=1).');
 
   // Open each user's session now rather than on the first bet.
-  for (const user of users) {
-    exchangeFor(user)
+  for (const user of config.readOnly ? [] : users) {
+    (exchangeFor(user) as GeminiExchange)
       .connect()
       .then(() => console.log(`Connected to Gemini for "${user}".`))
       .catch((err: unknown) => console.error(`Could not connect to Gemini for "${user}": ${err instanceof Error ? err.message : String(err)}`));
@@ -94,6 +101,7 @@ server.listen(config.port, config.host, () => {
 
 function shutdown(): void {
   for (const session of sessions.values()) session.close();
+  readOnlyExchange?.close();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 1500).unref();
 }

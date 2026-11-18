@@ -6,6 +6,7 @@
   "engines": { "node": ">=23.6" },
   "scripts": {
     "dev": "node scripts/dev.mjs fake",
+    "dev:quotes": "node scripts/dev.mjs quotes",
     "dev:live": "node scripts/dev.mjs live",
     "stop": "node scripts/dev.mjs stop",
     "status": "node scripts/dev.mjs status",

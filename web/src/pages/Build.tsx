@@ -55,7 +55,11 @@ export default function Build() {
   const venue = useVenue();
   const now = useNow(20000);
   const markets = useAsync(() => api.markets(), [], 4000);
-  const events = markets.data?.events ?? [];
+  // Real exchanges list dozens of ladders. Put the ones you can actually bet on first, and drop one-rung ladders.
+  const events = useMemo(() => {
+    const usable = (e: MarketEvent) => (e.offerableCount > 0 && !e.ladderOutOfOrder ? 0 : !e.ladderOutOfOrder ? 1 : 2);
+    return (markets.data?.events ?? []).filter((e) => e.rungs.length >= 2).map((e, i) => ({ e, i })).sort((a, b) => usable(a.e) - usable(b.e) || a.i - b.i).map((x) => x.e);
+  }, [markets.data]);
 
   const [ticker, setTicker] = useState<string | null>(null);
   const [sel, setSel] = useState<{ c: string; t: string } | null>(null);
@@ -128,7 +132,7 @@ export default function Build() {
     setError(null);
   }, [sel?.c, sel?.t, stake]);
 
-  const canPlace = !!event && !!sel && offerable && stake >= 1 && phase === 'idle' && !!out;
+  const canPlace = !!event && !!sel && offerable && stake >= 1 && phase === 'idle' && !!out && !venue.readOnly;
 
   async function place() {
     if (!event || !sel) return;
@@ -285,9 +289,10 @@ export default function Build() {
               </dl>
 
               {verdict === 'warn' && !refusal && <p className="note note-warn">Costs a little more than fair value. You can see exactly how much above.</p>}
-              {!offerable && (
+              {!offerable && (offer || est) && (
                 <p className="note note-bad" role="alert">
-                  {refusal ?? 'This pair is not on offer right now.'} Try moving the target closer.
+                  {refusal ?? 'This pair is not on offer right now.'}
+                  {/out of order/i.test(refusal ?? '') ? '' : ' Try moving the target closer.'}
                 </p>
               )}
 
@@ -332,6 +337,8 @@ export default function Build() {
                   <>
                     <span className="spin" aria-hidden="true" /> Placing both orders
                   </>
+                ) : venue.readOnly ? (
+                  'Bets are switched off'
                 ) : !offerable ? (
                   'Pick a closer target'
                 ) : (

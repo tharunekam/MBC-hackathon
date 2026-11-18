@@ -4,6 +4,8 @@
  *
  *   node scripts/dev.mjs fake     executor over a local test exchange + chain service on an in-memory chain + web
  *                                 (no Gemini key, no SOL; every signature is labelled as a test chain)
+ *   node scripts/dev.mjs quotes  REAL Gemini sandbox prices and order books with no keys: ladders and quotes are live,
+ *                                 every order is refused (read-only). Chain is the in-memory test chain.
  *   node scripts/dev.mjs live     real Gemini SANDBOX executor + Solana DEVNET chain service + web
  *                                 (needs .env Gemini keys and a funded chain/data/authority.json)
  *   node scripts/dev.mjs status   what is listening on this project's ports, and whose it is
@@ -103,13 +105,13 @@ async function start(mode) {
       name: 'exec ',
       cwd: 'executor',
       cmd: ['node', mode === 'fake' ? 'test/serve-fake.ts' : 'src/server.ts'],
-      env: { GIVEN_PORT: String(PORTS.executor), ...(mode === 'live' ? { GIVEN_SANDBOX_WAIVE_MARKUP: '1' } : {}) },
+      env: { GIVEN_PORT: String(PORTS.executor), ...(mode === 'live' ? { GIVEN_SANDBOX_WAIVE_MARKUP: '1' } : {}), ...(mode === 'quotes' ? { GIVEN_READONLY: '1', GIVEN_SANDBOX_WAIVE_MARKUP: '1' } : {}) },
     },
     {
       name: 'chain',
       cwd: 'chain',
       cmd: ['node', 'src/server.ts'],
-      env: { GIVEN_CHAIN: mode === 'fake' ? 'fake' : 'devnet', GIVEN_CHAIN_PORT: String(PORTS.chain), GIVEN_EXECUTOR_URL: exec },
+      env: { GIVEN_CHAIN: mode === 'live' ? 'devnet' : 'fake', GIVEN_CHAIN_PORT: String(PORTS.chain), GIVEN_EXECUTOR_URL: exec },
     },
     { name: 'web  ', cwd: 'web', cmd: ['npx', 'vite'], env: { VITE_API_MODE: 'live' } },
   ];
@@ -155,8 +157,8 @@ async function start(mode) {
 const mode = process.argv[2] ?? 'fake';
 if (mode === 'stop') await stop();
 else if (mode === 'status') status();
-else if (mode === 'fake' || mode === 'live') await start(mode);
+else if (mode === 'fake' || mode === 'live' || mode === 'quotes') await start(mode);
 else {
-  console.error('Usage: node scripts/dev.mjs fake | live | status | stop');
+  console.error('Usage: node scripts/dev.mjs fake | quotes | live | status | stop');
   process.exit(1);
 }

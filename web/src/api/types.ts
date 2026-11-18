@@ -209,6 +209,8 @@ export interface HealthResponse {
   ok: boolean;
   venue: string;
   sandbox: boolean;
+  /** True when the executor has no Gemini keys: live prices and quotes, but every order is refused. */
+  readOnly?: boolean;
   users: { user: string; connected: boolean | null }[];
   time: string;
 }
