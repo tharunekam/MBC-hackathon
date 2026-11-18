@@ -159,7 +159,10 @@ describe('the liquidity seeder switch (GIVEN_SEEDER=1)', () => {
   const refusal = (extra) =>
     new Promise((done) => {
       const data = mkdtempSync(join(tmpdir(), 'given-seed-'));
-      const env = { ...process.env, PORT: '0', HOST: '127.0.0.1', GIVEN_DATA_ROOT: data, GIVEN_SEEDER: '1', ...extra };
+      // Its own stand-in for the built app, so the test does not depend on `npm run build` having been run.
+      const dist = mkdtempSync(join(tmpdir(), 'given-seed-dist-'));
+      writeFileSync(join(dist, 'index.html'), '<!doctype html><title>Given</title>');
+      const env = { ...process.env, PORT: '0', HOST: '127.0.0.1', GIVEN_DATA_ROOT: data, GIVEN_WEB_DIST: dist, GIVEN_SEEDER: '1', ...extra };
       for (const k of ['GEMINI_API_KEY', 'GEMINI_API_SECRET', 'GEMINI_USER_SEEDER_KEY', 'GEMINI_USER_SEEDER_SECRET', 'GEMINI_BASE_URL']) if (!(k in extra)) delete env[k];
       const p = spawn('node', ['scripts/serve.mjs'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
       let out = '';
