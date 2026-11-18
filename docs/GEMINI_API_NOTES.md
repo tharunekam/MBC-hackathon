@@ -123,8 +123,9 @@ Hosts: sandbox REST `https://api.sandbox.gemini.com`, sandbox WebSocket
 - **[verified 2026-11-18]** A contract's state can be `active/post_only`: the
   book is visible but taker orders are not accepted, so the offer rule refuses
   the pair as `market_closed`. What we saw on the sandbox's hourly ladders:
-  **every newly listed ladder was post-only for at least its first six
-  minutes** (all 45 contracts of the 07:00 UTC ladders, from 06:03 to 06:06),
+  **every newly listed ladder was post-only when first seen** (all 45
+  contracts of the 07:00 UTC ladders, from 06:03 to at least 06:06; ETH and SOL
+  were open by 06:15, BTC and XRP still were not),
   and BTC and XRP also showed it for a few minutes around 25 to 30 minutes
   before expiry while ETH and SOL stayed `active/open`. We do not know the
   rule. **For a live demo bet, pick a ladder that has been open a while and

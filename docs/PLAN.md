@@ -46,15 +46,24 @@ midnight CST; branch `run/live-sandbox-devnet`).** This is the machine that hold
 - **Found, not fixed (Product lane):** on a refused pair the button always says "Pick a closer target", even when the
   reason is a post-only market or an out-of-order ladder, where moving the target does not help; the default pair on
   a ladder can be two near-certain rungs showing "Fair price per $1: 101¢"; the Proof page does not yet show the
-  reconcile's new `nettedCash` line.
+  reconcile's new `nettedCash` line; when depth at the best price is momentarily zero the builder shows "The market can
+  only fill about $0.00", payoffs of $0.00 and a live "Place bet · $0.00" button; on a pair refused because the outcome
+  costs as much as the condition the hint says "try moving the target closer" when it needs to move further; after a
+  bet is placed the "How this bet pays" panel keeps the full-stake figures while the receipt shows the reduced ones.
 - **Settled, revealed and scored for real.** After the 06:00 UTC expiry: one bet won (+$0.41), one lost (−$3.45; the
   condition held and the target missed), `reconcile` tied to $0.00 before and after, both calls were revealed through
   the program and `GET /calls/:id/verify` recomputed both hashes from chain, and the leaderboard showed the handle with
   2 calls and edge 0.3934 once the RPC backfill ran (about 3 minutes; there is no Stream yet, and one backfill attempt
   failed on the public devnet RPC before the next succeeded). **Not yet exercised on the real stack:** a refunded
-  (void) call, and a bet placed by clicking in the web app.
-- **Sandbox behaviour to plan the demo around:** newly listed hourly ladders are `active/post_only` (no taker orders)
-  for at least their first six minutes, and some go post-only briefly later too, a bet of ours can itself push a thin ladder out of order and get the next bet
+  (void) call.
+- **A bet placed by clicking in the web app, on the real stack (06:16 UTC).** Dragged both markers on the ETH ladder,
+  clicked Place bet, and the receipt showed both Gemini orders filled and the Solana record with its explorer link
+  (bet `196968b1`). Two more bets sharing its strike then netted 3 contracts and the reconcile still tied to $0.00.
+  **Two earlier clicks on an enabled button did nothing** (no bet reached the executor, no message on screen); one was
+  while the button read "Place bet · $0.00". Product lane: see the list below.
+- **Sandbox behaviour to plan the demo around:** newly listed hourly ladders were `active/post_only` (no taker orders)
+  from 06:03 to at least 06:06 UTC and open by 06:15 (ETH and SOL; BTC and XRP were still post-only then), and some go
+  post-only briefly later too, a bet of ours can itself push a thin ladder out of order and get the next bet
   refused, and depth at the best price is often 1 to 8 contracts, so a $5 stake is cut to about $0.60 to $3.50.
 - This laptop's chain authority is `9GVno5tV2moikfXqZyZAuxw2pmqGZ4nmU9DKXhiDhM4X` (1 devnet SOL). **The ledger, the
   salts in `chain/data/` and that key are one unit with the Gemini account:** history seeded here shows up in the hosted
