@@ -392,7 +392,7 @@ export function mockApi(): Api {
         feesAtProductionRates: cents(real.reduce((n, b) => n + b.flow.feesAtProductionRates, 0)),
         feesCharged: 0,
         productionFeeCoef: PRODUCTION_FEE_COEF,
-        note: 'Demo data. On the Gemini sandbox no fees are charged; feesAtProductionRates is what the same fills would pay at Gemini\'s published taker rate.',
+        note: 'Demo data. On the Gemini sandbox no fees are charged; the fee figure is what the same fills would pay at Gemini\'s published taker rate.',
       };
     },
 

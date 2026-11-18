@@ -2,7 +2,7 @@
 /**
  * Fills the app with a believable history for demos and screenshots, through the real APIs.
  *
- *   node scripts/seed-history.mjs place [--spot N]   place a win-bound, a refund-bound and a loss-bound bet, commit each call
+ *   node scripts/seed-history.mjs place [--spot N] [--event TICKER]   place a win-bound, a refund-bound and a loss-bound bet, commit each call
  *   node scripts/seed-history.mjs finish             settle, then reveal every call that can be revealed
  *   node scripts/seed-history.mjs all                place, settle the local test exchange at the chosen price, finish
  *
@@ -42,6 +42,9 @@ function estimateSpot(rungs) {
   return pts[Math.floor(pts.length / 2)]?.k ?? 0;
 }
 
+/** Prices span $0.90 (XRP) to $64,000 (BTC), so keep enough digits to tell neighbouring strikes apart. */
+const price = (n) => (Math.abs(n) >= 100 ? String(Math.round(n)) : Number(n.toFixed(3)).toString());
+
 const classOf = (pair, spot) => (pair.condition.strike > spot ? 'refund' : pair.target.strike <= spot ? 'win' : 'loss');
 const cost = (pair) => pair.quote.markup ?? 1;
 
@@ -63,13 +66,30 @@ function plan(ev, hint) {
 
 async function place() {
   const { events } = await call('/api/markets');
-  const ev = events.find((e) => e.offerableCount > 0);
-  if (!ev) throw new Error('No offerable ladder right now.');
+  // Try every ladder that has offers, fullest first. On Gemini's sandbox the first one listed is often a ladder with two
+  // or three offerable pairs (or one that has just gone post-only), which cannot give all three outcomes.
+  const withOffers = events.filter((e) => e.offerableCount > 0).sort((a, b) => b.offerableCount - a.offerableCount);
+  if (withOffers.length === 0) throw new Error('No offerable ladder right now.');
+  const only = arg('event');
   const given = arg('spot');
-  const hint = given !== undefined ? Number(given) : estimateSpot(ev.rungs);
-  const chosen = plan(ev, hint);
-  if (!chosen) throw new Error(`No set of offerable pairs gives a win, a loss and a refund around ${Math.round(hint)}. Try again when the books are tighter.`);
-  console.log(`ladder ${ev.ticker}, estimated price ${Math.round(hint)}, planned settlement ${chosen.spot}`);
+  const tried = [];
+  let ev = null;
+  let hint = 0;
+  let chosen = null;
+  for (const e of withOffers) {
+    if (only && e.ticker !== only) continue;
+    hint = given !== undefined ? Number(given) : estimateSpot(e.rungs);
+    chosen = plan(e, hint);
+    if (chosen) {
+      ev = e;
+      break;
+    }
+    tried.push(`${e.ticker} (${e.offerableCount} offerable, price about ${price(hint)})`);
+  }
+  if (!ev || !chosen) {
+    throw new Error(`No ladder has offerable pairs that give a win, a loss and a refund. Tried: ${tried.join('; ') || 'none'}. Try again when the books are tighter.`);
+  }
+  console.log(`ladder ${ev.ticker}, estimated price ${price(hint)}, planned settlement ${price(chosen.spot)}`);
   for (const [kind, stake, pair] of chosen.picks) {
     const { bet } = await call('/api/bets', { method: 'POST', body: JSON.stringify({ user: 'primary', event: ev.ticker, condition: pair.condition.symbol, target: pair.target.symbol, stake }) });
     const rec = await call('/chain/calls', { method: 'POST', body: JSON.stringify({ betId: bet.id }) });

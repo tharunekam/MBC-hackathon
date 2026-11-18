@@ -110,6 +110,26 @@ Hosts: sandbox REST `https://api.sandbox.gemini.com`, sandbox WebSocket
   often a single contract.
 - **[verified]** Buying and selling both YES and NO works; a round trip returns
   the position to zero.
+- **[verified 2026-11-18]** **Gemini keeps one position per contract and nets
+  YES against NO at once, paying $1 a pair straight away.** Holding 1 YES on
+  `…-HI1800` (one bet's target) and then buying 3.52 NO on it (another bet's
+  condition) left a position of 2.52 NO and $1.00 more cash than the two orders
+  cost. Total money is unchanged (the $1 arrives early instead of at
+  settlement), but anything that tracks bets separately has to know: the
+  reconcile counts it (`nettedContracts`, `nettedCash`), and the test exchange
+  nets the same way. **Not handled yet:** an unwind that tries to sell a leg
+  Gemini has already netted away. It needs a second bet to share a strike
+  inside the few seconds between a bet's two orders; untested.
+- **[verified 2026-11-18]** A contract's state can be `active/post_only`: the
+  book is visible but taker orders are not accepted, so the offer rule refuses
+  the pair as `market_closed`. What we saw on the sandbox's hourly ladders:
+  **every newly listed ladder was post-only when first seen** (all 45
+  contracts of the 07:00 UTC ladders, from 06:03 to at least 06:06; ETH and SOL
+  were open by 06:15, BTC and XRP still were not),
+  and BTC and XRP also showed it for a few minutes around 25 to 30 minutes
+  before expiry while ETH and SOL stayed `active/open`. We do not know the
+  rule. **For a live demo bet, pick a ladder that has been open a while and
+  check its state first; do not count on the top of the hour.**
 - **[verified]** `clientOrderId` is echoed in `orderUpdate` (`c`) and in REST
   order records. **[docs]** Length limit is 36 characters in one place and 100
   in another; stay under 36.

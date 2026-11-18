@@ -88,7 +88,7 @@ try {
   // ---------------------------------------------------------------- the real services
   const [execPort, chainPort, webPort] = [await freePort(), await freePort(), await freePort()];
   const execEnv = { GIVEN_PORT: String(execPort), GIVEN_DATA_DIR: join(tmp, 'exec'), GEMINI_BASE_URL: gem.baseUrl, GEMINI_WS_URL: gem.wsUrl, GEMINI_API_KEY: API_KEY, GEMINI_API_SECRET: process.argv.includes('--sabotage') ? 'not-the-secret' : API_SECRET, GIVEN_ALLOW_PRODUCTION: '1', GIVEN_TAKER_FEE_COEF: '0' };
-  const chainEnv = { GIVEN_CHAIN: 'devnet', SOLANA_RPC_URL: rpc.url, GIVEN_CHAIN_KEYPAIR: keypairPath, GIVEN_CHAIN_DATA_DIR: join(tmp, 'chain'), GIVEN_CHAIN_PORT: String(chainPort), GIVEN_EXECUTOR_URL: `http://127.0.0.1:${execPort}`, GIVEN_SELF_INGEST: '1', GIVEN_BACKFILL_MS: '0' };
+  const chainEnv = { GIVEN_CHAIN: 'devnet', SOLANA_RPC_URL: rpc.url, GIVEN_CHAIN_KEYPAIR: keypairPath, GIVEN_CHAIN_DATA_DIR: join(tmp, 'chain'), GIVEN_CHAIN_PORT: String(chainPort), GIVEN_EXECUTOR_URL: `http://127.0.0.1:${execPort}`, GIVEN_SELF_INGEST: '1', GIVEN_BACKFILL_MS: '0', GIVEN_PROGRAM_ID: '' }; // blank: a real program id in the repo .env must not reach the Solana stand-in
   let exec = start('executor', 'executor', execEnv);
   await until(`http://127.0.0.1:${execPort}/health`, 'executor');
   let chain = start('chain', 'chain', chainEnv);

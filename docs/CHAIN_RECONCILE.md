@@ -33,8 +33,9 @@ expired blockhash. `SolanaChain(rpcUrl, keypair, programId?, options?)`; his cal
 
 ## Still open
 
-1. **A call driven by a real executor bet.** Every real devnet record so far came from a synthetic bet in the smoke
-   script. It needs Gemini sandbox keys.
+1. ~~A call driven by a real executor bet.~~ **Done 2026-11-18** on Victor's laptop: real sandbox bets `92e80990` and
+   `557869d4` were committed on devnet through the program by the chain service (authority `9GVn…hM4X`), commit
+   signatures `5P8xNpVv…` and `4FkLnjHR…`. See the build status in `docs/PLAN.md`.
 2. **The QuickNode Stream** delivering real logs. The webhook route, authentication and ingestion are tested, including
    with real devnet signatures; the Stream itself does not exist yet.
 3. **That the deployed program equals the source tree.** Someone should run a verifiable build before the submission

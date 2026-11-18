@@ -33,6 +33,48 @@ Solana stood in on the wire: 16 checks, fails when sabotaged), `npm run prefligh
 (186 tests). Real devnet and real sandbox runs are still the only proof of the parts the stand-ins cannot cover. Our chain lane
 overlaps Victor's deployed Anchor program: see `docs/CHAIN_RECONCILE.md`. Name candidates: `docs/NAMES.md`.
 
+**First run on the real Gemini sandbox and real Solana devnet together (Victor's laptop, 2026-11-18 just before
+midnight CST; branch `run/live-sandbox-devnet`).** This is the machine that holds the Gemini sandbox key.
+
+- `npm run preflight`: every Gemini check passes (keys accepted, terms accepted, signed order session opens).
+- `npm run dev:live` with `GIVEN_PROGRAM_ID` set: three real bets placed, each two filled Gemini orders, each call
+  committed on devnet through `given_receipts` by the chain service. This closes open item 1 in
+  `docs/CHAIN_RECONCILE.md` (a call driven by a real executor bet).
+- **Found and fixed:** Gemini nets YES against NO on one contract and pays $1 a pair early, so two bets sharing a
+  strike left the reconcile off by exactly $1.00. Fixed in the executor with tests; the Proof page is back to $0.00 on
+  the live account. Details in `docs/GEMINI_API_NOTES.md`.
+- **All three outcomes on the real stack (07:00 UTC ladders).** Won (`196968b1`, +$1.31), lost (`3e179ffd`, −$3.16) and
+  **refunded** (`dc55923f`: SOL ended below $75, payout $3.24 on a $3.18 cost). The refunded call's reveal was refused
+  with `409 void_call` and its state became `void`; the other two revealed and verified from chain. `reconcile` tied to
+  $0.00 again, My bets showed "Money back", and the leaderboard showed 4 calls, 50% hit rate, edge +0.78. The first
+  settle attempt failed with `gemini_error: fetch failed` because the laptop had slept; the retry worked. **A demo
+  machine must not sleep** (the app's keep-awake lapses when the session goes idle).
+- **Found, not fixed (Product lane):** on a refused pair the button always says "Pick a closer target", even when the
+  reason is a post-only market or an out-of-order ladder, where moving the target does not help; the default pair on
+  a ladder can be two near-certain rungs showing "Fair price per $1: 101¢"; the Proof page does not yet show the
+  reconcile's new `nettedCash` line; when depth at the best price is momentarily zero the builder shows "The market can
+  only fill about $0.00", payoffs of $0.00 and a live "Place bet · $0.00" button; on a pair refused because the outcome
+  costs as much as the condition the hint says "try moving the target closer" when it needs to move further; after a
+  bet is placed the "How this bet pays" panel keeps the full-stake figures while the receipt shows the reduced ones.
+- **Settled, revealed and scored for real.** After the 06:00 UTC expiry: one bet won (+$0.41), one lost (−$3.45; the
+  condition held and the target missed), `reconcile` tied to $0.00 before and after, both calls were revealed through
+  the program and `GET /calls/:id/verify` recomputed both hashes from chain, and the leaderboard showed the handle with
+  2 calls and edge 0.3934 once the RPC backfill ran (about 3 minutes; there is no Stream yet, and one backfill attempt
+  failed on the public devnet RPC before the next succeeded). A refunded call followed an hour later (next bullet but one).
+- **A bet placed by clicking in the web app, on the real stack (06:16 UTC).** Dragged both markers on the ETH ladder,
+  clicked Place bet, and the receipt showed both Gemini orders filled and the Solana record with its explorer link
+  (bet `196968b1`). Two more bets sharing its strike then netted 3 contracts and the reconcile still tied to $0.00.
+  **Two earlier clicks on an enabled button did nothing** (no bet reached the executor, no message on screen); one was
+  while the button read "Place bet · $0.00". Product lane: see the list below.
+- **Sandbox behaviour to plan the demo around:** newly listed hourly ladders were `active/post_only` (no taker orders)
+  from 06:03 to at least 06:06 UTC and open by 06:15 (ETH and SOL; BTC and XRP were still post-only then), and some go
+  post-only briefly later too, a bet of ours can itself push a thin ladder out of order and get the next bet
+  refused, and depth at the best price is often 1 to 8 contracts, so a $5 stake is cut to about $0.60 to $3.50.
+- This laptop's chain authority is `9GVno5tV2moikfXqZyZAuxw2pmqGZ4nmU9DKXhiDhM4X` (1 devnet SOL). **The ledger, the
+  salts in `chain/data/` and that key are one unit with the Gemini account:** history seeded here shows up in the hosted
+  demo only if that state moves to the host, and a second executor on the same Gemini key with a fresh ledger breaks the
+  reconcile. Decide the host before seeding the demo history (T-V5).
+
 **Verified by running** (130 tests across the three packages; the golden path was also driven in a real browser against
 the real executor handler and chain service): bet builder on the probability ladder, quote, place, receipt, My bets,
 settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is and is not verified: `chain/README.md`.
@@ -43,7 +85,7 @@ settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is a
 | T-P6 leaderboard, call page, share card, explorer links | Leaderboard and explorer links done; **share card and call page not built**; verify page not built (the `verify` endpoint exists) |
 | T-P7, T-P8 landing copy, polish, design review | First pass only; the polish pass is still to do |
 | T-P9 README, Devpost, video, pitch | Not started |
-| T-V1 OAuth test | **Blocked on a Gemini sandbox key** (none on this machine) |
+| T-V1 OAuth test | Not started. The sandbox key is on Victor's laptop; registering a sandbox OAuth app needs the account owner |
 | T-V2 host the executor | Protections built and tested (pinned user, stake cap, rate limit, kill switch, refuses unsafe bind); **no deployment yet** |
 | T-V3 `GET /reconcile` | **Done**. Event feed not needed: the chain service reads bets from the executor |
 | T-V4 to T-V8 seeder, history script, maker-first, replay, production quotes | Not started |
@@ -57,7 +99,9 @@ settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is a
 **Blocked on the owners (nothing here can be done by us alone):**
 
 1. ~~Fund the Solana authority key~~ **Done** (3 devnet SOL; a smoke run costs about 0.003).
-2. Put Gemini sandbox keys in `.env` (executor README), then `npm run dev:live`. This also unblocks the OAuth test.
+2. ~~Put Gemini sandbox keys in `.env`, then `npm run dev:live`~~ **Done on Victor's laptop 2026-11-18** (see above). Other
+   machines still need their own key, or use `npm run dev:quotes`. The OAuth test needs a sandbox OAuth app registered
+   by the account owner.
 3. Create the QuickNode Stream (steps and filter in `chain/README.md` and `chain/quicknode/filter.js`) and read the real
    credit multiplier.
 4. Pick and open a host for the executor, chain service and web app (the hosted demo link).
