@@ -7,7 +7,8 @@ import { explorerTx } from '../api/types';
 import LadderChart from '../components/LadderChart';
 import ProbBar from '../components/ProbBar';
 import { cents, money, pct, timeLeft, trunc, usd, usdSigned } from '../lib/format';
-import { useAsync, useDebounced, useNow } from '../lib/hooks';
+import { useDebounced, useNow, useResource } from '../lib/hooks';
+import { execLive } from '../lib/liveClients';
 import { estimate, outcomesFor } from '../lib/pricing';
 import { useVenue } from '../lib/venue';
 
@@ -54,7 +55,7 @@ function friendly(err: unknown): string {
 export default function Build() {
   const venue = useVenue();
   const now = useNow(20000);
-  const markets = useAsync(() => api.markets(), [], 4000);
+  const markets = useResource('markets', () => api.markets(), { live: [[execLive, 'markets']], pollMs: 4000, minGapMs: 800 });
   // Real exchanges list dozens of ladders. Put the ones you can actually bet on first, and drop one-rung ladders.
   const events = useMemo(() => {
     const usable = (e: MarketEvent) => (e.offerableCount > 0 && !e.ladderOutOfOrder ? 0 : !e.ladderOutOfOrder ? 1 : 2);
@@ -89,10 +90,11 @@ export default function Build() {
 
   const dStake = useDebounced(stake, 350);
   const dSel = useDebounced(sel, 200);
-  const quoteQ = useAsync<QuoteResponse | null>(
+  // One cached answer per pair and stake: going back to a pair you looked at is instant, and prices that move refresh it.
+  const quoteQ = useResource<QuoteResponse | null>(
+    `quote:${event?.ticker}:${dSel?.c}:${dSel?.t}:${dStake}`,
     () => (event && dSel ? api.quote({ event: event.ticker, condition: dSel.c, target: dSel.t, stake: dStake }) : Promise.resolve(null)),
-    [event?.ticker, dSel?.c, dSel?.t, dStake],
-    5000,
+    { live: [[execLive, 'markets']], pollMs: 5000, minGapMs: 1500 },
   );
   const server = quoteQ.data && sel && quoteQ.data.condition.symbol === sel.c && quoteQ.data.target.symbol === sel.t ? quoteQ.data : null;
   const settling = !server; // showing the estimate

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Link, Outlet, useLocation } from 'react-router-dom';
+import { useLiveStatus } from '../lib/hooks';
+import { chainLive, execLive } from '../lib/liveClients';
 import { useVenue } from '../lib/venue';
 
 export function Logo({ size = 22 }: { size?: number }) {
@@ -73,11 +75,29 @@ export function Nav() {
           ))}
         </nav>
         <div className="nav-right">
+          <LiveBadge />
           {venue.chip && <span className="chip chip-quiet">{venue.chip}</span>}
           <ThemeToggle />
         </div>
       </div>
     </header>
+  );
+}
+
+/** Shows that prices and results are arriving on their own, or that the page has fallen back to refreshing. */
+function LiveBadge() {
+  const exec = useLiveStatus(execLive);
+  const chain = useLiveStatus(chainLive);
+  if (!execLive && !chainLive) return null;
+  const all = [exec, chain];
+  const state = all.every((s) => s === 'live') ? 'live' : all.some((s) => s === 'down') ? 'down' : all.some((s) => s === 'live') ? 'live' : 'connecting';
+  if (state === 'connecting') return null; // do not flash a status before there is one
+  const label = state === 'live' ? 'Live' : 'Reconnecting';
+  return (
+    <span className="live" data-state={state} role="status" title={state === 'live' ? 'Prices and results update as they happen.' : 'The live connection dropped. The page refreshes every few seconds until it is back.'}>
+      <span className="live-dot" aria-hidden="true" />
+      {label}
+    </span>
   );
 }
 

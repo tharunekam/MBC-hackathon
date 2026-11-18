@@ -1,9 +1,10 @@
 import { api } from '../api';
 import { ago, pct } from '../lib/format';
-import { useAsync } from '../lib/hooks';
+import { useResource } from '../lib/hooks';
+import { chainLive } from '../lib/liveClients';
 
 export default function Leaderboard() {
-  const lb = useAsync(() => api.leaderboard(), [], 10000);
+  const lb = useResource('leaderboard', () => api.leaderboard(), { live: [[chainLive, 'leaderboard']], pollMs: 10000 });
   const rows = lb.data?.rows ?? [];
 
   return (

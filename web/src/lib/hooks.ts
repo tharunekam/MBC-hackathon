@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import type { Live } from './live';
+import { resourceFor, retain } from './resource';
 
 export interface Async<T> {
   data: T | null;
@@ -62,4 +64,103 @@ export function useNow(everyMs = 15000): number {
     return () => window.clearInterval(id);
   }, [everyMs]);
   return now;
+}
+
+export interface ResourceOptions {
+  /** Live topics that mean "this changed": `[connection, topic]`. A null connection (demo mode) is ignored. */
+  live?: Array<[Live | null, string]>;
+  /** Fallback refresh interval, used whenever any listed live connection is not up (and always when there is none). */
+  pollMs?: number;
+  /** Shortest gap between refreshes caused by live events, so a burst of changes is one request. Default 400. */
+  minGapMs?: number;
+  /** An answer younger than this is not refetched when the page mounts. Default 2000. */
+  staleMs?: number;
+}
+
+export interface ResourceView<T> {
+  data: T | null;
+  error: Error | null;
+  /** True only until the first answer. */
+  loading: boolean;
+  /** True while any request is in flight, including a quiet background refresh. */
+  refreshing: boolean;
+  updatedAt: number | null;
+  reload: () => void;
+}
+
+/**
+ * Shared, cached data that keeps itself current. The answer for a key is painted at once if it was seen before and is
+ * refreshed behind it; it refetches when a live event says it changed, when the tab regains focus, and by polling only
+ * while the live connection is down. Hidden tabs do not poll.
+ */
+export function useResource<T>(key: string, fetcher: () => Promise<T>, options: ResourceOptions = {}): ResourceView<T> {
+  const res = resourceFor<T>(key, fetcher);
+  const state = useSyncExternalStore(res.subscribe, res.getState, res.getState);
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+
+  useEffect(() => {
+    const release = retain(key);
+    const o = optionsRef.current;
+    const s = res.getState();
+    if (s.updatedAt === null || Date.now() - s.updatedAt > (o.staleMs ?? 2000)) void res.refresh();
+
+    // Live events: at most one refresh per minGap, leading edge immediately, trailing edge so the last change is never lost.
+    const gap = o.minGapMs ?? 400;
+    let last = 0;
+    let trailing: number | undefined;
+    const kick = (): void => {
+      const wait = last + gap - Date.now();
+      if (wait <= 0) {
+        last = Date.now();
+        void res.refresh();
+      } else if (trailing === undefined) {
+        trailing = window.setTimeout(() => {
+          trailing = undefined;
+          last = Date.now();
+          void res.refresh();
+        }, wait);
+      }
+    };
+    const lives = (o.live ?? []).filter((x): x is [Live, string] => x[0] !== null);
+    const unsubs = lives.map(([l, topic]) => l.subscribe(topic, kick));
+
+    const poll = o.pollMs
+      ? window.setInterval(() => {
+          if (document.hidden) return;
+          if (lives.length > 0 && lives.every(([l]) => l.status() === 'live')) return; // live events are covering it
+          void res.refresh();
+        }, o.pollMs)
+      : undefined;
+
+    const wake = (): void => {
+      if (document.hidden) return;
+      const u = res.getState().updatedAt;
+      if (u === null || Date.now() - u > 5000) void res.refresh();
+    };
+    window.addEventListener('focus', wake);
+    window.addEventListener('online', wake);
+    document.addEventListener('visibilitychange', wake);
+
+    return () => {
+      for (const off of unsubs) off();
+      if (poll !== undefined) window.clearInterval(poll);
+      if (trailing !== undefined) window.clearTimeout(trailing);
+      window.removeEventListener('focus', wake);
+      window.removeEventListener('online', wake);
+      document.removeEventListener('visibilitychange', wake);
+      release();
+    };
+  }, [key, res]);
+
+  return { data: state.data, error: state.error, loading: state.loading, refreshing: state.refreshing, updatedAt: state.updatedAt, reload: useCallback(() => void res.refresh(), [res]) };
+}
+
+/** The live status of a connection, for a badge. `null` (demo mode) is reported as 'idle'. */
+export function useLiveStatus(live: Live | null): 'idle' | 'connecting' | 'live' | 'down' {
+  return useSyncExternalStore(
+    (cb) => (live ? live.onStatus(cb) : () => {}),
+    () => (live ? live.status() : 'idle'),
+    () => 'idle',
+  );
 }

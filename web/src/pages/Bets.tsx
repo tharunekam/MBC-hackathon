@@ -5,7 +5,8 @@ import { ApiError } from '../api/client';
 import type { Bet, CallRecord } from '../api/types';
 import { explorerTx } from '../api/types';
 import { ago, cents, money, trunc, usd, usdSigned } from '../lib/format';
-import { useAsync } from '../lib/hooks';
+import { useResource } from '../lib/hooks';
+import { chainLive, execLive } from '../lib/liveClients';
 
 type Outcome = 'open' | 'won' | 'back' | 'lost' | 'review' | 'other';
 
@@ -22,8 +23,8 @@ function outcomeOf(b: Bet): Outcome {
 const LABEL: Record<Outcome, string> = { open: 'Open', won: 'Won', back: 'Money back', lost: 'Lost', review: 'Needs review', other: 'Not placed' };
 
 export default function Bets() {
-  const bets = useAsync(() => api.bets(), [], 8000);
-  const calls = useAsync(() => api.calls(), [], 8000);
+  const bets = useResource('bets', () => api.bets(), { live: [[execLive, 'bets']], pollMs: 8000 });
+  const calls = useResource('calls', () => api.calls(), { live: [[chainLive, 'calls']], pollMs: 8000 });
   const [checking, setChecking] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [revealing, setRevealing] = useState<string | null>(null);

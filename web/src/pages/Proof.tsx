@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { api } from '../api';
 import type { ReconcileResponse } from '../api/types';
 import { usd } from '../lib/format';
-import { useAsync } from '../lib/hooks';
+import { useResource } from '../lib/hooks';
+import { execLive } from '../lib/liveClients';
 
 export default function Proof() {
-  const flow = useAsync(() => api.flow(), [], 10000);
+  const flow = useResource('flow', () => api.flow(), { live: [[execLive, 'bets']], pollMs: 10000 });
   const [rec, setRec] = useState<ReconcileResponse | null>(null);
   const [running, setRunning] = useState(false);
   const [err, setErr] = useState<string | null>(null);

@@ -67,7 +67,7 @@ function start(name, cwd, env) {
 const stop = async (child) => { child.kill('SIGTERM'); await new Promise((r) => (child.exitCode !== null ? r() : child.once('exit', r))); };
 
 let failed = false;
-let gem, rpc, proxy;
+let gem, rpc, proxy, execStream, chainStream;
 try {
   // ---------------------------------------------------------------- the world
   const SPOT = 63240;
@@ -121,6 +121,17 @@ try {
     const [, which, ...rest] = url.pathname.split('/');
     const target = which === 'api' ? execPort : which === 'chain' ? chainPort : null;
     if (!target) { res.writeHead(404); return res.end(); }
+    if (req.method === 'GET' && /\/(stream|events)$/.test(url.pathname)) {
+      // Server-sent events are piped through as they arrive; buffering would wait for a stream that never ends.
+      const ctrl = new AbortController();
+      res.on('close', () => ctrl.abort());
+      try {
+        const up = await fetch(`http://127.0.0.1:${target}/${rest.join('/')}${url.search}`, { signal: ctrl.signal });
+        res.writeHead(up.status, { 'content-type': up.headers.get('content-type') ?? 'text/event-stream', 'cache-control': 'no-cache' });
+        for await (const chunk of up.body) res.write(chunk);
+      } catch { /* the client went away */ }
+      return res.end();
+    }
     const chunks = []; for await (const c of req) chunks.push(c);
     const up = await fetch(`http://127.0.0.1:${target}/${rest.join('/')}${url.search}`, { method: req.method, headers: { 'content-type': 'application/json' }, body: chunks.length ? Buffer.concat(chunks) : undefined });
     const text = await up.text();
@@ -131,6 +142,30 @@ try {
   await sleep(100);
   const web = `http://127.0.0.1:${webPort}`;
   const get = async (p) => (await fetch(web + p)).json();
+
+  // ---------------------------------------------------------------- watch the live streams while the flow runs
+  const watch = (url) => {
+    const seen = { events: [], status: 0 };
+    const ctrl = new AbortController();
+    fetch(url, { signal: ctrl.signal }).then(async (res) => {
+      seen.status = res.status;
+      const dec = new TextDecoder();
+      let buf = '';
+      for await (const chunk of res.body) {
+        buf += dec.decode(chunk, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n\n')) >= 0) {
+          const name = /^event: (.+)$/m.exec(buf.slice(0, i))?.[1];
+          buf = buf.slice(i + 2);
+          if (name) seen.events.push(name);
+        }
+      }
+    }).catch(() => {});
+    return { seen, stop: () => ctrl.abort() };
+  };
+  execStream = watch(`${web}/api/stream?topics=markets,bets`);
+  chainStream = watch(`${web}/chain/events?topics=calls,leaderboard`);
+  await sleep(300);
 
   // ---------------------------------------------------------------- drive it with the seed script
   const out = await new Promise((done) => {
@@ -146,6 +181,12 @@ try {
   }
 
   // ---------------------------------------------------------------- the checks
+  await sleep(500);
+  const count = (seen, name) => seen.events.filter((e) => e === name).length;
+  check('both services streamed live updates while the flow ran', execStream.seen.status === 200 && chainStream.seen.status === 200 && execStream.seen.events.includes('hello') && chainStream.seen.events.includes('hello'));
+  check('the executor announced every bet and the settlement', count(execStream.seen, 'bets') >= 4, `${count(execStream.seen, 'bets')} bets events`);
+  check('the chain service announced every commit and reveal, and the leaderboard change', count(chainStream.seen, 'calls') >= 5 && count(chainStream.seen, 'leaderboard') >= 1, `${count(chainStream.seen, 'calls')} calls, ${count(chainStream.seen, 'leaderboard')} leaderboard events`);
+
   const { bets } = await get('/api/bets');
   check('three bets, each with two filled legs', bets.length === 3 && bets.every((b) => b.legs?.length === 2 && b.legs.every((l) => l.quantityFilled > 0)), `${bets.length} bets`);
   check('Gemini received exactly six signed orders over the WebSocket', gem.orders.length === 6, `${gem.orders.length} orders`);
@@ -191,6 +232,8 @@ try {
   console.error(`\nREHEARSAL ERROR: ${err instanceof Error ? err.stack : String(err)}`);
 } finally {
   for (const c of [...children]) c.kill('SIGTERM');
+  execStream?.stop();
+  chainStream?.stop();
   proxy?.close();
   await gem?.close();
   await rpc?.close();

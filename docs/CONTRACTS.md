@@ -32,6 +32,27 @@ sandbox.
 | `GET /flow` | Proof page | |
 | `GET /reconcile` | Proof page | **New.** Ledger vs Gemini: orders found, cash tied out |
 
+### Live updates and caching (both services)
+
+Every GET answer carries an `ETag` and `Cache-Control: no-cache`: a client that sends `If-None-Match` gets a 304 with no body
+when nothing changed (`asOf`, `time` and `checkedAt` are ignored when deciding). Bodies over 1 KB are gzipped for clients that
+accept it. Errors are never given validators.
+
+`GET /stream?topics=markets,bets` (executor) and `GET /events?topics=calls,leaderboard` (chain service) are
+server-sent events. A message only says that a topic changed (`event: markets`, `data: {"v":12}`); the page refetches the
+normal GET. `event: hello` opens every stream. A client that was disconnected must refetch everything on reconnect (the web
+app does). Limits: 8 streams per client address, 200 in total (the hub answers 429 and 503), slow readers are dropped, and a
+heartbeat comment goes out every 15 s.
+
+- `markets`: the market list changed. Re-read in the background every 3 s (`refreshMs`), only while someone watches it.
+- `bets`: a bet was placed, or a bet settled (by `POST /settle` or by auto-settle, below).
+- `calls`: a call was committed, revealed, voided, or recovered from the chain. `leaderboard`: a verified reveal was recorded.
+
+The market list is served stale-while-revalidate: an answer up to 60 s old is returned at once while a fresh one loads, so
+nobody waits for the 2 s read. Identical quote requests share one pair of book reads (`quoteCacheMs`, 1.5 s on the real
+server); a quote whose book read failed is never reused. `GIVEN_AUTO_SETTLE_MS` (default 20000, 0 turns it off) settles
+finished bets by itself; it reads Gemini and writes the ledger and places no order.
+
 ### Hosted-demo protections (new, all opt-in; see `executor/src/server.ts`)
 
 `GIVEN_HOST` (default `127.0.0.1`), `GIVEN_PINNED_USER`, `GIVEN_MAX_STAKE`, `GIVEN_RATE_LIMIT_PER_MIN`,
