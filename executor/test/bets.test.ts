@@ -528,3 +528,24 @@ test('settlement: an event that has not settled yet is left open, however late i
   assert.deepEqual([done.settled.length, done.needsReview.length], [0, 0]);
   assert.equal(bet.status, 'open');
 });
+
+test('settlement: an event marked settled is enough, even if a voided contract carries some other status', async () => {
+  const { exchange, deps } = setup(TIGHT, { waiveMarkup: false });
+  const bet = await placeConditionalBet(deps, request(exchange, { stake: 10 }));
+  exchange.setContractStatus(1800, 'voided'); // not "settled", no result, no resolvedAt
+  exchange.resolve(1820, 'no');
+  const later = { ...deps, now: () => new Date('2026-11-18T00:05:00Z') };
+
+  // While the event is still active, one unsettled-looking contract means "not settled yet".
+  assert.equal((await settleBets(later)).needsReview.length, 0);
+  assert.equal(bet.status, 'open');
+
+  // Once Gemini marks the event settled, the bet must not stay open.
+  exchange.setEventStatus('settled');
+  const done = await settleBets(later);
+  assert.equal(done.needsReview.length, 1);
+  assert.equal(bet.status, 'needs_review');
+  assert.equal(bet.review!.eventStatus, 'settled');
+  assert.equal(bet.review!.condition!.status, 'voided');
+  assert.equal(isScorable(bet), false);
+});

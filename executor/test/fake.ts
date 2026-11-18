@@ -75,6 +75,18 @@ export class FakeExchange implements Exchange {
     Object.assign(this.books.get(this.symbol(strike))!, book);
   }
 
+  /** Marks the whole event with a status, e.g. "settled", without touching its contracts. */
+  setEventStatus(status: string): void {
+    this.event.status = status;
+  }
+
+  /** Gives one contract an arbitrary status with no result, as a voided contract might have. */
+  setContractStatus(strike: number, status: string): void {
+    const c = this.event.contracts.find((x) => x.instrumentSymbol === this.symbol(strike))!;
+    c.status = status;
+    c.marketState = 'closed';
+  }
+
   /** Marks one contract as not open for trading (Gemini uses "post_only", "closed", ...). */
   setMarketState(strike: number, marketState: string): void {
     this.event.contracts.find((x) => x.instrumentSymbol === this.symbol(strike))!.marketState = marketState;

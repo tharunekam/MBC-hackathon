@@ -66,11 +66,26 @@ Hosts: sandbox REST `https://api.sandbox.gemini.com`, sandbox WebSocket
   minute after a market opens. **Quote from the single-event endpoint.**
 - **[verified]** Valid `status` filters: `active`, `approved`, `under_review`,
   `settled`.
-- **[verified]** Outcomes: about 5 seconds after expiry a contract shows
-  `status: settled`, `resolutionSide: yes|no`, `resolvedAt`, `settlementValue`.
+- **[verified]** `bestAsk` (or `bestBid`) can be absent on a contract while
+  `prices.buy.yes` is still present. The executor treats a missing `bestBid` or
+  `bestAsk` as a one-sided book and refuses the pair.
+- **[verified]** Outcomes: about 5 to 9 seconds after expiry a contract shows
+  `status: settled`, `marketState: closed`, `resolutionSide: yes|no`,
+  `resolvedAt`, `settlementValue`. The event's own `status` becomes `settled`
+  too. **`settlementValue` is the reference price the ladder settled against
+  (for example `63696.058` on a BTC ladder), not a payout.**
 - **[verified]** Streams: `{symbol}@bookTicker` gives best bid/ask and sizes
-  (`b`, `B`, `a`, `A`; the symbol comes back lower-case); `{symbol}@depth5`
-  gives the top five levels.
+  (`b`, `B`, `a`, `A`; the symbol comes back lower-case). **A missing side
+  arrives as an empty string (`"a":""`), not a number**: `Number("")` is 0, so
+  check for it. The message also carries `c` / `C`; when `a` was empty, `c`
+  matched the event's `prices.buy.yes`. **[unknown]** what `c` means exactly.
+- **[verified]** `{symbol}@depth5` sends
+  `{"lastUpdateId", "symbol" (lower-case), "bids": [["0.83","1.00"], ...], "asks": [...]}`,
+  best level first, up to five per side. The first snapshot arrives about 300 ms
+  after `SUBSCRIBE` and then one per second whether or not the book changed.
+  `{"method":"UNSUBSCRIBE","params":[stream]}` stops it. The executor's depth
+  guard takes one snapshot per leg and unsubscribes, so expired hourly symbols
+  do not pile up.
 - **[docs]** A public `contractStatus` stream reports lifecycle changes, and
   `{agency}:{index}@indexPrice` streams the reference price a ladder settles on.
 - **[verified, production, 2026-11-17]** Strike types seen: `above`, `below`,
@@ -91,14 +106,18 @@ Hosts: sandbox REST `https://api.sandbox.gemini.com`, sandbox WebSocket
 - **[verified]** **Subscribe to `orders@account` and wait for the ack before
   sending an order.** Orders sent earlier fill, but their events never arrive.
 - **[verified]** An immediate-or-cancel order fills only the size at the best
-  price. Check depth, or expect partial fills.
+  price. Check depth, or expect partial fills. In the sandbox the best level is
+  often a single contract.
 - **[verified]** Buying and selling both YES and NO works; a round trip returns
   the position to zero.
 - **[verified]** `clientOrderId` is echoed in `orderUpdate` (`c`) and in REST
   order records. **[docs]** Length limit is 36 characters in one place and 100
   in another; stay under 36.
 - **[verified]** Order IDs are 18-digit integers, larger than a JavaScript
-  number can hold. Parse them as strings.
+  number can hold. Parse them as strings. This applies to REST too: order rows
+  carry `orderId` as a bare number, and a plain `JSON.parse` gave two different
+  orders the same id. The same row has `globalOrderId` as a string; use that, or
+  quote `orderId` before parsing (the executor does both).
 - **[docs]** Other methods: `order.cancel`, `order.cancel_all`,
   `order.cancel_session`. No amend, no batch over WebSocket. `timeInForce` also
   takes `FOK` and `MOC` (maker-or-cancel). Stop-limit is `LIMIT` plus
@@ -106,12 +125,25 @@ Hosts: sandbox REST `https://api.sandbox.gemini.com`, sandbox WebSocket
 - **[docs]** In `orderUpdate`, `Z` is the last fill on `FILLED` /
   `PARTIALLY_FILLED` but the cumulative fill on `CANCELED`, and a fully filled
   IOC ends as `CANCELED`. **Treat REST order history as the record of a fill.**
+- **[verified]** In REST order history a fully filled IOC order has
+  `status: "cancelled"` with `filledQuantity` equal to `quantity` and
+  `remainingQuantity: "0"`. Read the fill from `filledQuantity` and
+  `avgExecutionPrice`, never from `status`.
 - **[docs]** The server drops a connection after 60 seconds without a pong.
 
 ## Account reads (REST, all POST)
 
 - **[verified]** `/v1/prediction-markets/positions`, `/orders/active`,
   `/orders/history`; `/v1/balances` for cash. GET on these returns 405.
+- **[verified]** **`/orders/history` is paged: 50 rows by default, newest
+  first.** It takes `limit`, `offset` and `symbol` in the signed payload and
+  returns `pagination {limit, offset, count}`. One unpaged call silently drops
+  older orders, so follow the pages when checking the books (the executor's
+  `reconcile` does).
+- **[verified]** `/orders/history` is slow: 1.3 to 3.4 seconds for a 14-row
+  page, about 0.5 seconds with `limit: 5`. `/orders/active` and `/v1/balances`
+  took about 60 ms. To confirm an order sent a moment ago, ask for the newest
+  few rows; this cut a two-order bet from about 8 seconds to about 4.
 - **[docs]** There is no fills endpoint; per-fill data comes only from the
   `orders@account` stream. A `positions@account` stream reports settlement as a
   final row with position 0 and a payout.
@@ -146,6 +178,14 @@ Hosts: sandbox REST `https://api.sandbox.gemini.com`, sandbox WebSocket
 - **[verified]** It lists only crypto and commodities: 5-minute and 15-minute
   up/down markets, hourly and daily price ladders. No sports.
 - **[verified]** Bots quote the hourly ladders with wide spreads (often 20¢).
+  Only the hourly crypto ladders had two-sided books; daily crypto and every
+  commodity ladder were one-sided. With spreads that wide the executor's offer
+  rule refused all 105 two-sided pairs, so a sandbox demo needs
+  `npm run start:demo` (see `executor/README.md`).
+- **[verified, seen once]** About eight minutes before the 00:00 UTC hourly
+  expiry the ETH book tightened to about 3¢ and 5 pairs passed the offer rule.
+- **[verified]** The far end of a ladder is sometimes out of order by a cent
+  (a higher strike asking 0.21 against 0.20 below it).
 - **[unknown]** Reset schedule, rate limits, connection limits, and how voided
   or fractional settlements appear.
 - **Nothing in this repo has been run against production.**
