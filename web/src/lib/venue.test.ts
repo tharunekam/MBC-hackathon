@@ -18,6 +18,16 @@ describe('the app says what it is talking to', () => {
     expect(describeVenue('live', { venue: 'Local test exchange', seeded: true }).chip).toBe('Local test exchange');
   });
 
+  it('a replay says it is one, of what and from when, whatever else the recorded health says', () => {
+    const note = describeVenue('live', { venue: 'Gemini sandbox', seeded: true, replay: { recordedAt: '2026-11-19T01:00:00.000Z' } });
+    expect(note.chip).toBe('Replay');
+    expect(note.footnote).toMatch(/A recording of a real session on Gemini’s sandbox, made on Nov 1[89], 2026\./);
+    expect(note.footnote).toMatch(/Nothing here is live, and no order is placed now\./);
+    // a recording of the local test exchange does not get to borrow Gemini's name
+    expect(describeVenue('live', { venue: 'Local test exchange', replay: { recordedAt: '2026-11-19T01:00:00.000Z' } }).footnote).toMatch(/on Local test exchange \(not Gemini\)/);
+    expect(describeVenue('live', { venue: 'Gemini sandbox', replay: { recordedAt: 'not a date' } }).footnote).toMatch(/made earlier\./);
+  });
+
   it('quotes only, demo data, a test exchange, and not yet connected', () => {
     expect(describeVenue('live', { venue: 'Gemini sandbox', readOnly: true })).toMatchObject({ chip: 'Quotes only', readOnly: true });
     expect(describeVenue('mock', null).chip).toBe('Demo data');

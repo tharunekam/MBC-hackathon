@@ -218,6 +218,8 @@ export interface HealthResponse {
   readOnly?: boolean;
   /** True when our own liquidity seeder is quoting on the sandbox, so some of the prices shown are ours. */
   seeded?: boolean;
+  /** Present when the server is playing back a recorded session with nothing live behind it, and when it was recorded. */
+  replay?: { recordedAt: string };
   users: { user: string; connected: boolean | null }[];
   time: string;
 }

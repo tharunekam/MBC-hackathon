@@ -13,10 +13,17 @@ export interface VenueNote {
 }
 
 /** The label and the footnote for what the executor says it is. Kept apart from the hook so it can be tested. */
-export function describeVenue(mode: string, health: Pick<HealthResponse, 'venue' | 'readOnly' | 'seeded'> | null | undefined): VenueNote {
+export function describeVenue(mode: string, health: Pick<HealthResponse, 'venue' | 'readOnly' | 'seeded' | 'replay'> | null | undefined): VenueNote {
   if (mode === 'mock') return { chip: 'Demo data', footnote: 'Demo data. No real orders are placed.', readOnly: false };
   const venue = health?.venue;
   if (!venue) return { chip: null, footnote: 'Connecting to the exchange.', readOnly: false };
+  // A recorded session played back with nothing behind it (the stage fallback). It says so before anything else.
+  if (health?.replay) {
+    const when = new Date(health.replay.recordedAt);
+    const day = Number.isNaN(when.getTime()) ? 'earlier' : `on ${when.toLocaleDateString('en-US', { dateStyle: 'medium' })}`;
+    const where = venue === 'Gemini sandbox' ? 'Gemini’s sandbox' : `${venue} (not Gemini)`;
+    return { chip: 'Replay', footnote: `A recording of a real session on ${where}, made ${day}. Nothing here is live, and no order is placed now.`, readOnly: false };
+  }
   if (health?.readOnly) return { chip: 'Quotes only', footnote: 'Live prices from Gemini’s sandbox. No account is connected, so bets are switched off.', readOnly: true };
   if (venue === 'Gemini sandbox') {
     // Our own second account is resting quotes to make the sandbox's thin, wide market usable. Never shown as if it were not.

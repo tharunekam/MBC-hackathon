@@ -77,7 +77,7 @@ midnight CST; branch `run/live-sandbox-devnet`).** This is the machine that hold
 
 **Second machine, Wednesday 2026-11-18 afternoon (the one with the Solana toolchain; PR #4).**
 
-- **A fresh clone works.** `npm run install:all`, `npm test` (423), `npm run typecheck`, `npm run rehearse` (19 checks),
+- **A fresh clone works.** `npm run install:all`, `npm test` (438), `npm run typecheck`, `npm run rehearse` (19 checks),
   `npm run e2e` (17 checks) and `npm start` + `npm run check:deploy` (11 checks, real sandbox ladders) all pass there.
   CI now runs the tests, a production build and the rehearsal on every push.
 - **The sandbox's listing changed and broke the builder.** Gemini listed 34 ladders (oil, metals and gas were added),
@@ -107,7 +107,9 @@ settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is a
 | T-V2 host the executor | **Built, not yet deployed.** `scripts/serve.mjs` serves the built app and a fixed allowlist of API paths from one public port with the backends on loopback; `Dockerfile`; `npm run check:deploy` checks a deployed URL from outside; the guide is `docs/DEPLOY.md`. The image builds and runs here (non-root, real sandbox prices). **Needs a host, then the live settings** |
 | T-V3 `GET /reconcile` | **Done**. Event feed not needed: the chain service reads bets from the executor |
 | T-V4 sandbox liquidity seeder | **Built and tested, not run on the sandbox** (`executor/src/seeder.ts`, `npm run seed`). It needs a **second sandbox account**. A dry run on the live sandbox's public prices: 0 of 112 pairs pass the offer rule as the books stand, 7 would with 4-cent quotes resting, 22 with 2-cent quotes. The app labels itself "Seeded prices" when `GIVEN_SEEDED=1`. First-run steps in `executor/README.md` |
-| T-V5 to T-V8 history script, maker-first, replay, production quotes | `scripts/seed-history.mjs` places and finishes a win, a refund and a loss; maker-first, replay and production quotes not started |
+| T-V5 history script | `scripts/seed-history.mjs` places and finishes a win, a refund and a loss |
+| T-V7 replay mode | **Built and tested.** `GIVEN_RECORD=<file>` records what the app is shown during a real session; `GIVEN_MODE=replay GIVEN_REPLAY=<file>` plays it back with no executor, no chain service, no keys and no network, under a "Replay" label. `npm run e2e:replay` records a bet through the real app in Chrome and replays it. **Still to do: record a real sandbox session on the machine with the keys** (steps in `docs/DEPLOY.md`) |
+| T-V6, T-V8 maker-first, production quotes | Not started |
 | T-C0 Memo smoke test | **Done 2026-11-18**: commit and reveal with our own key on real devnet, Memo only and through Victor's program (`npm run smoke`); the proof page verified real devnet records in a browser |
 | T-C1 Anchor program | **Done; the Wednesday gate is met.** `given_receipts` is deployed on devnet (`8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK`) and recorded a commit and a reveal there on 11-17 through the chain service's smoke test (links in `chain/README.md`). It checks each record in the same transaction as its Memo when `GIVEN_PROGRAM_ID` is set. **Still to do:** set `GIVEN_PROGRAM_ID` where the demo's chain service runs, once its authority key is funded. Memo records stay the fallback |
 | T-C2 chain service | **Done** (commit, reveal, verify, void handling) |

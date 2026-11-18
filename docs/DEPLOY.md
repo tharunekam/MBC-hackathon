@@ -37,7 +37,9 @@ Set these as the host's secrets/environment. Nothing is read from a `.env` file 
 | Variable | Needed | Meaning |
 |---|---|---|
 | `GIVEN_PUBLIC_URL` | **always** | The address people open, an origin with no path: `https://given.example.com`. It is the one browser origin the backends accept; without it every bet from the page is refused. The server will not start without it |
-| `GIVEN_MODE` | no | `auto` (default): live if keys are present, else quotes. `live`, `quotes` or `fake` to force one |
+| `GIVEN_MODE` | no | `auto` (default): live if keys are present, else quotes. `live`, `quotes` or `fake` to force one. `replay` plays back a recorded session with nothing behind it (see "Replay" below) |
+| `GIVEN_RECORD` | no | A file to record this session into, for replay later. Refused if the file already holds a recording |
+| `GIVEN_REPLAY` | replay | The recording to play back when `GIVEN_MODE=replay` |
 | `GEMINI_API_KEY`, `GEMINI_API_SECRET` | live | **Sandbox** keys, with time-based nonce enabled. The server refuses a non-sandbox `GEMINI_BASE_URL` |
 | `GIVEN_AUTHORITY_KEY` | live | The Solana authority key as the JSON array of its 64 bytes (the contents of `chain/data/authority.json`). Written once to `/data/chain/authority.json` with mode 600, never overwritten |
 | `GIVEN_PROGRAM_ID` | live, optional | `8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK`: each record is also checked on chain by our program. Costs about 0.002 SOL of rent per call |
@@ -91,6 +93,39 @@ post-only first) and often fills only a few dollars. Two things keep a presentat
 - If the sandbox is unusable, a second deployment with `GIVEN_MODE=fake` and `GIVEN_I_KNOW_THIS_IS_A_TEST=1` runs the
   whole flow on the local test exchange with an in-memory chain. It labels itself "Local test exchange" in the nav and
   footer, and **must be presented as exactly that**: it shows the product working, not Gemini. Say so on stage.
+
+### Replay: a real session, played back with nothing behind it
+
+If there is no network at all, the app can be served from a recording of a session that really happened.
+
+```bash
+# 1. Record, on the machine that runs the live demo (any mode; a file that already holds a recording is refused):
+GIVEN_RECORD=executor/data/session.jsonl npm start
+#    Use the app as you will on stage: place the bet, wait for the result, press Check results if you will press it
+#    then, reveal the call. Open the leaderboard, press the Proof page's check, open the call's own proof page.
+
+# 2. Replay, anywhere, with no keys and no network:
+GIVEN_MODE=replay GIVEN_REPLAY=executor/data/session.jsonl npm start
+```
+
+- In replay no executor and no chain service run. Every answer the page gets is one that was recorded; nothing is made
+  up. The nav says **Replay**, the footer says what was recorded and when, and no order is placed. Say so on stage too.
+- The steps that changed something (bet, check results, reveal) have to be repeated in the same order with the same
+  choices: the same ladder, pair and stake. Anything else is refused with a message naming the recorded step, so
+  rehearse the clicks once against the recording. `GET /healthz` shows how far through it you are.
+- Between steps each page plays through what it showed at that point and then holds, so nothing appears before the
+  step that caused it, and an hour's wait for a market to close is a few seconds. The recorder also snapshots the bet
+  list, calls, leaderboard, flow and ladders at the start and after every step, so those pages work at any point
+  whether or not you looked at them while recording. The Proof check and a call's proof page are recorded only if
+  you opened them.
+- Live updates are not part of a recording (the page refreshes by itself instead), and the "Check it on Solana" button
+  on a call's proof page still talks to Solana from the browser, so it needs a network.
+- The file holds what the page was shown: bets, order ids, handles, prices. No key, no salt. It stays out of git under
+  `executor/data/`.
+
+`npm run e2e:replay` proves the whole loop in Chrome: it records a bet by driving the real app on the local test
+exchange, then replays it with nothing running behind it and checks the same order ids, result, leaderboard row and
+cash check come back, under the Replay label.
 
 ## Without a host
 
