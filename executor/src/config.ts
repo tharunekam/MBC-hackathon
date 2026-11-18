@@ -43,6 +43,8 @@ export interface Config {
   host: string;
   /** GIVEN_PINNED_USER: every request acts as this one account; the browser cannot choose. */
   pinnedUser: string | null;
+  /** GIVEN_ADMIN_TOKEN: enables POST /review, which records by hand what Gemini paid for a bet it settled unclearly. */
+  adminToken: string | null;
   /** GIVEN_MAX_STAKE: refuse bets above this many dollars. */
   maxStake: number | null;
   /** GIVEN_RATE_LIMIT_PER_MIN: bets and settles allowed per client per minute. */
@@ -123,6 +125,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       .filter(Boolean),
     host: merged.GIVEN_HOST ?? '127.0.0.1',
     pinnedUser: merged.GIVEN_PINNED_USER ? merged.GIVEN_PINNED_USER : null,
+    adminToken: merged.GIVEN_ADMIN_TOKEN ? merged.GIVEN_ADMIN_TOKEN : null,
     maxStake: merged.GIVEN_MAX_STAKE ? Number(merged.GIVEN_MAX_STAKE) : null,
     rateLimitPerMin: merged.GIVEN_RATE_LIMIT_PER_MIN ? Number(merged.GIVEN_RATE_LIMIT_PER_MIN) : null,
     trustProxy: merged.GIVEN_TRUST_PROXY === '1',

@@ -24,10 +24,12 @@ export interface ReconcileReport {
   actualCash: number;
   cashDifference: number | null;
   /**
-   * Bets Gemini settled without a clean yes/no. Their payout is unknown here,
-   * so any cash they paid shows up as a difference until someone reviews them.
+   * Bets Gemini settled without a clean yes/no and nobody has reviewed yet. Their payout is unknown here,
+   * so any cash they paid shows up as a difference until someone records it (`recordReviewedPayout`).
    */
   betsNeedingReview: string[];
+  /** Bets of that kind whose payout a person has read off the account and recorded. Counted in expectedCash. */
+  betsResolvedByHand: string[];
   ok: boolean;
 }
 
@@ -50,7 +52,8 @@ const SETTLEMENT_VALUE = 1;
 export function nettedPairs(ledger: Ledger, user: string): Map<string, number> {
   const held = new Map<string, { yes: number; no: number }>();
   for (const bet of ledger.data.bets) {
-    if (bet.user !== user || bet.settlement) continue;
+    // A bet whose payout was recorded by hand is finished too: that payout covers its legs.
+    if (bet.user !== user || bet.settlement || bet.review?.resolved) continue;
     for (const leg of bet.legs) {
       if (leg.quantityFilled <= 0) continue;
       const h = held.get(leg.symbol) ?? { yes: 0, no: 0 };
@@ -120,7 +123,9 @@ export async function reconcile(exchange: Exchange, ledger: Ledger, user: string
       cash += (leg.side === 'buy' ? -1 : 1) * leg.quantityFilled * leg.avgPrice - (leg.fee ?? 0);
     }
     for (const bet of ledger.data.bets) {
-      if (bet.user === user && bet.settlement) cash += bet.settlement.payout;
+      if (bet.user !== user) continue;
+      if (bet.settlement) cash += bet.settlement.payout;
+      else if (bet.review?.resolved) cash += bet.review.resolved.payout;
     }
     expectedCash = clean(cash);
   }
@@ -137,7 +142,8 @@ export async function reconcile(exchange: Exchange, ledger: Ledger, user: string
     expectedCash,
     actualCash,
     cashDifference,
-    betsNeedingReview: ledger.data.bets.filter((b) => b.user === user && b.status === 'needs_review').map((b) => b.id),
+    betsNeedingReview: ledger.data.bets.filter((b) => b.user === user && b.status === 'needs_review' && !b.review?.resolved).map((b) => b.id),
+    betsResolvedByHand: ledger.data.bets.filter((b) => b.user === user && b.status === 'needs_review' && b.review?.resolved).map((b) => b.id),
     ok: mismatches.length === 0 && (cashDifference === null || Math.abs(cashDifference) < 0.005),
   };
 }

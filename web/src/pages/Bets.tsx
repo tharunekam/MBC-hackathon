@@ -37,8 +37,10 @@ export default function Bets() {
     const placed = list.filter((b) => outcomeOf(b) !== 'other');
     const settled = list.filter((b) => b.status === 'settled' && b.settlement);
     const staked = placed.reduce((n, b) => n + b.cost, 0);
-    const returned = settled.reduce((n, b) => n + (b.settlement?.payout ?? 0), 0);
-    const net = settled.reduce((n, b) => n + (b.settlement?.pnl ?? 0), 0);
+    // A bet Gemini settled without a plain yes or no counts once what it paid has been entered by hand.
+    const reviewed = list.filter((b) => b.status === 'needs_review' && b.review?.resolved);
+    const returned = settled.reduce((n, b) => n + (b.settlement?.payout ?? 0), 0) + reviewed.reduce((n, b) => n + (b.review?.resolved?.payout ?? 0), 0);
+    const net = settled.reduce((n, b) => n + (b.settlement?.pnl ?? 0), 0) + reviewed.reduce((n, b) => n + (b.review?.resolved?.pnl ?? 0), 0);
     return { count: placed.length, staked, returned, net, open: placed.filter((b) => outcomeOf(b) === 'open').length };
   }, [list]);
 
@@ -134,6 +136,7 @@ export default function Bets() {
             const o = outcomeOf(b);
             const call = callFor(b.id);
             const result = b.settlement;
+            const hand = b.review?.resolved ?? null;
             return (
               <article key={b.id} className="card bet" data-outcome={o}>
                 <div className="bet-main">
@@ -150,9 +153,14 @@ export default function Bets() {
                     <span className="status" data-outcome={o}>
                       {LABEL[o]}
                     </span>
-                    <b className={result ? (o === 'back' ? 'back' : result.pnl > 0.004 ? 'good' : result.pnl < -0.004 ? 'bad' : 'back') : ''}>
-                      {result ? (o === 'back' ? 'Stake back' : usdSigned(result.pnl)) : `Wins ${usdSigned(b.payoffs?.ifBothHit ?? 0)}`}
-                    </b>
+                    {o === 'review' ? (
+                      // Not "Wins +$x": the market is over. Show what was actually paid once someone has entered it.
+                      <b className={hand ? (hand.pnl > 0.004 ? 'good' : hand.pnl < -0.004 ? 'bad' : 'back') : ''}>{hand ? usdSigned(hand.pnl) : '–'}</b>
+                    ) : (
+                      <b className={result ? (o === 'back' ? 'back' : result.pnl > 0.004 ? 'good' : result.pnl < -0.004 ? 'bad' : 'back') : ''}>
+                        {result ? (o === 'back' ? 'Stake back' : usdSigned(result.pnl)) : `Wins ${usdSigned(b.payoffs?.ifBothHit ?? 0)}`}
+                      </b>
+                    )}
                   </div>
                 </div>
 
@@ -206,6 +214,14 @@ export default function Bets() {
                 {o === 'back' && (
                   <div className="bet-foot">
                     <p>The first half failed, so your stake came back and this call does not count either way.</p>
+                  </div>
+                )}
+                {o === 'review' && (
+                  <div className="bet-foot">
+                    <p>
+                      Gemini settled this market without a plain yes or no.{' '}
+                      {hand ? `It paid ${usd(hand.payout)}, which we read from the account and entered by hand.` : 'We are checking what it paid.'} This call does not count either way.
+                    </p>
                   </div>
                 )}
               </article>

@@ -74,6 +74,12 @@ export interface BetRecord {
     eventStatus: string | null;
     condition: ReportedSettlement | null;
     target: ReportedSettlement | null;
+    /**
+     * What Gemini actually paid for this bet, read from the account and recorded by a person (`recordReviewedPayout`).
+     * It lets the cash check tie out again. The bet stays needs_review and is still never scored: a payout says what
+     * was paid, not whether the call was right.
+     */
+    resolved?: { payout: number; pnl: number; recordedAt: string; note: string };
   };
   settlement?: {
     conditionResolved: 'yes' | 'no';

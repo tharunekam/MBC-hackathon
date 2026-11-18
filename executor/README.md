@@ -178,8 +178,32 @@ An unclear result is only flagged once the event is at least a minute past
 expiry, because the yes/no can trail the "settled" flag by a few seconds. A
 `needs_review` bet is re-checked on every pass and becomes `settled` if Gemini
 later reports a clean result. `reconcile` lists `betsNeedingReview`; any cash
-such a bet paid shows up as a cash difference until someone records it by hand
-(there is no command for that yet).
+such a bet paid shows up as a cash difference until someone records it by hand.
+
+### Recording what such a bet paid
+
+This service cannot work out the payout of a void or fractional settlement, so
+a person reads it off the Gemini account and records it:
+
+```bash
+node src/cli.ts review                       # the bets waiting, what each cost and the most it could have paid
+node src/cli.ts resolve <betId> 3.24 --note "Gemini account history 2026-11-19: both contracts paid 0.50"
+node src/cli.ts reconcile                    # the cash check ties out again
+```
+
+While an executor is running it holds the ledger in memory, so add
+`--server http://127.0.0.1:8741` and the change goes through it
+(`POST /review`, which needs `GIVEN_ADMIN_TOKEN` set on the executor and in
+your shell). That route answers 404 without the token and is not forwarded by
+the hosted server, so it can only be reached from inside the host.
+
+The amount is refused if it is negative or more than every contract the bet
+holds at a dollar each, and a note saying where it came from is required. The
+bet stays `needs_review` and is still never scored: a payout says what was
+paid, not whether the call was right. `reconcile` then counts it and lists the
+bet under `betsResolvedByHand`, and the Proof page says a hand-entered amount is
+part of the total. If Gemini later reports a clean result, the computed payout
+replaces the recorded one; the two are never counted together.
 
 ## Fees
 
@@ -384,7 +408,6 @@ Until then the wire-level test only shows the pieces fit Gemini's documented pro
 ## Not built
 
 - Sports ladder types ("over", "spread"): only "or above" ladders are paired.
-- A way to record the payout of a `needs_review` bet by hand.
 - Sign-in for end users (Gemini OAuth). The API trusts the `user` name it is
   given and is meant for a local frontend with pre-connected demo accounts.
 - Cut from the project: conditional orders across markets, combos, and "given

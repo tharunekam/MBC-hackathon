@@ -44,6 +44,7 @@ Set these as the host's secrets/environment. Nothing is read from a `.env` file 
 | `SOLANA_RPC_URL` | live, recommended | A private devnet RPC (a free QuickNode endpoint works). The public one rate-limits and failed a backfill in the first real run |
 | `GIVEN_HOOK_TOKEN`, `QN_SECURITY_TOKEN` | for the Stream | Made by `npm run quicknode -- keys`. The Stream sends the first as an `Authorization: Bearer` header and signs each delivery with the second; the receiver accepts either. Deliveries are refused until one is set |
 | `GIVEN_SEEDER` | no | `1` also runs the sandbox liquidity seeder (our own quotes from a second sandbox account) and switches the app's "Seeded prices" label on. Needs `GEMINI_USER_SEEDER_KEY` / `GEMINI_USER_SEEDER_SECRET`, which must not be the betting account's. Live mode only. Read `executor/README.md` first: the seeder has not been run on the sandbox yet |
+| `GIVEN_ADMIN_TOKEN` | no | A secret for the two operator-only routes, neither of which is reachable from outside: the chain service's `/admin/backfill`, and the executor's `/review`, which records what Gemini paid for a bet it settled without a plain yes or no (`executor/README.md`, "Recording what such a bet paid"). Without it both are off |
 | `GIVEN_MAX_STAKE` | no | Dollars per bet, default 25 |
 | `GIVEN_RATE_LIMIT_PER_MIN` | no | Bets and settles per client per minute, default 20 |
 | `GIVEN_PINNED_USER` | no | Account every request acts as, default `primary` |

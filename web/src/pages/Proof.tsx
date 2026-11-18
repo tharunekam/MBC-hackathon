@@ -81,6 +81,18 @@ export default function Proof() {
               Here that is {usd(rec.nettedCash ?? 0)} on {rec.nettedContracts} contracts. It is the same money arriving sooner, and it is already counted above.
             </p>
           )}
+          {rec && (rec.betsResolvedByHand?.length ?? 0) > 0 && (
+            <p className="fine">
+              {rec.betsResolvedByHand!.length === 1 ? 'One bet was' : `${rec.betsResolvedByHand!.length} bets were`} settled by Gemini without a plain yes or no. What{' '}
+              {rec.betsResolvedByHand!.length === 1 ? 'it' : 'they'} paid was read from the account and entered by hand, and is counted above.
+            </p>
+          )}
+          {rec && rec.betsNeedingReview.length > 0 && (
+            <p className="fine">
+              {rec.betsNeedingReview.length === 1 ? 'One bet was' : `${rec.betsNeedingReview.length} bets were`} settled by Gemini without a plain yes or no, and what{' '}
+              {rec.betsNeedingReview.length === 1 ? 'it' : 'they'} paid has not been entered yet. Any difference above is that money.
+            </p>
+          )}
         </section>
 
         <section className="card">

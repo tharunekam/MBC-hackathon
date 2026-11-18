@@ -77,7 +77,7 @@ midnight CST; branch `run/live-sandbox-devnet`).** This is the machine that hold
 
 **Second machine, Wednesday 2026-11-18 afternoon (the one with the Solana toolchain; PR #4).**
 
-- **A fresh clone works.** `npm run install:all`, `npm test` (417), `npm run typecheck`, `npm run rehearse` (19 checks),
+- **A fresh clone works.** `npm run install:all`, `npm test` (423), `npm run typecheck`, `npm run rehearse` (19 checks),
   `npm run e2e` (17 checks) and `npm start` + `npm run check:deploy` (11 checks, real sandbox ladders) all pass there.
   CI now runs the tests, a production build and the rehearsal on every push.
 - **The sandbox's listing changed and broke the builder.** Gemini listed 34 ladders (oil, metals and gas were added),

@@ -69,6 +69,7 @@ const api = createApi({
   seeded: config.seeded,
   corsOrigins: config.corsOrigins,
   pinnedUser: config.pinnedUser ?? undefined,
+  adminToken: config.adminToken ?? undefined,
   maxStake: config.maxStake ?? undefined,
   isPaused: () => existsSync(pausedFile), // creating executor/data/PAUSED stops new bets at once; deleting it resumes
   rateLimit: config.rateLimitPerMin ? { max: config.rateLimitPerMin, windowMs: 60_000 } : undefined,

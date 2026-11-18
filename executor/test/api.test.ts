@@ -27,7 +27,7 @@ const WIDE = [
 type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 /** Runs the real HTTP handler on a spare local port, backed by the in-memory exchange. */
-async function start(strikes: ConstructorParameters<typeof FakeExchange>[1], opts: { waiveMarkup?: boolean; seeded?: boolean } = {}) {
+async function start(strikes: ConstructorParameters<typeof FakeExchange>[1], opts: { waiveMarkup?: boolean; seeded?: boolean; adminToken?: string } = {}) {
   const exchange = new FakeExchange('ETHTEST', strikes);
   const other = new FakeExchange('ETHTEST', strikes); // a second user's account
   const ledger = new Ledger(join(mkdtempSync(join(tmpdir(), 'given-api-')), 'ledger.json'));
@@ -51,6 +51,7 @@ async function start(strikes: ConstructorParameters<typeof FakeExchange>[1], opt
     feeCoef: 0,
     waiveMarkup: opts.waiveMarkup ?? false,
     seeded: opts.seeded,
+    adminToken: opts.adminToken,
     marketsCacheMs: 0,
     now: () => clock,
     newId: () => `api${++n}`,
@@ -370,6 +371,54 @@ test('POST /settle: clean results settle; an unclear one is flagged for review, 
     assert.equal(listed.review.condition.settlementValue, '1800.00');
   } finally {
     await voided.close();
+  }
+});
+
+test('POST /review: records what Gemini paid for a bet settled without a clean result, behind an admin token', async () => {
+  const off = await start(TIGHT);
+  try {
+    const res = await off.call('POST', '/review', { betId: 'x', payout: 1, note: 'from the account' }, { 'X-Admin-Token': 'anything' });
+    assert.equal(res.status, 404, 'with no token configured the route does not exist');
+    assert.equal(res.json.code, 'not_enabled');
+  } finally {
+    await off.close();
+  }
+
+  const app = await start(TIGHT, { adminToken: 'admin-secret' });
+  try {
+    const admin = { 'X-Admin-Token': 'admin-secret' };
+    const open = (await app.call('POST', '/bets', app.betBody({ stake: 4 }))).json.bet;
+    assert.equal((await app.call('POST', '/review', { betId: open.id, payout: 1, note: 'from the account' })).status, 401);
+    assert.equal((await app.call('POST', '/review', { betId: open.id, payout: 1, note: 'from the account' }, { 'X-Admin-Token': 'admin-secreT' })).status, 401);
+    assert.equal((await app.call('POST', '/review', { betId: 'nope', payout: 1, note: 'from the account' }, admin)).status, 404);
+    const early = await app.call('POST', '/review', { betId: open.id, payout: 1, note: 'from the account' }, admin);
+    assert.equal(early.status, 409, 'an open bet cannot be given a payout');
+    assert.equal(early.json.code, 'not_in_review');
+
+    app.exchange.settleUnclear(1800, { resolutionSide: null, settlementValue: '1800.00' }, 0.5);
+    app.exchange.settleUnclear(1820, { resolutionSide: null }, 0.5);
+    app.setClock('2026-11-18T00:05:00Z');
+    await app.call('POST', '/settle');
+    const off0 = (await app.call('GET', '/reconcile?user=primary')).json;
+    assert.equal(off0.ok, false);
+    assert.deepEqual(off0.betsNeedingReview, [open.id]);
+
+    assert.equal((await app.call('POST', '/review', { betId: open.id, payout: 9999, note: 'from the account' }, admin)).status, 400);
+    assert.equal((await app.call('POST', '/review', { betId: open.id, payout: 1 }, admin)).json.code, 'bad_note');
+    const paid = Math.round(off0.cashDifference * 100) / 100;
+    const done = await app.call('POST', '/review', { betId: open.id, payout: paid, note: 'account history: both contracts paid 0.50' }, admin);
+    assert.equal(done.status, 200);
+    assert.equal(done.json.status, 'needs_review');
+    assert.equal(done.json.scorable, false);
+    assert.equal(done.json.review.resolved.payout, paid);
+
+    const after = (await app.call('GET', '/reconcile?user=primary')).json;
+    assert.equal(after.ok, true, `still off by ${after.cashDifference}`);
+    assert.deepEqual(after.betsNeedingReview, []);
+    assert.deepEqual(after.betsResolvedByHand, [open.id]);
+    assert.equal((await app.call('GET', '/bets?user=primary')).json.bets[0].review.resolved.payout, paid);
+  } finally {
+    await app.close();
   }
 });
 

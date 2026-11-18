@@ -97,6 +97,7 @@ describe('the public side', () => {
       ['POST', '/api/dev/reset'],
       ['POST', '/api/dev/churn'],
       ['POST', '/chain/admin/backfill'],
+      ['POST', '/api/review'],
       ['GET', '/api/'],
       ['PUT', '/api/bets'],
       ['GET', '/chain/calls/x/reveal'],

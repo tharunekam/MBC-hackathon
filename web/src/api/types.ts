@@ -171,6 +171,11 @@ export interface Bet {
     pnl: number;
     settledAt: string;
   };
+  /**
+   * Present when Gemini settled the market without a plain yes or no (`needs_review`). `resolved` is what it actually
+   * paid, read from the account and entered by hand. Such a bet is never scored.
+   */
+  review?: { reason: string; resolved?: { payout: number; pnl: number; recordedAt: string; note: string } };
   scorable: boolean;
   flow: BetFlow;
 }
@@ -248,6 +253,8 @@ export interface ReconcileResponse {
   actualCash: number;
   cashDifference: number | null;
   betsNeedingReview: string[];
+  /** Bets Gemini settled without a plain yes or no whose payout was read from the account and entered by hand. */
+  betsResolvedByHand?: string[];
   ok: boolean;
 }
 
