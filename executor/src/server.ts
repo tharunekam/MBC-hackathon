@@ -1,20 +1,36 @@
 /**
  * Starts the HTTP API for the frontend:  node src/server.ts
  *
- * Listens on 127.0.0.1 only (this process holds trading keys), on GIVEN_PORT
- * (default 8787). Keeps ONE long-lived Gemini session per configured user and
+ * Listens on 127.0.0.1 by default (this process holds trading keys), on GIVEN_PORT
+ * (default 8787). GIVEN_HOST can widen that, but only with a pinned user, a stake
+ * cap and a rate limit on the Gemini sandbox; otherwise the server refuses to start. Keeps ONE long-lived Gemini session per configured user and
  * reuses it for every request.
  */
+import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
 import { createApi } from './api.ts';
 import { recoverBets } from './bets.ts';
-import { loadConfig, requireUser } from './config.ts';
+import { isLoopback, loadConfig, requireUser } from './config.ts';
 import { GeminiExchange } from './exchange.ts';
 import { GeminiPublic } from './gemini/rest.ts';
 import { Ledger } from './ledger.ts';
 
 const config = loadConfig();
+
+// A network-facing executor holds trading keys. It must be sandbox-only and must not let the browser pick the account or the size.
+if (!isLoopback(config.host)) {
+  const missing: string[] = [];
+  if (!config.isSandbox) missing.push('the Gemini sandbox (production is not allowed on a network address)');
+  if (!config.pinnedUser) missing.push('GIVEN_PINNED_USER');
+  if (!config.maxStake) missing.push('GIVEN_MAX_STAKE');
+  if (!config.rateLimitPerMin) missing.push('GIVEN_RATE_LIMIT_PER_MIN');
+  if (missing.length > 0) {
+    console.error(`Refusing to listen on ${config.host}. A network-facing executor needs: ${missing.join(', ')}.`);
+    process.exit(1);
+  }
+}
+const pausedFile = resolve(config.dataDir, 'PAUSED');
 const ledger = new Ledger(resolve(config.dataDir, 'ledger.json'));
 const pub = new GeminiPublic(config.baseUrl);
 const users = config.users.map((u) => u.user);
@@ -40,6 +56,11 @@ const api = createApi({
   feeCoef: config.takerFeeCoef,
   waiveMarkup: config.waiveMarkup,
   corsOrigins: config.corsOrigins,
+  pinnedUser: config.pinnedUser ?? undefined,
+  maxStake: config.maxStake ?? undefined,
+  isPaused: () => existsSync(pausedFile), // creating executor/data/PAUSED stops new bets at once; deleting it resumes
+  rateLimit: config.rateLimitPerMin ? { max: config.rateLimitPerMin, windowMs: 60_000 } : undefined,
+  trustProxy: config.trustProxy,
 });
 
 // Before taking requests: repair anything a previous run left half-done, each bet on its own user's account.
@@ -57,8 +78,8 @@ server.on('error', (err) => {
   console.error(`Could not start the server: ${err.message}`);
   process.exit(1);
 });
-server.listen(config.port, '127.0.0.1', () => {
-  console.log(`Given executor API on http://127.0.0.1:${config.port}  (${config.isSandbox ? 'Gemini SANDBOX' : 'Gemini PRODUCTION'})`);
+server.listen(config.port, config.host, () => {
+  console.log(`Given executor API on http://${config.host}:${config.port}  (${config.isSandbox ? 'Gemini SANDBOX' : 'Gemini PRODUCTION'})`);
   console.log(`Accounts: ${users.join(', ') || 'none configured'}   fee coefficient charged: ${config.takerFeeCoef}`);
   if (config.waiveMarkup) console.log('Sandbox demo mode: pairs refused only for markup can be traded (GIVEN_SANDBOX_WAIVE_MARKUP=1).');
 

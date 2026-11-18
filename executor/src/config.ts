@@ -34,7 +34,20 @@ export interface Config {
   waiveMarkup: boolean;
   /** Extra browser origins allowed to call the HTTP API (GIVEN_CORS_ORIGINS, comma-separated). Localhost is always allowed. */
   corsOrigins: string[];
+  /** Address to listen on (GIVEN_HOST). Default 127.0.0.1; anything else needs the hosted-demo protections below. */
+  host: string;
+  /** GIVEN_PINNED_USER: every request acts as this one account; the browser cannot choose. */
+  pinnedUser: string | null;
+  /** GIVEN_MAX_STAKE: refuse bets above this many dollars. */
+  maxStake: number | null;
+  /** GIVEN_RATE_LIMIT_PER_MIN: bets and settles allowed per client per minute. */
+  rateLimitPerMin: number | null;
+  /** GIVEN_TRUST_PROXY=1: take the client address from X-Forwarded-For. */
+  trustProxy: boolean;
 }
+
+/** True for loopback addresses: the only ones that may run without the hosted-demo protections. */
+export const isLoopback = (host: string): boolean => host === '127.0.0.1' || host === 'localhost' || host === '::1';
 
 function parseEnvFile(path: string): Record<string, string> {
   if (!existsSync(path)) return {};
@@ -98,6 +111,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       .split(',')
       .map((o) => o.trim().replace(/\/+$/, ''))
       .filter(Boolean),
+    host: merged.GIVEN_HOST ?? '127.0.0.1',
+    pinnedUser: merged.GIVEN_PINNED_USER ? merged.GIVEN_PINNED_USER : null,
+    maxStake: merged.GIVEN_MAX_STAKE ? Number(merged.GIVEN_MAX_STAKE) : null,
+    rateLimitPerMin: merged.GIVEN_RATE_LIMIT_PER_MIN ? Number(merged.GIVEN_RATE_LIMIT_PER_MIN) : null,
+    trustProxy: merged.GIVEN_TRUST_PROXY === '1',
   };
 }
 

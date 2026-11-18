@@ -10,6 +10,7 @@
  *   GET  /bets[?user=]
  *   POST /settle
  *   GET  /flow[?user=]
+ *   GET  /reconcile[?user=]
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { BetRefused, isScorable, placeConditionalBet, settleBets } from './bets.ts';
@@ -31,7 +32,7 @@ import {
 import { findPair, ladder, linkedPairs } from './pairs.ts';
 import type { LinkedPair, Rung } from './pairs.ts';
 import { floorToStep } from './pricing.ts';
-import { ensureBaseline } from './reconcile.ts';
+import { ensureBaseline, reconcile } from './reconcile.ts';
 
 export interface ApiDeps {
   ledger: Ledger;
@@ -55,6 +56,19 @@ export interface ApiDeps {
   corsOrigins?: string[];
   /** How long a /markets answer is reused, in ms. Default 5000. */
   marketsCacheMs?: number;
+  /**
+   * Hosted-demo protections. All optional; a local executor leaves them off.
+   * `pinnedUser`: every request acts as this one account and a "user" sent by the browser is ignored.
+   * `maxStake`: bets above this many dollars are refused.
+   * `isPaused`: checked on every bet; true answers 503 (an operator kill switch that needs no restart).
+   * `rateLimit`: at most `max` bets and settles per client per `windowMs`.
+   */
+  pinnedUser?: string;
+  maxStake?: number;
+  isPaused?: () => boolean;
+  rateLimit?: { max: number; windowMs: number };
+  /** Read the client address from X-Forwarded-For (set only behind a trusted proxy). */
+  trustProxy?: boolean;
   now?: () => Date;
   newId?: () => string;
 }
@@ -132,7 +146,8 @@ export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResp
     return next;
   };
 
-  const requireUser = (user: unknown): string => {
+  const requireUser = (given: unknown): string => {
+    const user = deps.pinnedUser ?? given;
     if (typeof user !== 'string' || user === '') throw new HttpError(400, 'missing_user', 'Say which user: "user" is required.');
     if (!deps.users.includes(user)) {
       throw new HttpError(404, 'unknown_user', `No Gemini account is connected for user "${user}". Connected: ${deps.users.join(', ') || 'none'}.`);
@@ -149,6 +164,9 @@ export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResp
       throw new HttpError(400, 'invalid_stake', '"stake" must be a positive dollar amount.');
     }
     if (stake > 100_000) throw new HttpError(400, 'invalid_stake', '"stake" is too large.');
+    if (deps.maxStake !== undefined && stake > deps.maxStake) {
+      throw new HttpError(400, 'stake_too_large', `Bets are capped at $${deps.maxStake} on this demo.`);
+    }
     return stake;
   };
   const getEvent = async (ticker: string): Promise<GeminiEvent> => {
@@ -311,6 +329,7 @@ export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResp
   }
 
   async function placeBet(body: Record<string, unknown>) {
+    if (deps.isPaused?.()) throw new HttpError(503, 'paused', 'Betting is paused for a moment. Try again soon.');
     const user = requireUser(body.user);
     const request = {
       user,
@@ -346,7 +365,7 @@ export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResp
   }
 
   async function listBets(q: URLSearchParams) {
-    const user = q.get('user');
+    const user = deps.pinnedUser ?? q.get('user');
     if (user !== null) requireUser(user);
     const bets = deps.ledger.data.bets.filter((b) => user === null || b.user === user);
     return { venue, user, count: bets.length, bets: bets.map(betView).reverse() }; // newest first
@@ -366,7 +385,7 @@ export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResp
   }
 
   async function flow(q: URLSearchParams) {
-    const user = q.get('user');
+    const user = deps.pinnedUser ?? q.get('user');
     if (user !== null) requireUser(user);
     return {
       venue,
@@ -379,6 +398,37 @@ export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResp
     };
   }
 
+  /** Ledger versus Gemini: every recorded order found, and cash tied out. Queued so it never overlaps a bet. */
+  async function reconcileRoute(q: URLSearchParams) {
+    const asked = q.get('user');
+    const user = deps.pinnedUser ?? (asked !== null ? requireUser(asked) : deps.users[0]);
+    if (user === undefined) throw new HttpError(503, 'no_account', 'No Gemini account is connected, so nothing can be checked.');
+    return queued(user, async () => {
+      const d = betDeps(user);
+      await ensureBaseline(d.exchange, deps.ledger, user, now);
+      const report = await reconcile(d.exchange, deps.ledger, user);
+      const checked = deps.ledger.legs(user).filter((l) => l.status !== 'error').length;
+      return { venue, checkedAt: now().toISOString(), ordersChecked: checked, ordersMatched: Math.max(0, checked - report.mismatches.length), ...report };
+    });
+  }
+
+  // Per-client limiter for the routes that spend money or hit Gemini hard.
+  const hits = new Map<string, number[]>();
+  const limited = (req: IncomingMessage): boolean => {
+    if (!deps.rateLimit) return false;
+    const fwd = deps.trustProxy ? String(req.headers['x-forwarded-for'] ?? '').split(',')[0]?.trim() : '';
+    const who = fwd || req.socket.remoteAddress || 'unknown';
+    const t = now().getTime();
+    const recent = (hits.get(who) ?? []).filter((x) => t - x < deps.rateLimit!.windowMs);
+    if (recent.length >= deps.rateLimit.max) {
+      hits.set(who, recent);
+      return true;
+    }
+    recent.push(t);
+    hits.set(who, recent);
+    return false;
+  };
+
   const routes: Record<string, Partial<Record<'GET' | 'POST', (q: URLSearchParams, req: IncomingMessage) => Promise<unknown>>>> = {
     '/health': { GET: () => health() },
     '/markets': { GET: (q) => markets(q) },
@@ -386,6 +436,7 @@ export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResp
     '/bets': { GET: (q) => listBets(q), POST: async (_q, req) => placeBet(await readJson(req)) },
     '/settle': { POST: () => settle() },
     '/flow': { GET: (q) => flow(q) },
+    '/reconcile': { GET: (q) => reconcileRoute(q) },
   };
 
   return (req, res) => {
@@ -412,11 +463,15 @@ export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResp
         const url = new URL(req.url ?? '/', 'http://localhost');
         const path = url.pathname.replace(/\/+$/, '') || '/';
         const route = routes[path];
-        if (!route) throw new HttpError(404, 'not_found', `No such endpoint: ${path}. Try /health, /markets, /quote, /bets, /settle or /flow.`);
+        if (!route) throw new HttpError(404, 'not_found', `No such endpoint: ${path}. Try /health, /markets, /quote, /bets, /settle, /flow or /reconcile.`);
         const handler = route[req.method as 'GET' | 'POST'];
         if (!handler) {
           headers.Allow = Object.keys(route).join(', ');
           throw new HttpError(405, 'method_not_allowed', `${path} accepts ${Object.keys(route).join(' or ')}, not ${req.method}.`);
+        }
+        if (req.method === 'POST' && limited(req)) {
+          headers['Retry-After'] = String(Math.ceil((deps.rateLimit?.windowMs ?? 60_000) / 1000));
+          throw new HttpError(429, 'rate_limited', 'Too many requests. Wait a minute and try again.');
         }
         const result = await handler(url.searchParams, req);
         if (result !== null && typeof result === 'object' && 'status' in result && 'body' in result) {
