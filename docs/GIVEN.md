@@ -103,10 +103,15 @@ our current pick, cheap to change. **Open** = not settled.
 | 8 | A Solana record of every call is required | Decided | The Consumer track needs blockchain interaction and Gemini isn't a chain | The track rules change |
 | 9 | Solana design: small commit-reveal program, Memo-program fallback | Provisional | Proves when a call was made and that it wasn't edited; fallback is 3–4 hours vs 8–10 | The program isn't recording a call by the Wednesday gate (see `docs/PLAN.md`) |
 | 10 | Leaderboard ranks skill against the market price, not profit or volume | Provisional | Profit is mostly luck at small samples; ranking by volume conflicts with exchange rules on inflated volume | A better scoring rule, tested on data |
-| 11 | Sign-in is OAuth; our own sandbox keys for the demo | Open | OAuth is Gemini's sanctioned route; whether an OAuth token can place WebSocket orders is undocumented | The OAuth test on Wednesday morning |
+| 11 | Sign-in is OAuth; our own sandbox keys for the demo | Open | OAuth is Gemini's sanctioned route. 11-17: Gemini's docs say a bearer token can authenticate the WebSocket and `orders:create` covers prediction-market orders, but no page says outright that it can `order.place`; sandbox apps register immediately, production needs review | The OAuth test on Wednesday morning |
 | 12 | Refusal threshold is 8¢ / 20% | Provisional | See "The cost problem" | Data from more snapshots; maker-first pricing changing the economics |
 | 13 | Maker-first pricing is the first stretch goal | Provisional | Improves both the price and the value-to-Gemini case | Fill and legging risk proving worse than expected in the sandbox |
 | 14 | Name: "Given" | Provisional | Short, says the mechanic | A better name |
+| 15 | Solana record is **commit at bet time (hash), reveal after settlement (opt-in)**; the app is fee payer and authority, users never hold a wallet | Provisional | Keeps trades off a public chain by default (guardrail), gives the program real state to check, and keeps crypto invisible for the Consumer track | A rule that requires user-held keys; the program not working by the Wednesday gate (fall back to Memo records) |
+| 16 | The demo is **hosted** (web + executor on an always-on host), sandbox-only, with a stake cap and per-visitor sessions | Decided | Devpost requires a working demo or deployed app; the QuickNode webhook needs an always-on host anyway | Gemini says no public sandbox demo |
+| 17 | Both teammates attend the Nov 21 finals in person | Decided (needs D4 confirmation) | Rules: presence in person is required to qualify for any prize, bounties included | The organizers confirm a remote option in writing |
+| 18 | We run a **sandbox liquidity seeder** and disclose it | Provisional | Sandbox books are ~20¢ wide, so quotes and depth look nothing like production without it | Gemini tightens the sandbox, or says seeding is not allowed |
+| 19 | Priority order: Gemini bounty, then Consumer track, Solana, QuickNode, Official | Provisional | Gemini 1st is a finalist slot; Gemini's judges value real API use and order flow most | The Gemini office-hours answers change what they want to see |
 
 ## Open questions
 

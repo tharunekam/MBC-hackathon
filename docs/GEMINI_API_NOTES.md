@@ -32,8 +32,29 @@ Hosts: sandbox REST `https://api.sandbox.gemini.com`, sandbox WebSocket
 - **[docs]** OAuth: scopes `orders:create`, `orders:read`, `positions:read`;
   access tokens last 24 hours, refresh tokens are single-use; bearer tokens work
   on the WebSocket; sandbox apps register immediately, production apps need
-  Gemini's review. **[unknown]** whether a bearer token can place WebSocket
-  orders, and which scope allows it.
+  Gemini's review (duration not published; contact trading@gemini.com). The
+  docs say `orders:create` covers prediction-market order placement and that a
+  WebSocket can authenticate with the same access token (`Bearer <token>` on the
+  upgrade request; `developer.gemini.com/authentication/oauth.md`). The
+  positions stream needs `positions:read`. **[unknown]** whether a bearer token
+  can actually `order.place` over the WebSocket: no page says it outright. Test
+  it (plan gate Wed 11:00). Terms must be accepted on the account before ordering.
+
+## Licence and rules to check before the pitch
+
+- **[docs, 2026-11-17]** Gemini's API agreement calls Gemini Market Data
+  "proprietary", governed by a separate Market Data Agreement, with a
+  non-transferable, non-sublicensable licence; redistribution needs a separate
+  agreement (marketdata@gemini.com). Whether showing prices in a public app
+  counts is **[unknown]**: ask. Nothing found on leaderboards, public-chain
+  records, or tokenised positions. The rulebook (v1.13, July 2026) was not read
+  in full: search it for "transfer".
+- **[docs]** No builder code, referral or revenue share found. Taker rewards
+  run to 2026-12-31 ($1.5M pool, $250k per-participant cap); whether orders
+  placed through a third-party app count is **[unknown]**.
+- **[docs]** Combos: the overview says live, AND-only, 2–6 legs, request-for-quote
+  in production beta; the spec page says creation is not enabled in production.
+  We could not reconcile this; the sandbox rejects creation (verified).
 
 ## Market data (no key needed)
 
