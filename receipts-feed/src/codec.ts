@@ -1,16 +1,22 @@
 // Wire format of the given_receipts program: Anchor discriminators plus borsh.
 // Field order must match receipts-program/programs/given_receipts/src/state.rs;
-// test/codec.test.ts checks every encoder and decoder here against bytes the
-// real program accepted and emitted.
+// test/codec.test.ts checks every encoder and decoder here, and the commitment
+// hash, against bytes the real program accepted and emitted.
 import { createHash } from 'node:crypto';
-import { addressBytes, encodeBase58 } from './base58.ts';
+import { addressBytes } from './base58.ts';
 
 export const discriminator = (kind: 'global' | 'event' | 'account', name: string): Buffer =>
   createHash('sha256').update(`${kind}:${name}`).digest().subarray(0, 8);
 
-const EVENT_RECORDED = discriminator('event', 'CallRecorded');
-const EVENT_SETTLED = discriminator('event', 'CallSettled');
-const ACCOUNT_RECEIPT = discriminator('account', 'CallReceipt');
+const EVENT_COMMITTED = discriminator('event', 'CallCommitted');
+const EVENT_REVEALED = discriminator('event', 'CallRevealed');
+const ACCOUNT_CALL = discriminator('account', 'CallRecord');
+const ACCOUNT_STATS = discriminator('account', 'CallerStats');
+
+/** Prefix of every commitment (COMMIT_DOMAIN in the program). */
+export const COMMIT_DOMAIN = 'given:call:v1';
+/** Prices and edge are micro-dollars per $1 of payout. */
+export const PRICE_ONE = 1_000_000;
 
 class Writer {
   private readonly parts: Buffer[] = [];
@@ -18,20 +24,12 @@ class Writer {
     this.parts.push(Buffer.from(b));
     return this;
   }
-  u8(v: number): this {
-    return this.bytes(Uint8Array.of(v));
-  }
   bool(v: boolean): this {
-    return this.u8(v ? 1 : 0);
+    return this.bytes(Uint8Array.of(v ? 1 : 0));
   }
   u32(v: number): this {
     const b = Buffer.alloc(4);
     b.writeUInt32LE(v);
-    return this.bytes(b);
-  }
-  u64(v: bigint): this {
-    const b = Buffer.alloc(8);
-    b.writeBigUInt64LE(v);
     return this.bytes(b);
   }
   i64(v: bigint): this {
@@ -58,7 +56,7 @@ class Reader {
     this.buf = buf;
   }
   private take(n: number): Buffer {
-    if (this.offset + n > this.buf.length) throw new RangeError('Receipt data is shorter than its layout');
+    if (this.offset + n > this.buf.length) throw new RangeError('Data is shorter than its layout');
     const out = this.buf.subarray(this.offset, this.offset + n);
     this.offset += n;
     return out;
@@ -81,176 +79,162 @@ class Reader {
   string(): string {
     return this.take(this.u32()).toString('utf8');
   }
-  address(): string {
-    return encodeBase58(this.take(32));
-  }
   hex(n: number): string {
     return this.take(n).toString('hex');
   }
 }
 
-/** Arguments of `record_call`. Amounts are micro-USD; `price` is micro-dollars per $1 of payout. */
-export interface RecordCallArgs {
+/** 32 bytes given as 64 hex characters. */
+export function bytes32(hex: string, name: string): Buffer {
+  if (!/^[0-9a-f]{64}$/i.test(hex)) throw new Error(`${name} must be 32 bytes of hex`);
+  return Buffer.from(hex, 'hex');
+}
+
+/** What a commitment hides until it is revealed (CallDetails in the program). */
+export interface CallDetails {
   betId: string;
-  caller: string;
   handle: string;
   eventTicker: string;
   conditionSymbol: string;
   targetSymbol: string;
-  conditionStrike: bigint;
-  targetStrike: bigint;
-  stake: bigint;
-  price: number;
-  payoutIfHit: bigint;
-  hedged: boolean;
+  /** Fair price at entry, micro-dollars per $1 of payout. */
+  fairPrice: number;
+  /** Unix seconds. */
   placedAt: bigint;
+  /** Unix seconds: when the event closes. */
   expiry: bigint;
-  /** 32 bytes, hex. */
+  /** SHA-256 of the bet's Gemini order legs, hex. */
   evidence: string;
 }
 
-export interface SettleCallArgs {
-  betId: string;
-  conditionHeld: boolean;
-  targetHit: boolean;
-  payout: bigint;
+function writeDetails(w: Writer, d: CallDetails): Writer {
+  return w
+    .string(d.betId)
+    .string(d.handle)
+    .string(d.eventTicker)
+    .string(d.conditionSymbol)
+    .string(d.targetSymbol)
+    .u32(d.fairPrice)
+    .i64(d.placedAt)
+    .i64(d.expiry)
+    .bytes(bytes32(d.evidence, 'evidence'));
 }
 
-export function encodeInitialize(recorder: string): Buffer {
-  return new Writer().bytes(discriminator('global', 'initialize')).address(recorder).done();
-}
-
-export function encodeRecordCall(a: RecordCallArgs): Buffer {
-  const evidence = Buffer.from(a.evidence, 'hex');
-  if (evidence.length !== 32) throw new Error('evidence must be 32 bytes of hex');
-  return new Writer()
-    .bytes(discriminator('global', 'record_call'))
-    .string(a.betId)
-    .address(a.caller)
-    .string(a.handle)
-    .string(a.eventTicker)
-    .string(a.conditionSymbol)
-    .string(a.targetSymbol)
-    .i64(a.conditionStrike)
-    .i64(a.targetStrike)
-    .u64(a.stake)
-    .u32(a.price)
-    .u64(a.payoutIfHit)
-    .bool(a.hedged)
-    .i64(a.placedAt)
-    .i64(a.expiry)
-    .bytes(evidence)
-    .done();
-}
-
-export function encodeSettleCall(a: SettleCallArgs): Buffer {
-  return new Writer()
-    .bytes(discriminator('global', 'settle_call'))
-    .string(a.betId)
-    .bool(a.conditionHeld)
-    .bool(a.targetHit)
-    .u64(a.payout)
-    .done();
-}
-
-export interface CallRecorded extends RecordCallArgs {
-  type: 'CallRecorded';
-  seq: bigint;
-  recordedAt: bigint;
-}
-
-export interface CallSettled {
-  type: 'CallSettled';
-  seq: bigint;
-  betId: string;
-  caller: string;
-  handle: string;
-  conditionHeld: boolean;
-  targetHit: boolean;
-  stake: bigint;
-  payout: bigint;
-  pnl: bigint;
-  settledAt: bigint;
-}
-
-function readCallFields(r: Reader): Omit<RecordCallArgs, 'betId' | 'caller'> {
+function readDetails(r: Reader): CallDetails {
   return {
+    betId: r.string(),
     handle: r.string(),
     eventTicker: r.string(),
     conditionSymbol: r.string(),
     targetSymbol: r.string(),
-    conditionStrike: r.i64(),
-    targetStrike: r.i64(),
-    stake: r.u64(),
-    price: r.u32(),
-    payoutIfHit: r.u64(),
-    hedged: r.bool(),
+    fairPrice: r.u32(),
     placedAt: r.i64(),
     expiry: r.i64(),
     evidence: r.hex(32),
   };
 }
 
+/** sha256(COMMIT_DOMAIN || borsh(details) || salt), hex: what `commit_call` stores. */
+export function commitHash(details: CallDetails, salt: string): string {
+  return createHash('sha256')
+    .update(COMMIT_DOMAIN)
+    .update(writeDetails(new Writer(), details).done())
+    .update(bytes32(salt, 'salt'))
+    .digest('hex');
+}
+
+export function encodeInitialize(recorder: string): Buffer {
+  return new Writer().bytes(discriminator('global', 'initialize')).address(recorder).done();
+}
+
+export function encodeCommitCall(commit: string): Buffer {
+  return new Writer().bytes(discriminator('global', 'commit_call')).bytes(bytes32(commit, 'commit')).done();
+}
+
+export function encodeRevealCall(a: { details: CallDetails; salt: string; targetHit: boolean }): Buffer {
+  return writeDetails(new Writer().bytes(discriminator('global', 'reveal_call')), a.details)
+    .bytes(bytes32(a.salt, 'salt'))
+    .bool(a.targetHit)
+    .done();
+}
+
+export interface CallCommitted {
+  type: 'CallCommitted';
+  seq: bigint;
+  commit: string;
+  committedAt: bigint;
+}
+
+export interface CallRevealed {
+  type: 'CallRevealed';
+  seq: bigint;
+  commit: string;
+  committedAt: bigint;
+  revealedAt: bigint;
+  targetHit: boolean;
+  /** Micro-dollars: (1.00 if the target hit, else 0) minus the fair price. */
+  edge: bigint;
+  details: CallDetails;
+}
+
 /** Decodes one `Program data:` payload. Returns null for events this program does not define. */
-export function decodeEvent(raw: Buffer): CallRecorded | CallSettled | null {
+export function decodeEvent(raw: Buffer): CallCommitted | CallRevealed | null {
   if (raw.length < 8) return null;
   const tag = raw.subarray(0, 8);
   const r = new Reader(raw.subarray(8));
-  if (tag.equals(EVENT_RECORDED)) {
-    const seq = r.u64();
-    const betId = r.string();
-    const caller = r.address();
-    const fields = readCallFields(r);
-    return { type: 'CallRecorded', seq, betId, caller, ...fields, recordedAt: r.i64() };
+  if (tag.equals(EVENT_COMMITTED)) {
+    return { type: 'CallCommitted', seq: r.u64(), commit: r.hex(32), committedAt: r.i64() };
   }
-  if (tag.equals(EVENT_SETTLED)) {
+  if (tag.equals(EVENT_REVEALED)) {
     return {
-      type: 'CallSettled',
+      type: 'CallRevealed',
       seq: r.u64(),
-      betId: r.string(),
-      caller: r.address(),
-      handle: r.string(),
-      conditionHeld: r.bool(),
+      commit: r.hex(32),
+      committedAt: r.i64(),
+      revealedAt: r.i64(),
       targetHit: r.bool(),
-      stake: r.u64(),
-      payout: r.u64(),
-      pnl: r.i64(),
-      settledAt: r.i64(),
+      edge: r.i64(),
+      details: readDetails(r),
     };
   }
   return null;
 }
 
-export interface ReceiptAccount extends RecordCallArgs {
+export interface CallAccount {
   seq: bigint;
-  recordedAt: bigint;
-  status: 'open' | 'settled';
-  conditionHeld: boolean;
+  commit: string;
+  committedAt: bigint;
+  state: 'committed' | 'revealed';
+  revealedAt: bigint;
   targetHit: boolean;
-  payout: bigint;
-  pnl: bigint;
-  settledAt: bigint;
+  edge: bigint;
+  /** Empty strings and zeros until the call is revealed. */
+  details: CallDetails;
 }
 
-/** Decodes a CallReceipt account as stored on chain. */
-export function decodeReceiptAccount(data: Buffer): ReceiptAccount {
-  if (!data.subarray(0, 8).equals(ACCOUNT_RECEIPT)) throw new Error('Not a CallReceipt account');
+/** Decodes a CallRecord account as stored on chain. */
+export function decodeCallAccount(data: Buffer): CallAccount {
+  if (!data.subarray(0, 8).equals(ACCOUNT_CALL)) throw new Error('Not a CallRecord account');
   const r = new Reader(data.subarray(8));
   const seq = r.u64();
-  const caller = r.address();
-  const betId = r.string();
-  const fields = readCallFields(r);
-  return {
-    seq,
-    caller,
-    betId,
-    ...fields,
-    recordedAt: r.i64(),
-    status: r.u8() === 0 ? 'open' : 'settled',
-    conditionHeld: r.bool(),
-    targetHit: r.bool(),
-    payout: r.u64(),
-    pnl: r.i64(),
-    settledAt: r.i64(),
-  };
+  const commit = r.hex(32);
+  const committedAt = r.i64();
+  const state = r.u8() === 0 ? 'committed' : 'revealed';
+  r.u8(); // bump
+  return { seq, commit, committedAt, state, revealedAt: r.i64(), targetHit: r.bool(), edge: r.i64(), details: readDetails(r) };
+}
+
+export interface StatsAccount {
+  handle: string;
+  calls: number;
+  hits: number;
+  edgeSum: bigint;
+  lastRevealedAt: bigint;
+}
+
+/** Decodes a CallerStats account: one handle's running score. */
+export function decodeStatsAccount(data: Buffer): StatsAccount {
+  if (!data.subarray(0, 8).equals(ACCOUNT_STATS)) throw new Error('Not a CallerStats account');
+  const r = new Reader(data.subarray(8));
+  return { handle: r.string(), calls: r.u32(), hits: r.u32(), edgeSum: r.i64(), lastRevealedAt: r.i64() };
 }

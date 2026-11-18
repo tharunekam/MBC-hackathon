@@ -1,9 +1,9 @@
 // Creates the QuickNode Stream that delivers given_receipts transactions to
-// the feed's webhook. Run once per deployment: npm run create-stream
+// the chain service's webhook. Run once per deployment: npm run create-stream
 //
 // Reads from the repo-root .env:
 //   QUICKNODE_API_KEY       required (QuickNode dashboard -> API keys, Streams scope)
-//   WEBHOOK_URL             required, e.g. https://<tunnel>/webhooks/quicknode
+//   WEBHOOK_URL             required, e.g. https://<public host>/hooks/quicknode
 //   QUICKNODE_STREAM_TOKEN  optional; generated and appended to .env if missing
 //   QUICKNODE_NETWORK       default solana-devnet
 //   QUICKNODE_DATASET       default programs_with_logs

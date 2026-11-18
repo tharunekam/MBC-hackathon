@@ -1,3 +1,4 @@
 node_modules/
-receipts.jsonl
+# Private state: the salts that open commitments, and delivered events.
+data/
 .e2e/

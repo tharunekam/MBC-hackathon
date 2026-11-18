@@ -1,22 +1,27 @@
 // End-to-end check on a local validator, no QuickNode account needed:
-//   executor ledger -> recorder -> given_receipts program -> transaction logs
-//   -> QuickNode filter -> signed webhook -> feed -> leaderboard
-// The only simulated piece is QuickNode's delivery: the script wraps the real
-// transaction logs in the Programs + Logs payload shape and signs them itself.
+//   executor bets -> POST /calls -> given_receipts program (commit)
+//   -> POST /calls/:id/reveal (the program checks the hash and the clock)
+//   -> transaction logs -> QuickNode filter -> signed webhook -> leaderboard
+// The only simulated pieces are the executor (an in-memory list of bets) and
+// QuickNode's delivery: the script wraps the real transaction logs in the
+// Programs + Logs payload shape and signs them itself.
 //
 // Needs `anchor build` in ../receipts-program first. Run: npm run e2e
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js';
+import type { Bet } from '../src/bets.ts';
+import { CallService, CallStore, type CallView } from '../src/calls.ts';
+import { Chain, DEFAULT_PROGRAM_ID } from '../src/chain.ts';
+import { decodeStatsAccount } from '../src/codec.ts';
 import { signQuickNode } from '../src/qn.ts';
-import { DEFAULT_PROGRAM_ID, Recorder, readLedgerBets } from '../src/recorder.ts';
-import { decodeReceipt, scoreLeaderboard, type Board } from '../src/receipts.ts';
-import { createFeedServer } from '../src/server.ts';
+import { buildLeaderboard, decodeReceipt, type LeaderboardResponse } from '../src/receipts.ts';
+import { createFeedServer, ingest } from '../src/server.ts';
 import { ReceiptStore } from '../src/store.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -29,30 +34,35 @@ if (!existsSync(programSo)) throw new Error(`Missing ${programSo}. Run \`anchor 
 rmSync(work, { recursive: true, force: true });
 mkdirSync(work, { recursive: true });
 
-const leg = (tag: string, symbol: string, outcome: 'yes' | 'no', qty: number, price: number) => ({
-  clientOrderId: tag, orderId: `o-${tag}`, role: outcome === 'yes' ? 'outcome' : 'hedge', symbol, side: 'buy', outcome,
-  limitPrice: price, quantityRequested: qty, quantityFilled: qty, avgPrice: price, status: 'filled',
-  sentAt: '2026-11-17T22:00:00.000Z',
-});
-const bet = (id: string, user: string, status: string, settlement?: object) => ({
-  id, user, createdAt: '2026-11-17T22:00:00.000Z', eventTicker: 'ETH2611180000', eventTitle: 'ETH price',
-  expiry: '2026-11-18T00:00:00.000Z',
-  condition: { symbol: 'GEMI-ETH2611180000-HI1800', label: '$1,800 or above', strike: 1800 },
-  target: { symbol: 'GEMI-ETH2611180000-HI1820', label: '$1,820 or above', strike: 1820 },
-  requestedStake: 5, quotedPrice: 0.625, status,
+// The event closes 25 seconds from now: long enough to commit, short enough to wait for.
+const expiry = new Date(Math.ceil(Date.now() / 1000) * 1000 + 25_000);
+const bet = (id: string, user: string, fairPrice: number, status = 'open'): Bet => ({
+  id, user, createdAt: new Date().toISOString(), eventTicker: 'ETH2611180000', eventTitle: 'ETH price',
+  expiry: expiry.toISOString(),
+  condition: { symbol: 'GEMI-ETH2611180000-HI1800', label: '$1,800 or above' },
+  target: { symbol: 'GEMI-ETH2611180000-HI1820', label: '$1,820 or above' },
+  status,
   legs: [
-    leg(`gv-${id}-b`, 'GEMI-ETH2611180000-HI1820', 'yes', 8, 0.5),
-    leg(`gv-${id}-a`, 'GEMI-ETH2611180000-HI1800', 'no', 5, 0.2),
+    { clientOrderId: `gv-${id}-b`, orderId: `o-${id}-b`, symbol: 'GEMI-ETH2611180000-HI1820', side: 'buy', outcome: 'yes', quantityFilled: 8, avgPrice: 0.5 },
+    { clientOrderId: `gv-${id}-a`, orderId: `o-${id}-a`, symbol: 'GEMI-ETH2611180000-HI1800', side: 'buy', outcome: 'no', quantityFilled: 5, avgPrice: 0.2 },
   ],
-  cost: 5,
-  payoffs: { stake: 5, ifConditionFails: 0, ifBothHit: 3, ifConditionOnly: -5, conditionalPrice: 0.625, hedged: true },
-  settlement,
+  payoffs: { conditionalPrice: fairPrice + 0.02 },
+  offer: { fairPrice },
 });
-const settled = (c: 'yes' | 'no', t: 'yes' | 'no', payout: number) => ({
-  conditionResolved: c, targetResolved: t, payout, pnl: payout - 5, settledAt: '2026-11-18T00:00:05.000Z',
-});
-const ledgerPath = resolve(work, 'ledger.json');
-const writeLedger = (bets: object[]) => writeFileSync(ledgerPath, JSON.stringify({ version: 1, baselines: {}, bets, intents: [] }));
+const ledger: { bets: Bet[] } = {
+  bets: [
+    bet('aaaa0001', 'alice', 0.625), bet('aaaa0002', 'alice', 0.5), bet('aaaa0003', 'alice', 0.4),
+    bet('bbbb0001', 'bob', 0.3), bet('bbbb0002', 'bob', 0.8), bet('bbbb0003', 'bob', 0.5),
+    bet('cccc0001', 'carol', 0.5),
+    bet('dddd0001', 'dave', 0.5, 'failed'),
+  ],
+};
+const settle = (results: Record<string, [condition: 'yes' | 'no', target: 'yes' | 'no']>) => {
+  ledger.bets = ledger.bets.map((b) => {
+    const r = results[b.id];
+    return r ? { ...b, status: 'settled', settlement: { conditionResolved: r[0], targetResolved: r[1] } } : b;
+  });
+};
 
 const validator = spawn(
   'solana-test-validator',
@@ -78,57 +88,83 @@ try {
   const key = Keypair.generate();
   const airdrop = await connection.requestAirdrop(key.publicKey, 2 * LAMPORTS_PER_SOL);
   await connection.confirmTransaction({ signature: airdrop, ...(await connection.getLatestBlockhash()) });
+  const chain = new Chain({ connection, programId: new PublicKey(DEFAULT_PROGRAM_ID), recorder: key });
+  assert.ok(await chain.initialize(), 'first initialize sends a transaction');
+  assert.equal(await chain.initialize(), null, 'second initialize is a no-op');
 
-  const alice = Keypair.generate().publicKey.toBase58();
-  const logLines: string[] = [];
-  const recorder = new Recorder({
-    connection, programId: new PublicKey(DEFAULT_PROGRAM_ID), recorder: key, wallets: { alice }, log: (l) => logLines.push(l),
-  });
-  assert.ok(await recorder.initialize(), 'first initialize sends a transaction');
-  assert.equal(await recorder.initialize(), null, 'second initialize is a no-op');
-
-  // Pass 1: three placed calls (one still being placed is skipped).
-  writeLedger([bet('aaaa0001', 'alice', 'open'), bet('bbbb0001', 'primary', 'open'), bet('aaaa0002', 'alice', 'open'), bet('cccc0001', 'primary', 'failed')]);
-  const first = await recorder.sync(readLedgerBets(ledgerPath));
-  assert.deepEqual([first.recorded.length, first.settled.length], [3, 0]);
-  assert.deepEqual(first.skipped, [{ betId: 'cccc0001', reason: 'status is failed' }]);
-
-  // Pass 2: Gemini resolved them. alice hit one and was refunded one; primary missed.
-  writeLedger([
-    bet('aaaa0001', 'alice', 'settled', settled('yes', 'yes', 8)),
-    bet('bbbb0001', 'primary', 'settled', settled('yes', 'no', 0)),
-    bet('aaaa0002', 'alice', 'settled', settled('no', 'no', 5)),
-    bet('dddd0001', 'primary', 'open'),
-  ]);
-  const second = await recorder.sync(readLedgerBets(ledgerPath));
-  assert.deepEqual([second.recorded.length, second.settled.length], [1, 3]);
-
-  // Pass 3 with a fresh recorder (as after a restart): nothing is sent twice.
-  const restarted = new Recorder({ connection, programId: new PublicKey(DEFAULT_PROGRAM_ID), recorder: key, wallets: { alice } });
-  const third = await restarted.sync(readLedgerBets(ledgerPath));
-  assert.deepEqual([third.recorded.length, third.settled.length], [0, 0]);
-  console.log(`recorder: ${first.recorded.length + second.recorded.length} recorded, ${second.settled.length} settled, restart sent 0`);
-
-  // Deliver the real transactions the way Streams would.
+  const callsFile = resolve(work, 'calls.json');
+  const bets = { list: async () => ledger.bets };
   const store = new ReceiptStore();
+  const feed = { programId: DEFAULT_PROGRAM_ID, store, decode: decodeReceipt };
   const server = createFeedServer({
-    programId: DEFAULT_PROGRAM_ID, securityToken: TOKEN, store, decode: decodeReceipt, score: scoreLeaderboard,
+    ...feed, securityToken: TOKEN, score: (r) => buildLeaderboard(r, { minCalls: 2 }),
+    calls: new CallService({ store: new CallStore(callsFile), chain, bets }),
   }).listen(0);
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const http = async (method: 'GET' | 'POST', path: string, body?: unknown) => {
+    const res = await fetch(`${base}${path}`, { method, headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  };
+
+  // 1. Commit every filled bet through the API.
+  const calls: Record<string, CallView> = {};
+  for (const b of ledger.bets.filter((x) => x.status === 'open')) {
+    const res = await http('POST', '/calls', { betId: b.id });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    calls[b.id] = res.body as unknown as CallView;
+  }
+  assert.deepEqual((await http('POST', '/calls', { betId: 'dddd0001' })).body.code, 'not_filled');
+  const a1 = calls.aaaa0001!;
+  // On chain there is only a hash: no bet, no handle, no symbols, no price.
+  const hidden = await chain.call(a1.commitHash);
+  assert.deepEqual([hidden?.state, hidden?.details.betId, hidden?.details.handle, hidden?.details.targetSymbol, hidden?.details.fairPrice], ['committed', '', '', '', 0]);
+  console.log(`committed ${Object.keys(calls).length} calls`);
+
+  // 2. No reveal before the result. First the service refuses (bet not settled), then the program does (event not closed).
+  assert.deepEqual((await http('POST', `/calls/${a1.id}/reveal`)).body.code, 'not_settled');
+  settle({ aaaa0001: ['yes', 'yes'] });
+  const early = await http('POST', `/calls/${a1.id}/reveal`);
+  assert.deepEqual([early.status, early.body.code], [409, 'not_settled'], 'the program rejects a reveal before the event closes');
+  assert.equal((await chain.call(a1.commitHash))?.state, 'committed');
+
+  // 3. Wait for the chain's own clock to pass the close, then settle and reveal.
+  for (let i = 0; ; i++) {
+    const t = await connection.getBlockTime(await connection.getSlot('confirmed'));
+    if (t !== null && t > expiry.getTime() / 1000) break;
+    if (i > 240) throw new Error('The validator clock never reached the event close.');
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  settle({
+    aaaa0002: ['yes', 'yes'], aaaa0003: ['yes', 'no'],
+    bbbb0001: ['yes', 'no'], bbbb0002: ['yes', 'yes'], bbbb0003: ['no', 'no'],
+  });
+  for (const id of ['aaaa0001', 'aaaa0002', 'aaaa0003', 'bbbb0001', 'bbbb0002']) {
+    const res = await http('POST', `/calls/${calls[id]!.id}/reveal`);
+    assert.deepEqual([res.status, res.body.state], [200, 'revealed'], JSON.stringify(res.body));
+  }
+  assert.deepEqual((await http('POST', `/calls/${calls.bbbb0003!.id}/reveal`)).body.code, 'void_call');
+  assert.deepEqual((await http('POST', `/calls/${calls.cccc0001!.id}/reveal`)).body.code, 'not_settled');
+  console.log('revealed 5 calls; 1 refunded call and 1 open call stay hidden');
+
+  // 4. A restarted service (same calls file) sends nothing twice.
+  const restarted = new CallService({ store: new CallStore(callsFile), chain, bets });
+  assert.deepEqual(await restarted.commit('aaaa0001'), (await http('GET', `/calls/${a1.id}`)).body);
+  assert.deepEqual(await restarted.sync({ autoCommit: true, autoRevealUsers: new Set(['alice', 'bob', 'carol']) }), { committed: 0, revealed: 0 });
+
+  // 5. Deliver the real transactions the way Streams would.
+  const everything = await chain.history(() => false);
+  assert.equal(everything.length, 13, 'initialize + 7 commits + 5 reveals');
   const filterSrc = readFileSync(resolve(here, '../quicknode/filter.js'), 'utf8').replaceAll('__PROGRAM_ID__', DEFAULT_PROGRAM_ID);
   const filter = runInNewContext(`${filterSrc}; main`) as (s: unknown) => unknown;
-
-  const signatures = [airdrop, ...first.recorded, ...second.recorded, ...second.settled].map((s) => (typeof s === 'string' ? s : s.signature));
-  const block: object[] = [];
-  for (const signature of signatures) {
-    const tx = await connection.getTransaction(signature, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 });
-    assert.ok(tx?.meta?.logMessages, `logs for ${signature}`);
-    block.push({ signature, slot: tx.slot, blockTime: tx.blockTime, programInvocations: [], logs: tx.meta.logMessages, success: tx.meta.err === null });
-  }
-  const filtered = filter({ data: [block], metadata: { network: 'solana-localnet', dataset: 'programs_with_logs' } });
-  const payload = JSON.stringify(filtered);
+  const airdropTx = await connection.getTransaction(airdrop, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 });
+  const block = [
+    { signature: airdrop, slot: airdropTx!.slot, blockTime: airdropTx!.blockTime, programInvocations: [], logs: airdropTx!.meta!.logMessages, success: true },
+    ...everything.map((tx) => ({ ...tx, programInvocations: [], success: true })),
+  ];
+  const payload = JSON.stringify(filter({ data: [block], metadata: { network: 'solana-localnet', dataset: 'programs_with_logs' } }));
+  assert.ok(!payload.includes(airdrop), 'the filter drops transactions that do not touch the program');
   const ts = String(Math.floor(Date.now() / 1000));
-  const res = await fetch(`${base}/webhooks/quicknode`, {
+  const delivery = await fetch(`${base}/hooks/quicknode`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json', 'x-qn-nonce': 'e2e', 'x-qn-timestamp': ts,
@@ -136,20 +172,31 @@ try {
     },
     body: payload,
   });
-  assert.deepEqual([res.status, await res.json()], [200, { ingested: 7 }], 'the airdrop is filtered out; 4 records + 3 settles arrive');
+  assert.deepEqual([delivery.status, await delivery.json()], [200, { ingested: 12 }], '7 commit events + 5 reveal events');
 
-  const board = (await (await fetch(`${base}/leaderboard`)).json()) as Board;
-  server.close();
-  const me = key.publicKey.toBase58();
+  // 6. The leaderboard, from the Stream.
+  const board = (await http('GET', '/leaderboard')).body as unknown as LeaderboardResponse;
+  const alice = calls.aaaa0001!.handle;
+  const bob = calls.bbbb0001!.handle;
   assert.deepEqual(
-    board.leaderboard.map((r) => [r.rank, r.handle, r.caller, r.calls, r.open, r.hits, r.misses, r.refunds, r.staked, r.pnl, r.roi, r.hitRate]),
-    [
-      [1, 'alice', alice, 2, 0, 1, 0, 1, 10, 3, 0.3, 1],
-      [2, 'primary', me, 2, 1, 0, 1, 0, 10, -5, -1, 0],
-    ],
+    board.rows.map((r) => [r.rank, r.handle, r.calls, r.edge, r.hitRate]),
+    [[1, alice, 3, 0.475, 2 / 3], [2, bob, 2, -0.1, 0.5]],
   );
-  assert.deepEqual(board.totals, { calls: 4, open: 1, settled: 3, staked: 20, pnl: -2 });
-  console.table(board.leaderboard.map(({ caller, ...row }) => row));
+  assert.deepEqual([board.source, board.totals], ['quicknode-stream', { committed: 7, revealed: 5, handles: 2 }]);
+
+  // 7. The same table rebuilt from RPC alone, and from the program's own accounts.
+  const fromRpc = new ReceiptStore();
+  ingest({ txs: everything }, { ...feed, store: fromRpc }, 'rpc');
+  const rebuilt = buildLeaderboard(fromRpc.all(), { minCalls: 2 });
+  assert.deepEqual([rebuilt.rows.map(({ lastRevealedAt: _, ...r }) => r), rebuilt.source], [board.rows.map(({ lastRevealedAt: _, ...r }) => r), 'rpc']);
+  const stats = async (handle: string) => {
+    const s = decodeStatsAccount((await connection.getAccountInfo(chain.statsAddress(handle)))!.data);
+    return [s.handle, s.calls, s.hits, Number(s.edgeSum) / 1e6];
+  };
+  assert.deepEqual([await stats(alice), await stats(bob)], [[alice, 3, 2, 0.475], [bob, 2, 1, -0.1]]);
+
+  server.close();
+  console.table(board.rows);
   console.log('e2e ok');
 } catch (err) {
   failed = true;

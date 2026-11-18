@@ -8,14 +8,18 @@ pub enum ReceiptError {
     NotAdmin,
     #[msg("A text field is empty or longer than its limit")]
     BadLength,
-    #[msg("Stake must be greater than zero")]
-    ZeroStake,
-    #[msg("Price must be above 0 and at most 1.00")]
+    #[msg("Fair price must be above 0 and at most 1.00")]
     BadPrice,
-    #[msg("This call is already settled")]
-    AlreadySettled,
-    #[msg("The target cannot hit when the condition failed")]
-    ImpossibleOutcome,
-    #[msg("Amount does not fit the receipt")]
+    #[msg("A call needs the time its event closes")]
+    NoExpiry,
+    #[msg("This call is already revealed")]
+    AlreadyRevealed,
+    #[msg("The revealed call does not match the committed hash")]
+    HashMismatch,
+    #[msg("This call was committed after its event closed, so it cannot be scored")]
+    CommittedAfterExpiry,
+    #[msg("The event has not closed yet")]
+    NotExpiredYet,
+    #[msg("Counter overflow")]
     Overflow,
 }

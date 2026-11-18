@@ -1,7 +1,7 @@
 [package]
 name = "given_receipts"
 version = "0.1.0"
-description = "On-chain receipts for Given conditional calls"
+description = "Commit-reveal record of Given conditional calls"
 edition.workspace = true
 rust-version.workspace = true
 
@@ -21,7 +21,8 @@ custom-panic = []
 
 
 [dependencies]
-anchor-lang = "1.2.2"
+anchor-lang = { version = "1.2.2", features = ["init-if-needed"] }
+solana-sha256-hasher = "3"
 
 [dev-dependencies]
 # Cargo.lock pins LiteSVM's Rust-1.89-compatible dependency graph.
@@ -30,6 +31,8 @@ solana-message = "4"
 solana-transaction = "4"
 solana-signer = "3"
 solana-keypair = "3"
+# Lets the tests compute a commitment off chain; the on-chain build uses the syscall.
+solana-sha256-hasher = { version = "3", features = ["sha2"] }
 
 
 [lints.rust]

@@ -31,7 +31,7 @@ test('logs: attributes Program data to the emitting program across CPI', () => {
     `Program ${OTHER} invoke [1]`,
     `Program data: ${b64('outer-before')}`,
     `Program ${PROGRAM} invoke [2]`,
-    'Program log: Instruction: RecordCall',
+    'Program log: Instruction: CommitCall',
     `Program data: ${b64('ours-1')}`,
     `Program ${PROGRAM} consumed 5000 of 200000 compute units`,
     `Program ${PROGRAM} success`,
@@ -76,7 +76,7 @@ test('webhook: verifies, ingests, dedupes redelivery, serves the feed', async (t
   });
   const post = (body: string | Buffer, sigPayload: string, extra: Record<string, string> = {}) => {
     const ts = String(Math.floor(Date.now() / 1000));
-    return fetch(`${base}/webhooks/quicknode`, {
+    return fetch(`${base}/hooks/quicknode`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -104,7 +104,7 @@ test('webhook: verifies, ingests, dedupes redelivery, serves the feed', async (t
   assert.equal(receipts.length, 1);
   assert.deepEqual(receipts[0], {
     id: 'sig1:0', signature: 'sig1', slot: 10, blockTime: 1_800_000_000,
-    data: b64('call'), decoded: { text: 'call' },
+    data: b64('call'), decoded: { text: 'call' }, source: 'quicknode-stream',
   });
   assert.deepEqual(await (await fetch(`${base}/leaderboard`)).json(), { count: 1 });
 });
