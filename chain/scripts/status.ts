@@ -7,7 +7,7 @@ import { loadKeypair } from '../src/keypair.ts';
 
 const config = loadConfig();
 const kp = loadKeypair(config.keypairPath);
-const chain = new SolanaChain(config.rpcUrl, kp);
+const chain = new SolanaChain(config.rpcUrl, kp, config.programId);
 console.log(`RPC        ${new URL(config.rpcUrl).hostname}`);
 console.log(`Authority  ${chain.authority}`);
 try {

@@ -94,8 +94,11 @@ What it proves: the call was fixed before the result. What it does not: the resu
 attested by our key, with Gemini's order IDs as the evidence. Calls whose first half failed are refunded, void, and never
 scored.
 
-**There is no custom Solana program yet.** Memo records are the shipped path; a program that validates reveals on chain is
-a planned upgrade (`docs/GIVEN.md`, decision 9).
+**A custom Solana program is built and tested, but not deployed on devnet yet.** `given_receipts`
+(`receipts-program/`, id `8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK`) rides in the same transaction as each Memo when the chain
+service has `GIVEN_PROGRAM_ID` set. It recomputes the hash on chain and rejects a reveal that does not reproduce its
+commit or repeats one, scores the call, and keeps each handle's running total in an account. Until it is deployed, Memo
+records alone are the shipped path (`docs/GIVEN.md`, decision 9; details in `chain/README.md`).
 
 The leaderboard ranks **edge**, not profit or volume: for each revealed call, outcome (1 if the target hit, else 0) minus
 the fair price at entry, summed. Luck on a few calls washes out.

@@ -1,4 +1,0 @@
-node_modules/
-# Private state: the salts that open commitments, and delivered events.
-data/
-.e2e/

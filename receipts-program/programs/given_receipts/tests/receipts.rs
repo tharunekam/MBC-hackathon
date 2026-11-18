@@ -4,9 +4,7 @@ use {
         solana_program::{clock::Clock, instruction::Instruction, system_program},
         AccountDeserialize, InstructionData, ToAccountMetas,
     },
-    given_receipts::{
-        commit_hash, CallDetails, CallRecord, CallState, CallerStats, Config, CALLER_SEED, CALL_SEED, CONFIG_SEED,
-    },
+    given_receipts::{hash_of, preimage, CallRecord, CallState, CallerStats, CALLER_SEED, CALL_SEED},
     litesvm::LiteSVM,
     solana_keypair::Keypair,
     solana_message::{Message, VersionedMessage},
@@ -14,23 +12,67 @@ use {
     solana_transaction::versioned::VersionedTransaction,
 };
 
-/// ETH2611180000 closes at 2026-11-18 00:00 UTC; the sample bet went in two hours before.
-const EXPIRY: i64 = 1_794_960_000;
-const PLACED: i64 = EXPIRY - 7_200;
+/// The example pinned in `chain/test/memo.test.ts`. Both sides must produce this text.
+const PINNED: &str = "given1|d1a2b3|BTC2611190100|GEMI-BTC2611190100-HI62500|GEMI-BTC2611190100-HI63500|0.437500|0.410000|1763433000|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const AT: i64 = 1_763_433_000;
+const SALT: [u8; 16] = [0xaa; 16];
+const HANDLE: &str = "quiet-otter-42";
+
+#[derive(Clone)]
+struct Call {
+    bet_id: String,
+    event: String,
+    condition: String,
+    target: String,
+    entry_price: u64,
+    fair_price: u32,
+    at: i64,
+    salt: [u8; 16],
+}
+
+impl Call {
+    fn hash(&self) -> [u8; 32] {
+        hash_of(&preimage(
+            &self.bet_id,
+            &self.event,
+            &self.condition,
+            &self.target,
+            self.entry_price,
+            self.fair_price,
+            self.at,
+            &self.salt,
+        ))
+    }
+}
+
+fn sample(bet_id: &str) -> Call {
+    Call {
+        bet_id: bet_id.to_string(),
+        event: "BTC2611190100".to_string(),
+        condition: "GEMI-BTC2611190100-HI62500".to_string(),
+        target: "GEMI-BTC2611190100-HI63500".to_string(),
+        entry_price: 437_500,
+        fair_price: 410_000,
+        at: AT,
+        salt: SALT,
+    }
+}
 
 struct Env {
     svm: LiteSVM,
-    admin: Keypair,
-    recorder: Keypair,
-    config: Pubkey,
+    authority: Keypair,
 }
 
 fn pda(seeds: &[&[u8]]) -> Pubkey {
     Pubkey::find_program_address(seeds, &given_receipts::id()).0
 }
 
-fn call_pda(commit: &[u8; 32]) -> Pubkey {
-    pda(&[CALL_SEED, commit])
+fn call_pda(authority: &Pubkey, hash: &[u8; 32]) -> Pubkey {
+    pda(&[CALL_SEED, authority.as_ref(), hash])
+}
+
+fn stats_pda(authority: &Pubkey, handle: &str) -> Pubkey {
+    pda(&[CALLER_SEED, authority.as_ref(), handle.as_bytes()])
 }
 
 fn set_time(svm: &mut LiteSVM, unix_timestamp: i64) {
@@ -47,183 +89,161 @@ fn send(svm: &mut LiteSVM, ix: Instruction, signer: &Keypair) -> Result<Vec<Stri
     svm.send_transaction(tx).map(|m| m.logs).map_err(|e| e.meta.logs)
 }
 
-/// A fresh chain with the program set up, at the moment the sample bet filled.
+fn funded(svm: &mut LiteSVM) -> Keypair {
+    let key = Keypair::new();
+    svm.airdrop(&key.pubkey(), 1_000_000_000).unwrap();
+    key
+}
+
+/// A fresh chain with the program loaded, a few seconds after the sample call's time.
 fn setup() -> Env {
     let mut svm = LiteSVM::new();
     let bytes = include_bytes!(concat!(env!("CARGO_TARGET_TMPDIR"), "/../deploy/given_receipts.so"));
     svm.add_program(given_receipts::id(), bytes).unwrap();
-    let admin = Keypair::new();
-    let recorder = Keypair::new();
-    svm.airdrop(&admin.pubkey(), 1_000_000_000).unwrap();
-    svm.airdrop(&recorder.pubkey(), 1_000_000_000).unwrap();
-    let config = pda(&[CONFIG_SEED]);
-    let ix = Instruction::new_with_bytes(
-        given_receipts::id(),
-        &given_receipts::instruction::Initialize { recorder: recorder.pubkey() }.data(),
-        given_receipts::accounts::Initialize { admin: admin.pubkey(), config, system_program: system_program::ID }
-            .to_account_metas(None),
-    );
-    send(&mut svm, ix, &admin).expect("initialize");
-    set_time(&mut svm, PLACED + 4);
-    Env { svm, admin, recorder, config }
+    let authority = funded(&mut svm);
+    set_time(&mut svm, AT + 3);
+    Env { svm, authority }
 }
 
-fn sample(bet_id: &str, handle: &str) -> CallDetails {
-    CallDetails {
-        bet_id: bet_id.to_string(),
-        handle: handle.to_string(),
-        event_ticker: "ETH2611180000".to_string(),
-        condition_symbol: "GEMI-ETH2611180000-HI1800".to_string(),
-        target_symbol: "GEMI-ETH2611180000-HI1820".to_string(),
-        fair_price: 625_000,
-        placed_at: PLACED,
-        expiry: EXPIRY,
-        evidence: [7u8; 32],
-    }
-}
-
-fn commit_ix(env: &Env, signer: &Keypair, commit: [u8; 32]) -> Instruction {
+fn commit_ix(signer: &Pubkey, hash: [u8; 32], handle: &str, at: i64) -> Instruction {
     Instruction::new_with_bytes(
         given_receipts::id(),
-        &given_receipts::instruction::CommitCall { commit }.data(),
+        &given_receipts::instruction::CommitCall { hash, handle: handle.to_string(), at }.data(),
         given_receipts::accounts::CommitCall {
-            recorder: signer.pubkey(),
-            config: env.config,
-            call: call_pda(&commit),
+            authority: *signer,
+            call: call_pda(signer, &hash),
             system_program: system_program::ID,
         }
         .to_account_metas(None),
     )
 }
 
-fn reveal_ix(env: &Env, signer: &Keypair, call: Pubkey, details: CallDetails, salt: [u8; 32], target_hit: bool) -> Instruction {
-    let stats = pda(&[CALLER_SEED, details.handle.as_bytes()]);
+/// A reveal of `call` against the record at `record`, filed under `owner` and `handle`.
+fn reveal_ix(signer: &Pubkey, record: Pubkey, owner: &Pubkey, handle: &str, call: &Call, outcome: bool) -> Instruction {
     Instruction::new_with_bytes(
         given_receipts::id(),
-        &given_receipts::instruction::RevealCall { details, salt, target_hit }.data(),
+        &given_receipts::instruction::RevealCall {
+            bet_id: call.bet_id.clone(),
+            event: call.event.clone(),
+            condition: call.condition.clone(),
+            target: call.target.clone(),
+            entry_price: call.entry_price,
+            fair_price: call.fair_price,
+            salt: call.salt,
+            outcome,
+        }
+        .data(),
         given_receipts::accounts::RevealCall {
-            recorder: signer.pubkey(),
-            config: env.config,
-            call,
-            stats,
+            authority: *signer,
+            call: record,
+            stats: stats_pda(owner, handle),
             system_program: system_program::ID,
         }
         .to_account_metas(None),
     )
 }
 
-/// Commits `details` under `salt` as the recorder and returns the hash.
-fn commit(env: &mut Env, details: &CallDetails, salt: [u8; 32]) -> [u8; 32] {
-    let hash = commit_hash(details, &salt).unwrap();
-    let ix = commit_ix(env, &env.recorder, hash);
-    send(&mut env.svm, ix, &env.recorder.insecure_clone()).expect("commit_call");
-    hash
+fn commit(env: &mut Env, call: &Call, handle: &str) -> Result<Vec<String>, Vec<String>> {
+    let key = env.authority.insecure_clone();
+    send(&mut env.svm, commit_ix(&key.pubkey(), call.hash(), handle, call.at), &key)
 }
 
-fn reveal(env: &mut Env, details: &CallDetails, salt: [u8; 32], target_hit: bool) -> Result<Vec<String>, Vec<String>> {
-    let call = call_pda(&commit_hash(details, &salt).unwrap());
-    let ix = reveal_ix(env, &env.recorder, call, details.clone(), salt, target_hit);
-    send(&mut env.svm, ix, &env.recorder.insecure_clone())
+/// Reveals `shown` against the record committed for `committed`.
+fn reveal_as(env: &mut Env, committed: &Call, shown: &Call, handle: &str, outcome: bool) -> Result<Vec<String>, Vec<String>> {
+    let key = env.authority.insecure_clone();
+    let record = call_pda(&key.pubkey(), &committed.hash());
+    send(&mut env.svm, reveal_ix(&key.pubkey(), record, &key.pubkey(), handle, shown, outcome), &key)
 }
 
-fn call(env: &Env, commit: &[u8; 32]) -> CallRecord {
-    let account = env.svm.get_account(&call_pda(commit)).unwrap();
+fn reveal(env: &mut Env, call: &Call, handle: &str, outcome: bool) -> Result<Vec<String>, Vec<String>> {
+    reveal_as(env, call, call, handle, outcome)
+}
+
+fn record(env: &Env, authority: &Pubkey, hash: &[u8; 32]) -> CallRecord {
+    let account = env.svm.get_account(&call_pda(authority, hash)).unwrap();
     CallRecord::try_deserialize(&mut &account.data[..]).unwrap()
 }
 
-fn stats(env: &Env, handle: &str) -> CallerStats {
-    let account = env.svm.get_account(&pda(&[CALLER_SEED, handle.as_bytes()])).unwrap();
+fn stats(env: &Env, authority: &Pubkey, handle: &str) -> CallerStats {
+    let account = env.svm.get_account(&stats_pda(authority, handle)).unwrap();
     CallerStats::try_deserialize(&mut &account.data[..]).unwrap()
 }
 
-fn config(env: &Env) -> Config {
-    let account = env.svm.get_account(&env.config).unwrap();
-    Config::try_deserialize(&mut &account.data[..]).unwrap()
+fn failed_with(result: Result<Vec<String>, Vec<String>>, needle: &str) {
+    let logs = result.expect_err("the transaction should have failed");
+    assert!(logs.iter().any(|l| l.contains(needle)), "expected {needle} in {logs:#?}");
 }
 
-fn failed_with(logs: &[String], name: &str) -> bool {
-    logs.iter().any(|l| l.contains(name))
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn program_data(logs: &[String]) -> Vec<String> {
+    logs.iter().filter_map(|l| l.strip_prefix("Program data: ")).map(str::to_string).collect()
+}
+
+#[test]
+fn the_hashed_text_matches_the_chain_service() {
+    let call = sample("d1a2b3");
+    let text = preimage(&call.bet_id, &call.event, &call.condition, &call.target, call.entry_price, call.fair_price, call.at, &call.salt);
+    assert_eq!(text, PINNED);
+    // Prices at and above 1.00 keep six decimals, as JavaScript's toFixed(6) prints them.
+    let text = preimage("b", "e", "k", "x", 1_000_000, 5, 7, &[0x0f; 16]);
+    assert_eq!(text, "given1|b|e|k|x|1.000000|0.000005|7|0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f");
 }
 
 #[test]
 fn commits_then_reveals_a_call() {
     let mut env = setup();
-    let recorder = env.recorder.insecure_clone();
-    let details = sample("a1b2c3d4", "brisk-otter-42");
-    let salt = [9u8; 32];
-    let hash = commit_hash(&details, &salt).unwrap();
+    let authority = env.authority.pubkey();
+    let call = sample("d1a2b3");
+    let hash = call.hash();
 
-    let ix = commit_ix(&env, &recorder, hash);
-    let committed = send(&mut env.svm, ix, &recorder).expect("commit_call");
-    assert!(committed.iter().any(|l| l.starts_with("Program data: ")), "event emitted");
+    let commit_logs = commit(&mut env, &call, HANDLE).expect("commit_call");
+    let committed = record(&env, &authority, &hash);
+    assert_eq!(committed.authority, authority);
+    assert_eq!(committed.hash, hash);
+    assert_eq!(committed.handle, HANDLE);
+    assert_eq!(committed.at, AT);
+    assert_eq!(committed.committed_at, AT + 3);
+    assert_eq!(committed.state, CallState::Committed);
+    assert_eq!(committed.fair_price, 0, "nothing about the trade is stored before the reveal");
 
-    // On chain there is a hash and a time, and nothing else.
-    let c = call(&env, &hash);
-    assert_eq!((c.seq, c.commit, c.committed_at, c.state), (0, hash, PLACED + 4, CallState::Committed));
-    assert_eq!(c.details, CallDetails::default());
-    assert_eq!((config(&env).commits, config(&env).reveals), (1, 0));
+    set_time(&mut env.svm, AT + 3_600);
+    let reveal_logs = reveal(&mut env, &call, HANDLE, true).expect("reveal_call");
+    let revealed = record(&env, &authority, &hash);
+    assert_eq!(revealed.state, CallState::Revealed);
+    assert_eq!(revealed.revealed_at, AT + 3_600);
+    assert!(revealed.outcome);
+    assert_eq!(revealed.fair_price, 410_000);
+    assert_eq!(revealed.edge, 590_000);
 
-    // One record per hash.
-    let again = commit_ix(&env, &recorder, hash);
-    assert!(send(&mut env.svm, again, &recorder).is_err());
-    assert_eq!(config(&env).commits, 1);
+    let score = stats(&env, &authority, HANDLE);
+    assert_eq!((score.calls, score.hits, score.edge_sum), (1, 1, 590_000));
+    assert_eq!(score.authority, authority);
+    assert_eq!(score.handle, HANDLE);
+    assert_eq!(score.last_revealed_at, AT + 3_600);
 
-    // Not before the event closes.
-    let early = reveal(&mut env, &details, salt, true).unwrap_err();
-    assert!(failed_with(&early, "NotExpiredYet"), "{early:?}");
-    set_time(&mut env.svm, EXPIRY + 300);
-
-    // Not with a different salt, and not with a call that was edited afterwards.
-    let ix = reveal_ix(&env, &recorder, call_pda(&hash), details.clone(), [8u8; 32], true);
-    let err = send(&mut env.svm, ix, &recorder).unwrap_err();
-    assert!(failed_with(&err, "HashMismatch"), "{err:?}");
-    let mut cheaper = details.clone();
-    cheaper.fair_price = 100_000;
-    let ix = reveal_ix(&env, &recorder, call_pda(&hash), cheaper, salt, true);
-    let err = send(&mut env.svm, ix, &recorder).unwrap_err();
-    assert!(failed_with(&err, "HashMismatch"), "{err:?}");
-    assert_eq!(call(&env, &hash).state, CallState::Committed);
-
-    let revealed = reveal(&mut env, &details, salt, true).expect("reveal_call");
-    let c = call(&env, &hash);
-    assert_eq!((c.state, c.target_hit, c.edge, c.revealed_at), (CallState::Revealed, true, 375_000, EXPIRY + 300));
-    assert_eq!(c.details, details);
-    let s = stats(&env, "brisk-otter-42");
-    assert_eq!((s.handle.as_str(), s.calls, s.hits, s.edge_sum, s.last_revealed_at), ("brisk-otter-42", 1, 1, 375_000, EXPIRY + 300));
-    assert_eq!(config(&env).reveals, 1);
-
-    let twice = reveal(&mut env, &details, salt, false).unwrap_err();
-    assert!(failed_with(&twice, "AlreadyRevealed"), "{twice:?}");
-    assert_eq!(stats(&env, "brisk-otter-42").calls, 1);
-
-    // Lets the TypeScript codec be tested against bytes this program really
-    // accepted and emitted.
-    if let Ok(path) = std::env::var("WRITE_LOG_FIXTURE") {
-        let quote = |logs: &[String]| logs.iter().map(|l| format!("{l:?}")).collect::<Vec<_>>().join(",");
-        let hex = |bytes: &[u8]| bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
-        let stats_pda = pda(&[CALLER_SEED, b"brisk-otter-42"]);
+    // Bytes for the chain service's tests, so its encoder is checked against this program.
+    if let Ok(path) = std::env::var("WRITE_PROGRAM_FIXTURE") {
+        let commit_ix = commit_ix(&authority, hash, HANDLE, call.at);
+        let reveal_ix = reveal_ix(&authority, call_pda(&authority, &hash), &authority, HANDLE, &call, true);
+        let call_account = env.svm.get_account(&call_pda(&authority, &hash)).unwrap();
+        let stats_account = env.svm.get_account(&stats_pda(&authority, HANDLE)).unwrap();
+        let list = |v: &[String]| v.iter().map(|s| format!("\"{s}\"")).collect::<Vec<_>>().join(", ");
         let json = format!(
-            concat!(
-                "{{\"programId\":\"{}\",\"recorder\":\"{}\",",
-                "\"initializeIx\":\"{}\",\"commitIx\":\"{}\",\"revealIx\":\"{}\",",
-                "\"commit\":\"{}\",\"salt\":\"{}\",",
-                "\"callPda\":\"{}\",\"callAccount\":\"{}\",",
-                "\"statsPda\":\"{}\",\"statsAccount\":\"{}\",",
-                "\"committed\":[{}],\"revealed\":[{}]}}\n"
-            ),
+            "{{\n  \"programId\": \"{}\",\n  \"authority\": \"{}\",\n  \"handle\": \"{HANDLE}\",\n  \"preimage\": \"{PINNED}\",\n  \"hash\": \"{}\",\n  \"callPda\": \"{}\",\n  \"statsPda\": \"{}\",\n  \"commitIx\": \"{}\",\n  \"revealIx\": \"{}\",\n  \"callAccount\": \"{}\",\n  \"statsAccount\": \"{}\",\n  \"committed\": [{}],\n  \"revealed\": [{}]\n}}\n",
             given_receipts::id(),
-            recorder.pubkey(),
-            hex(&given_receipts::instruction::Initialize { recorder: recorder.pubkey() }.data()),
-            hex(&given_receipts::instruction::CommitCall { commit: hash }.data()),
-            hex(&given_receipts::instruction::RevealCall { details: details.clone(), salt, target_hit: true }.data()),
+            authority,
             hex(&hash),
-            hex(&salt),
-            call_pda(&hash),
-            hex(&env.svm.get_account(&call_pda(&hash)).unwrap().data),
-            stats_pda,
-            hex(&env.svm.get_account(&stats_pda).unwrap().data),
-            quote(&committed),
-            quote(&revealed)
+            call_pda(&authority, &hash),
+            stats_pda(&authority, HANDLE),
+            hex(&commit_ix.data),
+            hex(&reveal_ix.data),
+            hex(&call_account.data),
+            hex(&stats_account.data),
+            list(&program_data(&commit_logs)),
+            list(&program_data(&reveal_logs)),
         );
         std::fs::write(path, json).unwrap();
     }
@@ -232,114 +252,112 @@ fn commits_then_reveals_a_call() {
 #[test]
 fn a_handle_accumulates_hits_and_misses() {
     let mut env = setup();
-    let hit = sample("hit00001", "calm-heron-7");
-    let mut miss = sample("miss0001", "calm-heron-7");
-    miss.fair_price = 400_000;
-    let other = sample("othr0001", "slow-lynx-19");
-    commit(&mut env, &hit, [1u8; 32]);
-    commit(&mut env, &miss, [2u8; 32]);
-    commit(&mut env, &other, [3u8; 32]);
-    assert_eq!(config(&env).commits, 3);
-
-    set_time(&mut env.svm, EXPIRY + 60);
-    reveal(&mut env, &hit, [1u8; 32], true).unwrap();
-    reveal(&mut env, &miss, [2u8; 32], false).unwrap();
-
-    let s = stats(&env, "calm-heron-7");
-    assert_eq!((s.calls, s.hits, s.edge_sum), (2, 1, 375_000 - 400_000));
-    assert_eq!(call(&env, &commit_hash(&miss, &[2u8; 32]).unwrap()).edge, -400_000);
-    // The third call stays a bare hash, and its handle has no record at all.
-    assert_eq!(call(&env, &commit_hash(&other, &[3u8; 32]).unwrap()).state, CallState::Committed);
-    assert!(env.svm.get_account(&pda(&[CALLER_SEED, b"slow-lynx-19"])).is_none());
-    assert_eq!(config(&env).reveals, 2);
-}
-
-#[test]
-fn a_call_committed_after_the_event_closed_is_never_scored() {
-    let mut env = setup();
-    set_time(&mut env.svm, EXPIRY + 1);
-    let late = sample("late0001", "brisk-otter-42");
-    commit(&mut env, &late, [4u8; 32]);
-    set_time(&mut env.svm, EXPIRY + 600);
-    let err = reveal(&mut env, &late, [4u8; 32], true).unwrap_err();
-    assert!(failed_with(&err, "CommittedAfterExpiry"), "{err:?}");
-}
-
-#[test]
-fn only_the_recorder_can_write() {
-    let mut env = setup();
-    let stranger = Keypair::new();
-    env.svm.airdrop(&stranger.pubkey(), 1_000_000_000).unwrap();
-
-    let ix = commit_ix(&env, &stranger, [5u8; 32]);
-    let err = send(&mut env.svm, ix, &stranger).unwrap_err();
-    assert!(failed_with(&err, "NotRecorder"), "{err:?}");
-
-    // Knowing a call and its salt is not enough to reveal it.
-    let details = sample("real0001", "brisk-otter-42");
-    let hash = commit(&mut env, &details, [6u8; 32]);
-    set_time(&mut env.svm, EXPIRY + 60);
-    let ix = reveal_ix(&env, &stranger, call_pda(&hash), details.clone(), [6u8; 32], true);
-    let err = send(&mut env.svm, ix, &stranger).unwrap_err();
-    assert!(failed_with(&err, "NotRecorder"), "{err:?}");
-
-    // The admin key is not the recorder either.
-    let ix = commit_ix(&env, &env.admin, [5u8; 32]);
-    let err = send(&mut env.svm, ix, &env.admin.insecure_clone()).unwrap_err();
-    assert!(failed_with(&err, "NotRecorder"), "{err:?}");
-}
-
-#[test]
-fn rejects_malformed_reveals() {
-    let mut env = setup();
-    let mut free = sample("bad00001", "brisk-otter-42");
-    free.fair_price = 0;
-    let mut over_a_dollar = sample("bad00002", "brisk-otter-42");
-    over_a_dollar.fair_price = 1_000_001;
-    let mut no_expiry = sample("bad00003", "brisk-otter-42");
-    no_expiry.expiry = 0;
-    let mut long_ticker = sample("bad00004", "brisk-otter-42");
-    long_ticker.event_ticker = "x".repeat(33);
-    let mut unnamed = sample("bad00005", "brisk-otter-42");
-    unnamed.bet_id = String::new();
-
-    let cases = [
-        (free, "BadPrice"),
-        (over_a_dollar, "BadPrice"),
-        (no_expiry, "NoExpiry"),
-        (long_ticker, "BadLength"),
-        (unnamed, "BadLength"),
-    ];
-    for (i, (details, _)) in cases.iter().enumerate() {
-        commit(&mut env, details, [i as u8; 32]);
+    let authority = env.authority.pubkey();
+    let (won, lost, other) = (sample("bet-1"), sample("bet-2"), sample("bet-3"));
+    for call in [&won, &lost] {
+        commit(&mut env, call, HANDLE).expect("commit_call");
     }
-    set_time(&mut env.svm, EXPIRY + 60);
-    for (i, (details, error)) in cases.iter().enumerate() {
-        let err = reveal(&mut env, details, [i as u8; 32], true).unwrap_err();
-        assert!(failed_with(&err, error), "{error}: {err:?}");
-    }
-    assert_eq!(config(&env).reveals, 0);
+    commit(&mut env, &other, "amber-wren-11").expect("commit_call");
+
+    reveal(&mut env, &won, HANDLE, true).expect("reveal a hit");
+    reveal(&mut env, &lost, HANDLE, false).expect("reveal a miss");
+    reveal(&mut env, &other, "amber-wren-11", false).expect("reveal another handle");
+
+    assert_eq!(record(&env, &authority, &lost.hash()).edge, -410_000);
+    let score = stats(&env, &authority, HANDLE);
+    assert_eq!((score.calls, score.hits, score.edge_sum), (2, 1, 180_000));
+    let score = stats(&env, &authority, "amber-wren-11");
+    assert_eq!((score.calls, score.hits, score.edge_sum), (1, 0, -410_000));
 }
 
 #[test]
-fn admin_can_rotate_the_recorder() {
+fn a_changed_reveal_is_refused() {
     let mut env = setup();
-    let next = Keypair::new();
-    env.svm.airdrop(&next.pubkey(), 1_000_000_000).unwrap();
-    let rotate = |signer: &Keypair, config: Pubkey| {
-        Instruction::new_with_bytes(
-            given_receipts::id(),
-            &given_receipts::instruction::SetRecorder { recorder: next.pubkey() }.data(),
-            given_receipts::accounts::SetRecorder { admin: signer.pubkey(), config }.to_account_metas(None),
-        )
-    };
+    let authority = env.authority.pubkey();
+    let call = sample("d1a2b3");
+    commit(&mut env, &call, HANDLE).expect("commit_call");
 
-    let err = send(&mut env.svm, rotate(&env.recorder, env.config), &env.recorder.insecure_clone()).unwrap_err();
-    assert!(failed_with(&err, "NotAdmin"), "{err:?}");
+    let lower_fair_price = Call { fair_price: 200_000, ..call.clone() };
+    failed_with(reveal_as(&mut env, &call, &lower_fair_price, HANDLE, true), "HashMismatch");
+    let other_target = Call { target: "GEMI-BTC2611190100-HI64000".to_string(), ..call.clone() };
+    failed_with(reveal_as(&mut env, &call, &other_target, HANDLE, true), "HashMismatch");
+    let other_entry = Call { entry_price: 300_000, ..call.clone() };
+    failed_with(reveal_as(&mut env, &call, &other_entry, HANDLE, true), "HashMismatch");
+    let other_bet = Call { bet_id: "d1a2b4".to_string(), ..call.clone() };
+    failed_with(reveal_as(&mut env, &call, &other_bet, HANDLE, true), "HashMismatch");
+    let other_salt = Call { salt: [0xab; 16], ..call.clone() };
+    failed_with(reveal_as(&mut env, &call, &other_salt, HANDLE, true), "HashMismatch");
+    assert_eq!(record(&env, &authority, &call.hash()).state, CallState::Committed);
 
-    send(&mut env.svm, rotate(&env.admin, env.config), &env.admin.insecure_clone()).unwrap();
-    let ix = commit_ix(&env, &next, [1u8; 32]);
-    send(&mut env.svm, ix, &next).unwrap();
-    let ix = commit_ix(&env, &env.recorder, [2u8; 32]);
-    assert!(send(&mut env.svm, ix, &env.recorder.insecure_clone()).is_err());
+    reveal(&mut env, &call, HANDLE, false).expect("the true call still reveals");
+    // A second reveal cannot flip the result or count twice.
+    failed_with(reveal(&mut env, &call, HANDLE, true), "AlreadyRevealed");
+    let score = stats(&env, &authority, HANDLE);
+    assert_eq!((score.calls, score.hits), (1, 0));
+}
+
+#[test]
+fn the_same_hash_cannot_be_committed_twice() {
+    let mut env = setup();
+    let call = sample("d1a2b3");
+    commit(&mut env, &call, HANDLE).expect("commit_call");
+    assert!(commit(&mut env, &call, HANDLE).is_err());
+    assert!(commit(&mut env, &call, "amber-wren-11").is_err());
+}
+
+#[test]
+fn only_the_key_that_committed_can_reveal() {
+    let mut env = setup();
+    let authority = env.authority.pubkey();
+    let call = sample("d1a2b3");
+    commit(&mut env, &call, HANDLE).expect("commit_call");
+
+    let stranger = funded(&mut env.svm);
+    let theirs = call_pda(&authority, &call.hash());
+    // Signed by a stranger, against our record: with our score account, then with their own.
+    let ix = reveal_ix(&stranger.pubkey(), theirs, &authority, HANDLE, &call, true);
+    failed_with(send(&mut env.svm, ix, &stranger), "ConstraintSeeds");
+    let ix = reveal_ix(&stranger.pubkey(), theirs, &stranger.pubkey(), HANDLE, &call, true);
+    failed_with(send(&mut env.svm, ix, &stranger), "ConstraintSeeds");
+    assert_eq!(record(&env, &authority, &call.hash()).state, CallState::Committed);
+}
+
+#[test]
+fn records_are_filed_under_the_key_that_wrote_them() {
+    let mut env = setup();
+    let authority = env.authority.pubkey();
+    let call = sample("d1a2b3");
+    commit(&mut env, &call, HANDLE).expect("commit_call");
+    reveal(&mut env, &call, HANDLE, true).expect("reveal_call");
+
+    // Someone else writing the same hash and handle lands in their own accounts and changes nothing of ours.
+    let stranger = funded(&mut env.svm);
+    send(&mut env.svm, commit_ix(&stranger.pubkey(), call.hash(), HANDLE, call.at), &stranger).expect("their commit");
+    let theirs = call_pda(&stranger.pubkey(), &call.hash());
+    let ix = reveal_ix(&stranger.pubkey(), theirs, &stranger.pubkey(), HANDLE, &call, false);
+    send(&mut env.svm, ix, &stranger).expect("their reveal");
+
+    let ours = stats(&env, &authority, HANDLE);
+    assert_eq!((ours.calls, ours.hits, ours.edge_sum), (1, 1, 590_000));
+    let other = stats(&env, &stranger.pubkey(), HANDLE);
+    assert_eq!((other.calls, other.hits, other.edge_sum), (1, 0, -410_000));
+}
+
+#[test]
+fn malformed_input_is_refused() {
+    let mut env = setup();
+    let call = sample("d1a2b3");
+    failed_with(commit(&mut env, &call, ""), "BadHandle");
+    failed_with(commit(&mut env, &call, &"x".repeat(33)), "BadHandle");
+
+    // A separator inside a field could otherwise be used to forge a different call with the same text.
+    let forged = Call { bet_id: "d1|a2b3".to_string(), ..call.clone() };
+    commit(&mut env, &forged, HANDLE).expect("a hash says nothing about its fields");
+    failed_with(reveal(&mut env, &forged, HANDLE, true), "BadField");
+    let empty = Call { event: String::new(), ..sample("bet-2") };
+    commit(&mut env, &empty, HANDLE).expect("commit_call");
+    failed_with(reveal(&mut env, &empty, HANDLE, true), "BadField");
+    let overpriced = Call { fair_price: 1_000_001, ..sample("bet-3") };
+    commit(&mut env, &overpriced, HANDLE).expect("commit_call");
+    failed_with(reveal(&mut env, &overpriced, HANDLE, true), "BadPrice");
 }

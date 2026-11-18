@@ -32,7 +32,12 @@ if (!isLoopback(config.host)) {
 
 let chain: Chain;
 try {
-  chain = config.network === 'fake' ? new FakeChain() : new SolanaChain(config.rpcUrl, loadKeypair(config.keypairPath));
+  if (config.network === 'fake') chain = new FakeChain();
+  else {
+    const solana = new SolanaChain(config.rpcUrl, loadKeypair(config.keypairPath), config.programId);
+    await solana.assertProgram();
+    chain = solana;
+  }
 } catch (err) {
   console.error(err instanceof Error ? err.message : String(err));
   process.exit(1);
@@ -84,6 +89,7 @@ server.on('error', (err) => {
 server.listen(config.port, config.host, () => {
   console.log(`Given chain service on http://${config.host}:${config.port}  (${config.network === 'fake' ? 'FAKE in-memory chain' : `Solana devnet via ${new URL(config.rpcUrl).hostname}`})`);
   console.log(`Authority ${chain.authority}   executor ${config.executorUrl}   serving user "${config.user}"`);
+  if (config.network !== 'fake') console.log(chain.program ? `Each record is checked on chain by program ${chain.program}` : 'Records are Memos only (set GIVEN_PROGRAM_ID to have the program check each one).');
   if (!config.hookToken && !config.qnSecurityToken && !config.hookInsecure) console.log('No webhook secret set: Stream deliveries will be refused until GIVEN_HOOK_TOKEN is set.');
   if (config.hookInsecure) console.log('GIVEN_HOOK_INSECURE=1: webhook deliveries are NOT authenticated. Local testing only.');
 });
