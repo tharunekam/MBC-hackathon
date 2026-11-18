@@ -78,6 +78,16 @@ if (mode === 'fake' && env.GIVEN_I_KNOW_THIS_IS_A_TEST !== '1' && HOST !== '127.
   fail('fake mode shows a local test exchange and is only for staging. Set GIVEN_I_KNOW_THIS_IS_A_TEST=1 to run it on a public address.');
 }
 
+// The liquidity seeder (executor/src/seeder.ts): our own SECOND sandbox account resting tight quotes, so bets fill at a
+// production-like price and size. Opt-in. Running it here is what switches the app's "Seeded prices" label on, so the
+// two cannot come apart.
+const seeding = env.GIVEN_SEEDER === '1';
+if (seeding) {
+  if (mode !== 'live') fail('GIVEN_SEEDER=1 only makes sense in live mode: the seeder rests orders on the Gemini sandbox.');
+  if (!env.GEMINI_USER_SEEDER_KEY || !env.GEMINI_USER_SEEDER_SECRET) fail('GIVEN_SEEDER=1 needs GEMINI_USER_SEEDER_KEY and GEMINI_USER_SEEDER_SECRET: a second sandbox account, not the one that bets.');
+  if (env.GEMINI_USER_SEEDER_KEY === env.GEMINI_API_KEY) fail('The seeder must use a different sandbox account from the one that bets.');
+}
+
 const shared = {
   GIVEN_CORS_ORIGINS: PUBLIC_URL,
   GIVEN_TRUST_PROXY: '1', // the edge below always sets one client address, so this is safe here
@@ -101,6 +111,8 @@ const services = [
       ...(mode === 'quotes' ? { GIVEN_READONLY: '1' } : {}),
       // The sandbox's books are about 20 cents wide, so without this nothing passes the value rule there. Sandbox only.
       ...(mode !== 'fake' ? { GIVEN_SANDBOX_WAIVE_MARKUP: env.GIVEN_SANDBOX_WAIVE_MARKUP ?? '1' } : {}),
+      // /health then says seeded: true and the app labels its prices.
+      ...(seeding ? { GIVEN_SEEDED: '1' } : {}),
     },
   },
   {
@@ -123,6 +135,7 @@ const services = [
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const children = [];
+let seeder = null;
 let shuttingDown = false;
 let edge = null;
 async function shutdown(code = 0) {
@@ -132,6 +145,8 @@ async function shutdown(code = 0) {
   edge?.closeAllConnections?.();
   for (const c of children) c.kill('SIGTERM');
   await sleep(1200);
+  // The seeder cancels every order it has resting before it exits; give it time to finish that.
+  for (let waited = 0; seeder && seeder.exitCode === null && waited < 8000; waited += 200) await sleep(200);
   for (const c of children) if (c.exitCode === null) c.kill('SIGKILL');
   process.exit(code);
 }
@@ -178,6 +193,33 @@ for (const s of services) {
   }
 }
 
+// The seeder starts once the backends are up. The demo does not depend on it (bets still work against the sandbox's own
+// books), so if it stops it is restarted a while later and never takes the server down with it.
+function startSeeder(attempt = 0) {
+  const child = spawn('node', ['src/seed.ts', '--user', 'seeder'], { cwd: resolve(ROOT, 'executor'), env: { ...env, GIVEN_PINNED_USER: shared.GIVEN_PINNED_USER }, stdio: ['ignore', 'pipe', 'pipe'] });
+  seeder = child;
+  children.push(child);
+  for (const stream of [child.stdout, child.stderr]) {
+    let buf = '';
+    stream.on('data', (d) => {
+      buf += d;
+      const lines = buf.split('\n');
+      buf = lines.pop() ?? '';
+      for (const l of lines) if (l.trim()) console.log(`[seed ] ${l}`);
+    });
+  }
+  child.on('exit', (code) => {
+    children.splice(children.indexOf(child), 1);
+    if (shuttingDown) return;
+    if (attempt >= 20) return void console.error('[seed ] the seeder keeps stopping; not restarting it again. Bets carry on against the sandbox\'s own books.');
+    console.error(`[seed ] stopped with code ${code}; starting it again in 30 seconds.`);
+    setTimeout(() => {
+      if (!shuttingDown) startSeeder(attempt + 1);
+    }, 30_000).unref();
+  });
+}
+if (seeding) startSeeder();
+
 // ------------------------------------------------------------------------------------------------ the public server
 
 edge = createServer((req, res) => {
@@ -219,5 +261,6 @@ edge.listen(PORT, HOST, () => {
   const label = { live: 'Gemini SANDBOX + Solana DEVNET', quotes: 'real Gemini sandbox prices, bets switched off', fake: 'LOCAL TEST EXCHANGE (staging)' }[mode];
   console.log(`\nGiven is up on http://${HOST}:${PORT}  [${mode}: ${label}]`);
   console.log(`Public address ${PUBLIC_URL || '(GIVEN_PUBLIC_URL not set)'}   data: executor ${execData}, chain ${chainData}`);
+  if (seeding) console.log('SEEDING: our own second sandbox account is resting quotes, and the app says "Seeded prices". Say so wherever this is shown.');
   if (mode === 'quotes' && !haveGeminiKeys) console.log('No Gemini keys were found, so this is the quotes-only demo. Add GEMINI_API_KEY / GEMINI_API_SECRET and the authority key for live bets.');
 });

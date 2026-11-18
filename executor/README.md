@@ -344,6 +344,9 @@ npm run seed -- --user seeder             # quote the ladders that have prices; 
 npm run seed -- --user seeder --cancel    # cancel every seeder order on that account
 ```
 
+On the hosted server (`scripts/serve.mjs`), `GIVEN_SEEDER=1` runs it beside the executor and sets `GIVEN_SEEDED=1`
+for you, so the label cannot be forgotten; it is restarted if it stops and never takes the server down.
+
 Options: `--event TICKER` (repeatable; default: the open ladders with prices, soonest to close, moving on as each
 closes), `--half-spread 0.02`, `--size 40`, `--max-dollars 400` (per ladder), `--interval 5`, `--ladders 4`. The
 account is `GEMINI_USER_SEEDER_KEY` / `GEMINI_USER_SEEDER_SECRET` in `.env`: a time-based-nonce key with trading and

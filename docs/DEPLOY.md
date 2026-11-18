@@ -43,6 +43,7 @@ Set these as the host's secrets/environment. Nothing is read from a `.env` file 
 | `GIVEN_PROGRAM_ID` | live, optional | `8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK`: each record is also checked on chain by our program. Costs about 0.002 SOL of rent per call |
 | `SOLANA_RPC_URL` | live, recommended | A private devnet RPC (a free QuickNode endpoint works). The public one rate-limits and failed a backfill in the first real run |
 | `GIVEN_HOOK_TOKEN` | for the Stream | Shared secret QuickNode sends to `/chain/hooks/quicknode` |
+| `GIVEN_SEEDER` | no | `1` also runs the sandbox liquidity seeder (our own quotes from a second sandbox account) and switches the app's "Seeded prices" label on. Needs `GEMINI_USER_SEEDER_KEY` / `GEMINI_USER_SEEDER_SECRET`, which must not be the betting account's. Live mode only. Read `executor/README.md` first: the seeder has not been run on the sandbox yet |
 | `GIVEN_MAX_STAKE` | no | Dollars per bet, default 25 |
 | `GIVEN_RATE_LIMIT_PER_MIN` | no | Bets and settles per client per minute, default 20 |
 | `GIVEN_PINNED_USER` | no | Account every request acts as, default `primary` |

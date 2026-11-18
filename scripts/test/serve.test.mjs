@@ -152,3 +152,41 @@ describe('the public side', () => {
     assert.notEqual(code, 'timeout');
   });
 });
+
+describe('the liquidity seeder switch (GIVEN_SEEDER=1)', () => {
+  /** Starts the server with these settings and waits for it to stop on its own. It must refuse before starting anything. */
+  const refusal = (extra) =>
+    new Promise((done) => {
+      const data = mkdtempSync(join(tmpdir(), 'given-seed-'));
+      const env = { ...process.env, PORT: '0', HOST: '127.0.0.1', GIVEN_DATA_ROOT: data, GIVEN_SEEDER: '1', ...extra };
+      for (const k of ['GEMINI_API_KEY', 'GEMINI_API_SECRET', 'GEMINI_USER_SEEDER_KEY', 'GEMINI_USER_SEEDER_SECRET', 'GEMINI_BASE_URL']) if (!(k in extra)) delete env[k];
+      const p = spawn('node', ['scripts/serve.mjs'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
+      let out = '';
+      p.stdout.on('data', (d) => (out += d));
+      p.stderr.on('data', (d) => (out += d));
+      const timer = setTimeout(() => p.kill('SIGKILL'), 15_000);
+      p.on('exit', (code) => {
+        clearTimeout(timer);
+        done({ code, out });
+      });
+    });
+  const live = { GIVEN_MODE: 'live', GEMINI_API_KEY: 'account-main', GEMINI_API_SECRET: 'main-secret', GIVEN_AUTHORITY_KEY: JSON.stringify(Array.from({ length: 64 }, (_, i) => i)) };
+
+  it('is refused outside live mode: there is nothing to rest orders on', async () => {
+    const r = await refusal({ GIVEN_MODE: 'fake' });
+    assert.notEqual(r.code, 0);
+    assert.match(r.out, /only makes sense in live mode/);
+  });
+
+  it('is refused without a second account\'s keys', async () => {
+    const r = await refusal(live);
+    assert.notEqual(r.code, 0);
+    assert.match(r.out, /GEMINI_USER_SEEDER_KEY and GEMINI_USER_SEEDER_SECRET/);
+  });
+
+  it('is refused when the seeder would be the account that bets', async () => {
+    const r = await refusal({ ...live, GEMINI_USER_SEEDER_KEY: 'account-main', GEMINI_USER_SEEDER_SECRET: 'main-secret' });
+    assert.notEqual(r.code, 0);
+    assert.match(r.out, /different sandbox account/);
+  });
+});
