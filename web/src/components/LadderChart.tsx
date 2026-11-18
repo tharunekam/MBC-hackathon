@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, PointerEvent } from 'react';
 import type { Rung } from '../api/types';
 import { money } from '../lib/format';
+import { across, spacedLabels } from '../lib/ladders';
 import { useWidth } from '../lib/hooks';
 
 interface Props {
@@ -67,7 +68,7 @@ export default function LadderChart({ rungs, condition, target, onChange }: Prop
   const plotH = height - pad.top - pad.bottom;
   const minK = sorted[0]?.strike ?? 0;
   const maxK = sorted[sorted.length - 1]?.strike ?? 1;
-  const xOf = useCallback((k: number) => pad.left + ((k - minK) / Math.max(1, maxK - minK)) * plotW, [minK, maxK, plotW, pad.left]);
+  const xOf = useCallback((k: number) => pad.left + across(k, minK, maxK) * plotW, [minK, maxK, plotW, pad.left]);
   const yOf = (p: number) => pad.top + (1 - p) * plotH;
 
   const points = sorted.flatMap((r) => {
@@ -163,17 +164,9 @@ export default function LadderChart({ rungs, condition, target, onChange }: Prop
 
   const overlap = width > 0 && Math.abs(xC - xT) < 150;
 
-  // Show a label only where there is room for it: at least ~68px apart, and the last one always.
-  const gap = sorted.length > 1 ? plotW / (sorted.length - 1) : plotW;
-  const every = Math.max(1, Math.ceil(68 / gap));
-  const labelled = new Set<number>();
-  for (let i = 0; i < sorted.length; i += every) labelled.add(i);
-  const lastIdx = sorted.length - 1;
-  if (!labelled.has(lastIdx)) {
-    const prev = Math.max(...labelled);
-    if ((lastIdx - prev) * gap < 56) labelled.delete(prev);
-    labelled.add(lastIdx);
-  }
+  // Show a label only where there is room for it: at least ~68px apart, and the last one always. Measured where each
+  // rung is actually drawn, because ladders are not always evenly stepped.
+  const labelled = spacedLabels(sorted.map((r) => xOf(r.strike)));
 
   return (
     <div className="lc" ref={wrapRef} role="group" aria-label="Chance of finishing at or above each price, with two handles to choose your bet">

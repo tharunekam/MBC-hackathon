@@ -291,6 +291,60 @@ await check('on a phone: no sideways scroll on any page, and the quote follows t
   need(btn.y + btn.height - chart.y < 1100, 'the Place bet button is more than a screen and a bit below the chart');
 });
 
+// ---- 6b. a real exchange's listing
+await check('with dozens of ladders listed and most unpriced: the builder opens on one you can bet on, and a phone still does not scroll sideways', async () => {
+  // Gemini's sandbox on 2026-11-18 listed 34 ladders, four with prices. The tabs ran 6,000px wide on a phone and the page
+  // could open on a ladder with nothing to quote. The local test exchange lists only a few, so thirty unpriced ladders
+  // are added to its real answer on the way to the page.
+  await page.route('**/api/markets', async (route) => {
+    const res = await route.fetch();
+    const body = await res.json();
+    const model = body.events[0];
+    const dead = Array.from({ length: 30 }, (_, i) => ({
+      ...model,
+      ticker: `DEAD${i}`,
+      title: `Commodity ${i} price on November ${18 + (i % 3)}?`,
+      rungs: model.rungs.map((r, j) => ({ ...r, symbol: `DEAD${i}-${j}`, bid: null, ask: null })),
+      pairs: [],
+      offerableCount: 0,
+      refusedCount: 0,
+      refusedByReason: {},
+    }));
+    await route.fulfill({ response: res, json: { ...body, events: [...dead.slice(0, 15), ...body.events, ...dead.slice(15)] } });
+  });
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${base}/app`);
+    await placeable(); // it opened on a ladder with an offer, not on the first of the thirty-odd listed
+    const sideways = () => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    const tabs = () => page.locator('.seg [role="tab"]').allInnerTexts();
+    need((await sideways()) <= 1, `/app scrolls sideways by ${await sideways()}px`);
+    const shown = await tabs();
+    need(shown.length >= 1 && shown.length < 10, `${shown.length} tabs shown`);
+    need(!shown.some((t) => /Commodity|\?/.test(t)), `an unpriced ladder or a question mark is in the tabs: ${shown.join(' | ')}`);
+    const more = page.locator('.more-markets');
+    need(/^30 more markets have no prices right now/.test(await more.innerText()), `the note reads "${await more.innerText()}"`);
+    const inView = () =>
+      page.evaluate(() => {
+        const strip = document.querySelector('.seg').getBoundingClientRect();
+        const tab = document.querySelector('.seg [aria-selected="true"]').getBoundingClientRect();
+        const card = document.querySelector('.chart-card').getBoundingClientRect();
+        return strip.right <= card.right + 1 && tab.left >= strip.left - 1 && tab.right <= strip.right + 1;
+      });
+    need(await inView(), 'the chosen tab is not visible inside its strip, or the strip leaves the card');
+    const chosen = await page.locator('.seg [aria-selected="true"]').innerText();
+    await more.click();
+    await until('all the ladders to be listed', async () => (await tabs()).length === shown.length + 30, 5000);
+    need((await sideways()) <= 1, `with every ladder listed, /app scrolls sideways by ${await sideways()}px`);
+    need((await page.locator('.seg [aria-selected="true"]').innerText()) === chosen, 'listing the unpriced ladders changed the chosen one');
+    need(await inView(), 'with every ladder listed, the chosen tab is not visible inside its strip');
+    await more.click();
+    await until('the unpriced ladders to be put away again', async () => (await tabs()).length === shown.length, 5000);
+  } finally {
+    await page.unroute('**/api/markets');
+  }
+});
+
 // ---- 7. nothing broke quietly
 await check('no console errors or page errors during the whole run', async () => {
   const real = problems.filter((p) => !/Failed to load resource.*(422|409)/.test(p));

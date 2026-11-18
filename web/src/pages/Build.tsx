@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { ApiError } from '../api/client';
@@ -11,11 +11,11 @@ import { useDebounced, useNow, useResource } from '../lib/hooks';
 import { execLive } from '../lib/liveClients';
 import { MIN_BET, buttonState } from '../lib/betState';
 import { defaultPair } from '../lib/defaultPair';
+import { listLadders, shortTitle } from '../lib/ladders';
 import { estimate, outcomesFor } from '../lib/pricing';
 import { useVenue } from '../lib/venue';
 
 const PRESETS = [5, 10, 25, 50];
-const shortTitle = (t: string) => t.replace(/ price today at /, ' · ').replace(/ price on /, ' · ');
 
 function friendly(err: unknown): string {
   if (err instanceof ApiError) {
@@ -47,18 +47,18 @@ export default function Build() {
   const venue = useVenue();
   const now = useNow(20000);
   const markets = useResource('markets', () => api.markets(), { live: [[execLive, 'markets']], pollMs: 4000, minGapMs: 800 });
-  // Real exchanges list dozens of ladders. Put the ones you can actually bet on first, and drop one-rung ladders.
-  const events = useMemo(() => {
-    const usable = (e: MarketEvent) => (e.offerableCount > 0 && !e.ladderOutOfOrder ? 0 : !e.ladderOutOfOrder ? 1 : 2);
-    return (markets.data?.events ?? []).filter((e) => e.rungs.length >= 2).map((e, i) => ({ e, i })).sort((a, b) => usable(a.e) - usable(b.e) || a.i - b.i).map((x) => x.e);
-  }, [markets.data]);
+  // Real exchanges list dozens of ladders, most with no prices at a given moment. The tabs are the ones with prices, in
+  // the exchange's order; the page opens on one you can bet on. The rest are a tap away, never hidden without saying so.
+  const [showUnpriced, setShowUnpriced] = useState(false);
+  const ladders = useMemo(() => listLadders(markets.data?.events ?? [], showUnpriced), [markets.data, showUnpriced]);
+  const events = ladders.shown;
 
   const [ticker, setTicker] = useState<string | null>(null);
   const [sel, setSel] = useState<{ c: string; t: string } | null>(null);
   const [stake, setStake] = useState(10);
   const [stakeText, setStakeText] = useState('10');
 
-  const event: MarketEvent | undefined = events.find((e) => e.ticker === ticker) ?? events[0];
+  const event: MarketEvent | undefined = events.find((e) => e.ticker === ticker) ?? ladders.first;
 
   // Start on the first event with a good default pair; reset when the hour rolls over and symbols disappear.
   useEffect(() => {
@@ -177,6 +177,19 @@ export default function Build() {
   };
 
   const closing = timeLeft(event?.expiry ?? null, now);
+
+  // Keep the chosen tab in view inside the strip. Only the strip moves, never the page.
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const shownTicker = event?.ticker;
+  useEffect(() => {
+    const strip = tabsRef.current;
+    const tab = strip?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!strip || !tab) return;
+    const left = tab.offsetLeft;
+    const right = left + tab.offsetWidth;
+    if (left < strip.scrollLeft) strip.scrollLeft = left - 4;
+    else if (right > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = right - strip.clientWidth + 4;
+  }, [shownTicker, events.length]);
   const loadingFirst = markets.loading && !markets.data;
 
   return (
@@ -202,7 +215,7 @@ export default function Build() {
         <div className="left-col">
         <section className="card chart-card" aria-busy={loadingFirst}>
           <div className="chart-head">
-            <div className="seg" role="tablist" aria-label="Market">
+            <div className="seg" role="tablist" aria-label="Market" ref={tabsRef}>
               {events.map((e) => (
                 <button
                   key={e.ticker}
@@ -221,6 +234,13 @@ export default function Build() {
             </div>
             {closing && <span className="chip chip-quiet">{closing}</span>}
           </div>
+          {ladders.unpriced.length > 0 && (
+            <button type="button" className="more-markets" aria-expanded={showUnpriced} onClick={() => setShowUnpriced((v) => !v)}>
+              {showUnpriced
+                ? 'Hide markets with no prices'
+                : `${ladders.unpriced.length} more ${ladders.unpriced.length === 1 ? 'market has' : 'markets have'} no prices right now. Show ${ladders.unpriced.length === 1 ? 'it' : 'them'}`}
+            </button>
+          )}
           <p className="chart-hint">Chance of finishing at or above each price. Drag the two markers, or tap the chart.</p>
           {loadingFirst ? (
             <div className="skeleton chart-skel" />
