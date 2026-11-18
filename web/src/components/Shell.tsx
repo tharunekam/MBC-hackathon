@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Link, Outlet, useLocation } from 'react-router-dom';
-import { api } from '../api';
+import { useVenue } from '../lib/venue';
 
 export function Logo({ size = 22 }: { size?: number }) {
   return (
@@ -57,6 +57,7 @@ const LINKS = [
 ];
 
 export function Nav() {
+  const venue = useVenue();
   return (
     <header className="nav">
       <div className="nav-in">
@@ -72,7 +73,7 @@ export function Nav() {
           ))}
         </nav>
         <div className="nav-right">
-          {api.mode === 'mock' && <span className="chip chip-quiet" title="No real orders. Start the executor and add ?live to the address to use it.">Demo data</span>}
+          {venue.chip && <span className="chip chip-quiet">{venue.chip}</span>}
           <ThemeToggle />
         </div>
       </div>

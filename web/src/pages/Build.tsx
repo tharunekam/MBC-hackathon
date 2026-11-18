@@ -6,12 +6,12 @@ import type { Bet, CallRecord, MarketEvent, QuoteResponse, Rung } from '../api/t
 import { explorerTx } from '../api/types';
 import LadderChart from '../components/LadderChart';
 import ProbBar from '../components/ProbBar';
-import { cents, pct, timeLeft, trunc, usd, usdSigned } from '../lib/format';
+import { cents, money, pct, timeLeft, trunc, usd, usdSigned } from '../lib/format';
 import { useAsync, useDebounced, useNow } from '../lib/hooks';
 import { estimate, outcomesFor } from '../lib/pricing';
+import { useVenue } from '../lib/venue';
 
 const PRESETS = [5, 10, 25, 50];
-const strikeOnly = (label: string) => label.replace(/ or above$/, '');
 const shortTitle = (t: string) => t.replace(/ price today at /, ' · ').replace(/ price on /, ' · ');
 
 /** A sensible starting pair: a condition that is likely (so the refund is real) and a target with a fair chance. */
@@ -52,6 +52,7 @@ function friendly(err: unknown): string {
 }
 
 export default function Build() {
+  const venue = useVenue();
   const now = useNow(20000);
   const markets = useAsync(() => api.markets(), [], 4000);
   const events = markets.data?.events ?? [];
@@ -230,17 +231,17 @@ export default function Build() {
             <div data-kind="win">
               <span className="po-chance">{chanceBoth !== null ? `${pct(chanceBoth)} chance` : '–'}</span>
               <b>{out ? usdSigned(out.win) : '–'}</b>
-              <p>It reaches {tRung ? strikeOnly(tRung.label) : '…'}</p>
+              <p>It reaches {tRung ? money(tRung.strike) : '…'}</p>
             </div>
             <div data-kind="back">
               <span className="po-chance">{chanceCondition !== null ? `${pct(1 - chanceCondition)} chance` : '–'}</span>
               <b>{out ? 'Stake back' : '–'}</b>
-              <p>It falls below {cRung ? strikeOnly(cRung.label) : '…'}</p>
+              <p>It falls below {cRung ? money(cRung.strike) : '…'}</p>
             </div>
             <div data-kind="lose">
               <span className="po-chance">{chanceCondition !== null && chanceBoth !== null ? `${pct(chanceCondition - chanceBoth)} chance` : '–'}</span>
               <b>{out ? usdSigned(out.lose) : '–'}</b>
-              <p>It holds {cRung ? strikeOnly(cRung.label) : '…'} but stops short</p>
+              <p>It holds {cRung ? money(cRung.strike) : '…'} but stops short</p>
             </div>
           </div>
         </section>
@@ -254,7 +255,7 @@ export default function Build() {
               <div className="q-title">
                 <span className="eyebrow">{event ? shortTitle(event.title) : 'Loading'}</span>
                 <h2 className="q-sentence">
-                  Given <em>{cRung ? strikeOnly(cRung.label) : '…'}</em> or above, will it reach <em>{tRung ? strikeOnly(tRung.label) : '…'}</em>?
+                  Given <em>{cRung ? money(cRung.strike) : '…'}</em> or above, will it reach <em>{tRung ? money(tRung.strike) : '…'}</em>?
                 </h2>
               </div>
 
@@ -338,9 +339,7 @@ export default function Build() {
                 )}
               </button>
               <p className="fine center">
-                {api.mode === 'mock'
-                  ? 'Demo data. No real orders are placed.'
-                  : 'Practice money on Gemini’s sandbox.'}
+                {venue.footnote}
                 {feeNote ? ` Real fees would add about ${feeNote}¢ per $1.` : ''}
               </p>
             </>
@@ -360,7 +359,7 @@ function Receipt({ bet, call, callError, onAgain }: { bet: Bet; call: CallRecord
       <div className="q-title">
         <span className="eyebrow">Bet placed</span>
         <h2 className="q-sentence">
-          {usd(bet.cost)} on <em>{strikeOnly(bet.target.label)}</em>, given <em>{strikeOnly(bet.condition.label)}</em>
+          {usd(bet.cost)} on <em>{money(bet.target.strike)}</em>, given <em>{money(bet.condition.strike)}</em>
         </h2>
       </div>
 
@@ -370,7 +369,7 @@ function Receipt({ bet, call, callError, onAgain }: { bet: Bet; call: CallRecord
           <div>
             <b>Order 1 filled</b>
             <p>
-              {out?.quantityFilled} contracts at {out?.avgPrice !== null && out?.avgPrice !== undefined ? cents(out.avgPrice) : '–'} that it reaches {strikeOnly(bet.target.label)}
+              {out?.quantityFilled} contracts at {out?.avgPrice !== null && out?.avgPrice !== undefined ? cents(out.avgPrice) : '–'} that it reaches {money(bet.target.strike)}
             </p>
             {out?.orderId && <code className="mono-chip">Order {trunc(out.orderId, 6, 4)}</code>}
           </div>
@@ -380,7 +379,7 @@ function Receipt({ bet, call, callError, onAgain }: { bet: Bet; call: CallRecord
           <div>
             <b>Order 2 filled</b>
             <p>
-              {hedge?.quantityFilled} contracts at {hedge?.avgPrice !== null && hedge?.avgPrice !== undefined ? cents(hedge.avgPrice) : '–'} that it falls below {strikeOnly(bet.condition.label)}. This is what returns your stake.
+              {hedge?.quantityFilled} contracts at {hedge?.avgPrice !== null && hedge?.avgPrice !== undefined ? cents(hedge.avgPrice) : '–'} that it falls below {money(bet.condition.strike)}. This is what returns your stake.
             </p>
             {hedge?.orderId && <code className="mono-chip">Order {trunc(hedge.orderId, 6, 4)}</code>}
           </div>
@@ -404,11 +403,11 @@ function Receipt({ bet, call, callError, onAgain }: { bet: Bet; call: CallRecord
 
       <ul className="outcomes">
         <li data-kind="win">
-          <span>If it reaches {strikeOnly(bet.target.label)}</span>
+          <span>If it reaches {money(bet.target.strike)}</span>
           <b>{usdSigned(bet.payoffs?.ifBothHit ?? 0)}</b>
         </li>
         <li data-kind="back">
-          <span>If it falls below {strikeOnly(bet.condition.label)}</span>
+          <span>If it falls below {money(bet.condition.strike)}</span>
           <b>Stake back</b>
         </li>
       </ul>

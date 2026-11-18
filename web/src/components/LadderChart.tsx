@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, PointerEvent } from 'react';
 import type { Rung } from '../api/types';
+import { money } from '../lib/format';
 import { useWidth } from '../lib/hooks';
 
 interface Props {
@@ -10,7 +11,7 @@ interface Props {
   onChange: (condition: string, target: string) => void;
 }
 
-const strikeText = (r: Rung) => r.label.replace(/ or above$/, '');
+const strikeText = (r: Rung) => money(r.strike);
 const mid = (r: Rung) => (r.bid !== null && r.ask !== null ? (r.bid + r.ask) / 2 : null);
 
 /** Monotone cubic path (Fritsch–Carlson) so the curve never overshoots the data. */

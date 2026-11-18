@@ -471,7 +471,7 @@ export function mockApi(): Api {
         });
       }
       rows.sort((x, y) => y.edge - x.edge);
-      return { asOf: new Date().toISOString(), minCalls: 1, source: 'quicknode-stream', rows: rows.map((r, i) => ({ rank: i + 1, ...r })) };
+      return { asOf: new Date().toISOString(), minCalls: 1, source: 'quicknode-stream', network: 'fake', rows: rows.map((r, i) => ({ rank: i + 1, ...r })) };
     },
   };
 }

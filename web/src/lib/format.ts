@@ -9,6 +9,9 @@ export const pct = (x: number, digits = 0) => `${(x * 100).toFixed(digits)}%`;
 /** A price per $1 of payout, shown in cents: 0.554 -> 55¢ */
 export const cents = (x: number) => `${Math.round(x * 100)}¢`;
 
+/** A strike or price level from its number: $62,500 or $2.45. Never from an exchange's label text. */
+export const money = (n: number) => `$${n.toLocaleString('en-US', { maximumFractionDigits: n < 10 ? 4 : 2 })}`;
+
 export const trunc = (s: string, head = 6, tail = 4) => (s.length <= head + tail + 1 ? s : `${s.slice(0, head)}…${s.slice(-tail)}`);
 
 export function timeLeft(expiry: string | null, now = Date.now()): string | null {

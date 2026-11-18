@@ -61,6 +61,27 @@ evidence supports it.
   wouldn't want a judge to read: no credentials, no personal details, and no
   raw research notes (the conclusions belong in `docs/`).
 
+## Running it
+
+Three packages: `executor/` (places the Gemini orders), `chain/` (Solana commit-reveal and the leaderboard) and `web/`
+(the app). From the repo root:
+
+```bash
+npm run install:all
+npm run dev        # whole stack with NO keys and no SOL: local test exchange + in-memory chain + web
+npm run status     # who is listening on this project's ports (web 5273, executor 8741, chain 8742)
+npm run stop       # stop this project's servers (never touches another project's)
+npm run dev:live   # real Gemini sandbox + Solana devnet; needs .env keys and a funded chain/data/authority.json
+npm test           # every package
+npm run typecheck
+```
+
+- The ports are fixed and the stack refuses to start if one is taken, naming who holds it. Do not change a port to dodge
+  a clash: a service that quietly talks to another project's server is worse than one that does not start.
+- `chain/data/` and `executor/data/` hold keys, salts and ledgers and are git-ignored.
+- `docs/CONTRACTS.md` lists every endpoint and what each lane still owes. `chain/README.md` covers Solana and QuickNode,
+  including what has and has not been verified.
+
 ## Wording guardrails (from our reading of Gemini's rules; re-verify before the pitch)
 
 - Never say "risk-free" or "guaranteed". Say "money back if…" and show the cost.

@@ -23,6 +23,38 @@ Last year's rubric rewarded "Focused Execution": a polished working prototype
 beats an ambitious one. This plan is built around that. When in doubt, cut a
 feature and polish the golden path.
 
+## Build status (end of Tuesday 2026-11-17)
+
+**Verified by running** (130 tests across the three packages; the golden path was also driven in a real browser against
+the real executor handler and chain service): bet builder on the probability ladder, quote, place, receipt, My bets,
+settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is and is not verified: `chain/README.md`.
+
+| Task | State |
+|---|---|
+| T-P1 to T-P5 shell, ladder, quote, place flow, My bets, Proof, Flow | **Done** on mock and live (local test exchange) |
+| T-P6 leaderboard, call page, share card, explorer links | Leaderboard and explorer links done; **share card and call page not built**; verify page not built (the `verify` endpoint exists) |
+| T-P7, T-P8 landing copy, polish, design review | First pass only; the polish pass is still to do |
+| T-P9 README, Devpost, video, pitch | Not started |
+| T-V1 OAuth test | **Blocked on a Gemini sandbox key** (none on this machine) |
+| T-V2 host the executor | Protections built and tested (pinned user, stake cap, rate limit, kill switch, refuses unsafe bind); **no deployment yet** |
+| T-V3 `GET /reconcile` | **Done**. Event feed not needed: the chain service reads bets from the executor |
+| T-V4 to T-V8 seeder, history script, maker-first, replay, production quotes | Not started |
+| T-C0 Memo smoke test | Our parser verified on a real devnet Memo transaction; **commit and reveal on real devnet blocked on funding the authority key** |
+| T-C1 Anchor program | **Deferred**: Memo records shipped instead (Decision 9). No Solana/Anchor toolchain installed here |
+| T-C2 chain service | **Done** (commit, reveal, verify, void handling) |
+| T-C3 Stream, filter, webhook | Webhook receiver done and tested; filter written from the docs, **Stream not created** (needs a QuickNode account and a public URL) |
+| T-C4 leaderboard, backfill | **Done** |
+| T-C5 verify-from-chain page | API done, page not built |
+
+**Blocked on the owners (nothing here can be done by us alone):**
+
+1. Fund the Solana authority key on devnet (`cd chain && npm run keygen` prints the public key; fund it at the faucet;
+   `npm run smoke` then proves the real path).
+2. Put Gemini sandbox keys in `.env` (executor README), then `npm run dev:live`. This also unblocks the OAuth test.
+3. Create the QuickNode Stream (steps and filter in `chain/README.md` and `chain/quicknode/filter.js`) and read the real
+   credit multiplier.
+4. Pick and open a host for the executor, chain service and web app (the hosted demo link).
+
 ## Hard facts from the official rules (checked 2026-11-17)
 
 Sources: the Devpost overview and Rules tab (`ubc-hackathon-2026.devpost.com`)

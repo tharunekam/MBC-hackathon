@@ -344,7 +344,7 @@ export class ChainService {
       .sort((a, b) => b.edge - a.edge || b.calls - a.calls || a.handle.localeCompare(b.handle))
       .map((r, i) => ({ rank: i + 1, ...r }));
     const streamed = Object.values(this.store.data.reveals).some((r) => r.verified && r.via === 'stream');
-    return { asOf: this.now().toISOString(), minCalls: this.minCalls, source: streamed ? ('quicknode-stream' as const) : ('rpc' as const), rows };
+    return { asOf: this.now().toISOString(), minCalls: this.minCalls, network: this.chain.network, source: streamed ? ('quicknode-stream' as const) : ('rpc' as const), rows };
   }
 
   /** Re-reads a call's commit and reveal from the chain and recomputes the hash. For the verify page and for judges. */

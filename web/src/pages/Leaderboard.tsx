@@ -13,7 +13,7 @@ export default function Leaderboard() {
           <h1 className="h-page">Leaderboard</h1>
           <p className="lede">Ranked by how much better your calls did than the market’s own odds. Not by profit and not by how much you bet.</p>
         </div>
-        {lb.data && <span className="chip chip-quiet">{api.mode === 'mock' ? 'Demo data' : lb.data.source === 'quicknode-stream' ? 'Live from Solana' : 'Read from Solana'}</span>}
+        {lb.data && <span className="chip chip-quiet">{api.mode === 'mock' ? 'Demo data' : lb.data.network === 'fake' ? 'Test chain' : lb.data.source === 'quicknode-stream' ? 'Live from Solana' : 'Read from Solana'}</span>}
       </header>
 
       <div className="card table-card">

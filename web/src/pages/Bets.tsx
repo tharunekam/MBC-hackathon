@@ -4,7 +4,7 @@ import { api } from '../api';
 import { ApiError } from '../api/client';
 import type { Bet, CallRecord } from '../api/types';
 import { explorerTx } from '../api/types';
-import { ago, cents, trunc, usd, usdSigned } from '../lib/format';
+import { ago, cents, money, trunc, usd, usdSigned } from '../lib/format';
 import { useAsync } from '../lib/hooks';
 
 type Outcome = 'open' | 'won' | 'back' | 'lost' | 'review' | 'other';
@@ -20,7 +20,6 @@ function outcomeOf(b: Bet): Outcome {
 }
 
 const LABEL: Record<Outcome, string> = { open: 'Open', won: 'Won', back: 'Money back', lost: 'Lost', review: 'Needs review', other: 'Not placed' };
-const strike = (l: string) => l.replace(/ or above$/, '');
 
 export default function Bets() {
   const bets = useAsync(() => api.bets(), [], 8000);
@@ -140,7 +139,7 @@ export default function Bets() {
                   <div>
                     <span className="eyebrow">{b.eventTitle}</span>
                     <h2 className="bet-title">
-                      Given <em>{strike(b.condition.label)}</em>, reach <em>{strike(b.target.label)}</em>
+                      Given <em>{money(b.condition.strike)}</em>, reach <em>{money(b.target.strike)}</em>
                     </h2>
                     <p className="fine">
                       {usd(b.cost)} · {ago(b.createdAt)}

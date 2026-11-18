@@ -284,6 +284,8 @@ export interface LeaderboardResponse {
   asOf: string;
   minCalls: number;
   source: 'quicknode-stream' | 'rpc';
+  /** Which chain the rows were read from. `fake` is the in-memory test chain. */
+  network: 'devnet' | 'fake';
   rows: LeaderboardRow[];
 }
 
