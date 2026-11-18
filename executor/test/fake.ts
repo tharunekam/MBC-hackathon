@@ -37,7 +37,11 @@ export class FakeExchange implements Exchange {
   /** Time stamped on new orders; tests can move it. */
   clock: () => Date = () => new Date('2026-11-17T23:30:00Z');
 
-  constructor(ticker: string, strikes: Array<{ strike: number; bid: number | null; ask: number | null; bidSize?: number; askSize?: number }>) {
+  constructor(
+    ticker: string,
+    strikes: Array<{ strike: number; bid: number | null; ask: number | null; bidSize?: number; askSize?: number }>,
+    meta: { title?: string; expiryDate?: string } = {},
+  ) {
     const contracts: GeminiContract[] = strikes.map((s) => {
       const symbol = `GEMI-${ticker}-HI${s.strike}`;
       this.books.set(symbol, { bid: s.bid, bidSize: s.bidSize ?? 1000, ask: s.ask, askSize: s.askSize ?? 1000 });
@@ -52,7 +56,15 @@ export class FakeExchange implements Exchange {
         prices: {},
       };
     });
-    this.event = { id: '1', title: `Test price ladder ${ticker}`, ticker, category: 'Crypto', status: 'active', expiryDate: '2026-11-18T00:00:00.000Z', contracts };
+    this.event = {
+      id: '1',
+      title: meta.title ?? `Test price ladder ${ticker}`,
+      ticker,
+      category: 'Crypto',
+      status: 'active',
+      expiryDate: meta.expiryDate ?? '2026-11-18T00:00:00.000Z',
+      contracts,
+    };
   }
 
   symbol(strike: number): string {

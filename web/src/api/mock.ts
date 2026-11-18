@@ -228,7 +228,7 @@ export function mockApi(): Api {
       payoffs: { stake: cost, ifConditionFails: cents(qA - cost), ifBothHit: cents(qB - cost), ifConditionOnly: -cost, conditionalPrice: offer.pricePaid, hedged: true },
       offer,
       scorable: false,
-      flow: { orders: 2, filled: 2, contracts: cents(qB + qA), premium: cost, feesAtProductionRates: prodFee },
+      flow: { bets: 1, ordersSent: 2, ordersFilled: 2, contracts: cents(qB + qA), premium: cost, feesAtProductionRates: prodFee, feesCharged: 0 },
     };
     if (args.outcome && args.outcome !== 'open') {
       const conditionResolved = args.outcome === 'refunded' ? 'no' : 'yes';
@@ -236,7 +236,7 @@ export function mockApi(): Api {
       const payout = cents((targetResolved === 'yes' ? qB : 0) + (conditionResolved === 'no' ? qA : 0));
       bet.status = 'settled';
       bet.scorable = true;
-      bet.settlement = { conditionResolved, targetResolved, payout, profit: cents(payout - cost), settledAt: args.ev.expiry ?? sent };
+      bet.settlement = { conditionResolved, targetResolved, payout, pnl: cents(payout - cost), settledAt: args.ev.expiry ?? sent };
     }
     return bet;
   }
@@ -267,6 +267,7 @@ export function mockApi(): Api {
         commitHash: hex(32),
         commitSignature: fakeSignature(),
         committedAt: bet.createdAt,
+        network: 'fake',
       };
       if (outcome === 'won' || outcome === 'lost') {
         const fair = bet.offer?.fairPrice ?? 0.5;
@@ -368,7 +369,7 @@ export function mockApi(): Api {
         const payout = cents((targetResolved === 'yes' ? qB : 0) + (conditionResolved === 'no' ? qA : 0));
         bet.status = 'settled';
         bet.scorable = true;
-        bet.settlement = { conditionResolved, targetResolved, payout, profit: cents(payout - bet.cost), settledAt: new Date().toISOString() };
+        bet.settlement = { conditionResolved, targetResolved, payout, pnl: cents(payout - bet.cost), settledAt: new Date().toISOString() };
         const call = calls.find((c) => c.betId === bet.id);
         if (call && conditionResolved === 'no') call.state = 'void';
         settled.push(bet);
@@ -384,8 +385,8 @@ export function mockApi(): Api {
         venue: 'Demo data',
         user: null,
         bets: real.length,
-        ordersSent: real.reduce((n, b) => n + b.flow.orders, 0),
-        ordersFilled: real.reduce((n, b) => n + b.flow.filled, 0),
+        ordersSent: real.reduce((n, b) => n + b.flow.ordersSent, 0),
+        ordersFilled: real.reduce((n, b) => n + b.flow.ordersFilled, 0),
         contracts: cents(real.reduce((n, b) => n + b.flow.contracts, 0)),
         premium: cents(real.reduce((n, b) => n + b.flow.premium, 0)),
         feesAtProductionRates: cents(real.reduce((n, b) => n + b.flow.feesAtProductionRates, 0)),
@@ -399,7 +400,22 @@ export function mockApi(): Api {
       seed();
       await sleep(1100);
       const cost = cents(bets.reduce((n, b) => n + b.cost, 0));
-      return { ok: true, checkedAt: new Date().toISOString(), orders: { checked: bets.length * 2, matched: bets.length * 2, missing: 0 }, cash: { ledger: cost, gemini: cost, difference: 0 }, betsNeedingReview: [] };
+      return {
+        venue: 'Demo data',
+        checkedAt: new Date().toISOString(),
+        user: 'primary',
+        ordersChecked: bets.length * 2,
+        ordersMatched: bets.length * 2,
+        mismatches: [],
+        untrackedOrders: 0,
+        untrackedCashFlow: 0,
+        baselineCash: 1000,
+        expectedCash: cents(1000 - cost),
+        actualCash: cents(1000 - cost),
+        cashDifference: 0,
+        betsNeedingReview: [],
+        ok: true,
+      };
     },
 
     async commitCall(betId) {
@@ -407,7 +423,7 @@ export function mockApi(): Api {
       await sleep(1100);
       const existing = calls.find((c) => c.betId === betId);
       if (existing) return existing;
-      const call: CallRecord = { id: `call-${hex(3)}`, handle: 'you', betId, state: 'committed', commitHash: hex(32), commitSignature: fakeSignature(), committedAt: new Date().toISOString() };
+      const call: CallRecord = { id: `call-${hex(3)}`, handle: 'you', betId, state: 'committed', commitHash: hex(32), commitSignature: fakeSignature(), committedAt: new Date().toISOString(), network: 'fake' };
       calls.push(call);
       return call;
     },

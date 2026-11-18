@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Commits and reveals Given calls on Solana and serves the leaderboard",
-  "engines": { "node": ">=23.6" },
+  "engines": {
+    "node": ">=23.6"
+  },
   "scripts": {
     "start": "node src/server.ts",
     "start:fake": "GIVEN_CHAIN=fake node src/server.ts",
@@ -12,7 +14,8 @@
     "status": "node scripts/status.ts",
     "smoke": "node scripts/devnet-smoke.ts",
     "test": "node --test \"test/**/*.test.ts\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "inspect": "node scripts/inspect-tx.ts"
   },
   "dependencies": {
     "@solana/web3.js": "1.99.0"

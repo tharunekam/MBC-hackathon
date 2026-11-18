@@ -56,6 +56,8 @@ export interface ApiDeps {
   corsOrigins?: string[];
   /** How long a /markets answer is reused, in ms. Default 5000. */
   marketsCacheMs?: number;
+  /** Name shown for the venue. Set it when the exchange is not Gemini (the local test exchange), so nothing claims to be Gemini. */
+  venueName?: string;
   /**
    * Hosted-demo protections. All optional; a local executor leaves them off.
    * `pinnedUser`: every request acts as this one account and a "user" sent by the browser is ignored.
@@ -127,7 +129,7 @@ async function inBatches<T, R>(items: T[], size: number, fn: (item: T) => Promis
 /** Builds the request handler. Pass it to `http.createServer`. */
 export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResponse) => void {
   const now = deps.now ?? (() => new Date());
-  const venue = deps.isSandbox ? 'Gemini sandbox' : 'Gemini';
+  const venue = deps.venueName ?? (deps.isSandbox ? 'Gemini sandbox' : 'Gemini');
   const pairOpts = { feeCoef: deps.feeCoef, waiveMarkup: deps.waiveMarkup };
   const betDeps = (user: string) => ({
     exchange: deps.exchangeFor(user),
@@ -392,9 +394,11 @@ export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResp
       user,
       ...flowTotals(deps.ledger, user ?? undefined),
       productionFeeCoef: PRODUCTION_TAKER_FEE_COEF,
-      note: deps.isSandbox
-        ? 'These orders ran on the Gemini sandbox, which charges no fees. feesAtProductionRates is what the same fills would pay at Gemini\'s published taker rate.'
-        : 'feesAtProductionRates uses Gemini\'s published taker rate.',
+      note: deps.venueName
+        ? `These orders ran on ${deps.venueName}, not on Gemini. feesAtProductionRates is what the same fills would pay at Gemini's published taker rate.`
+        : deps.isSandbox
+          ? 'These orders ran on the Gemini sandbox, which charges no fees. feesAtProductionRates is what the same fills would pay at Gemini\'s published taker rate.'
+          : 'feesAtProductionRates uses Gemini\'s published taker rate.',
     };
   }
 

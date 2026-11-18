@@ -38,7 +38,7 @@ export default function Bets() {
     const settled = list.filter((b) => b.status === 'settled' && b.settlement);
     const staked = placed.reduce((n, b) => n + b.cost, 0);
     const returned = settled.reduce((n, b) => n + (b.settlement?.payout ?? 0), 0);
-    const net = settled.reduce((n, b) => n + (b.settlement?.profit ?? 0), 0);
+    const net = settled.reduce((n, b) => n + (b.settlement?.pnl ?? 0), 0);
     return { count: placed.length, staked, returned, net, open: placed.filter((b) => outcomeOf(b) === 'open').length };
   }, [list]);
 
@@ -150,8 +150,8 @@ export default function Bets() {
                     <span className="status" data-outcome={o}>
                       {LABEL[o]}
                     </span>
-                    <b className={result ? (result.profit > 0.004 ? 'good' : result.profit < -0.004 ? 'bad' : 'back') : ''}>
-                      {result ? (o === 'back' ? 'Stake back' : usdSigned(result.profit)) : `Wins ${usdSigned(b.payoffs?.ifBothHit ?? 0)}`}
+                    <b className={result ? (result.pnl > 0.004 ? 'good' : result.pnl < -0.004 ? 'bad' : 'back') : ''}>
+                      {result ? (o === 'back' ? 'Stake back' : usdSigned(result.pnl)) : `Wins ${usdSigned(b.payoffs?.ifBothHit ?? 0)}`}
                     </b>
                   </div>
                 </div>
@@ -168,12 +168,12 @@ export default function Bets() {
                     {call && (
                       <p>
                         <span>On Solana</span> {call.state === 'revealed' ? 'Revealed' : call.state === 'void' ? 'Refunded, not scored' : 'Committed'}
-                        {api.mode === 'live' ? (
+                        {call.network === 'devnet' ? (
                           <a className="mono-chip link" href={explorerTx(call.commitSignature)} target="_blank" rel="noreferrer">
                             {trunc(call.commitSignature, 8, 6)} ↗
                           </a>
                         ) : (
-                          <code className="mono-chip">{trunc(call.commitSignature, 8, 6)} · demo</code>
+                          <code className="mono-chip">{trunc(call.commitSignature, 8, 6)} · test chain</code>
                         )}
                       </p>
                     )}

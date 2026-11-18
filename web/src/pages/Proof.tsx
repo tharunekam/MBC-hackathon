@@ -57,20 +57,20 @@ export default function Proof() {
               <div>
                 <dt>Orders found</dt>
                 <dd>
-                  {rec.orders.matched} of {rec.orders.checked}
+                  {rec.ordersMatched} of {rec.ordersChecked}
                 </dd>
               </div>
               <div>
-                <dt>Our cash</dt>
-                <dd>{usd(rec.cash.ledger)}</dd>
+                <dt>Our books say</dt>
+                <dd>{rec.expectedCash === null ? '–' : usd(rec.expectedCash)}</dd>
               </div>
               <div>
-                <dt>Gemini’s cash</dt>
-                <dd>{usd(rec.cash.gemini)}</dd>
+                <dt>Account holds</dt>
+                <dd>{usd(rec.actualCash)}</dd>
               </div>
-              <div className={Math.abs(rec.cash.difference) < 0.005 && rec.ok ? 'is-ok' : 'is-off'}>
-                <dt>Difference</dt>
-                <dd>{usd(rec.cash.difference)}</dd>
+              <div className={rec.ok ? 'is-ok' : 'is-off'}>
+                <dt>{rec.ok ? 'Difference' : 'Does not match'}</dt>
+                <dd>{rec.cashDifference === null ? '–' : usd(rec.cashDifference)}</dd>
               </div>
             </dl>
           )}

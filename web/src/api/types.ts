@@ -128,12 +128,15 @@ export interface LegRecord {
 
 export type BetStatus = 'placing' | 'open' | 'unhedged' | 'unwound' | 'failed' | 'settled' | 'needs_review';
 
+/** What one bet sent to Gemini's book (executor `betFlow`). The same shape as the totals in `FlowResponse`. */
 export interface BetFlow {
-  orders: number;
-  filled: number;
+  bets: number;
+  ordersSent: number;
+  ordersFilled: number;
   contracts: number;
   premium: number;
   feesAtProductionRates: number;
+  feesCharged: number;
 }
 
 export interface Bet {
@@ -164,8 +167,9 @@ export interface Bet {
     conditionResolved: 'yes' | 'no';
     targetResolved: 'yes' | 'no';
     payout: number;
-    profit: number;
-    settledAt?: string;
+    /** Payout minus cost, in dollars (the executor calls it `pnl`). */
+    pnl: number;
+    settledAt: string;
   };
   scorable: boolean;
   flow: BetFlow;
@@ -219,12 +223,24 @@ export interface ApiErrorBody {
 
 // ------------------------------------------------------------------ executor: planned
 
+/** `GET /reconcile`: executor `ReconcileReport` plus the order counts. */
 export interface ReconcileResponse {
-  ok: boolean;
+  venue: string;
   checkedAt: string;
-  orders: { checked: number; matched: number; missing: number };
-  cash: { ledger: number; gemini: number; difference: number };
+  user: string;
+  ordersChecked: number;
+  ordersMatched: number;
+  mismatches: { clientOrderId: string; ledger: string; gemini: string }[];
+  untrackedOrders: number;
+  untrackedCashFlow: number;
+  baselineCash: number | null;
+  /** What cash should be, from our ledger. */
+  expectedCash: number | null;
+  /** What the account actually holds. */
+  actualCash: number;
+  cashDifference: number | null;
   betsNeedingReview: string[];
+  ok: boolean;
 }
 
 // ------------------------------------------------------------------ chain service (planned)
@@ -240,6 +256,8 @@ export interface CallRecord {
   commitHash: string;
   commitSignature: string;
   committedAt: string;
+  /** `devnet` records are real transactions with an explorer link; `fake` ones come from the in-memory chain and have none. */
+  network: 'devnet' | 'fake';
   /** Present once the user reveals. */
   reveal?: {
     signature: string;

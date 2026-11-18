@@ -355,7 +355,6 @@ export default function Build() {
 
 function Receipt({ bet, call, callError, onAgain }: { bet: Bet; call: CallRecord | null; callError: string | null; onAgain: () => void }) {
   const [out, hedge] = [bet.legs.find((l) => l.role === 'outcome'), bet.legs.find((l) => l.role === 'hedge')];
-  const live = api.mode === 'live';
   return (
     <div className="receipt">
       <div className="q-title">
@@ -392,12 +391,12 @@ function Receipt({ bet, call, callError, onAgain }: { bet: Bet; call: CallRecord
             <b>{call ? 'Call recorded on Solana' : callError ? 'Could not record the call' : 'Recording your call on Solana'}</b>
             <p>{callError ?? 'A fingerprint of this call, not the details, so you can prove later that you made it first.'}</p>
             {call &&
-              (live ? (
+              (call.network === 'devnet' ? (
                 <a className="mono-chip link" href={explorerTx(call.commitSignature)} target="_blank" rel="noreferrer">
                   {trunc(call.commitSignature, 8, 6)} ↗
                 </a>
               ) : (
-                <code className="mono-chip">{trunc(call.commitSignature, 8, 6)} · demo</code>
+                <code className="mono-chip">{trunc(call.commitSignature, 8, 6)} · test chain</code>
               ))}
           </div>
         </li>
