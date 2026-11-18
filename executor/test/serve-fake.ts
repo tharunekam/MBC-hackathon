@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApi } from '../src/api.ts';
 import { Ledger } from '../src/ledger.ts';
+import { createLiveHub } from '../src/live.ts';
 import { FakeExchange } from './fake.ts';
 
 const PORT = Number(process.env.GIVEN_PORT ?? 8741);
@@ -50,6 +51,7 @@ function build() {
   return new FakeExchange(ticker, rungs, { title: `BTC price today at ${label} EST`, expiryDate: nextHour.toISOString() });
 }
 
+const hub = createLiveHub();
 let exchange = build();
 let ledger = new Ledger(join(mkdtempSync(join(tmpdir(), 'given-fake-')), 'ledger.json'));
 let n = 0;
@@ -66,11 +68,16 @@ const handler = () =>
     feeCoef: 0,
     waiveMarkup: false,
     marketsCacheMs: 1000,
+    live: hub,
+    refreshMs: 1500,
+    autoSettleMs: 3000, // a resolved event settles its bets within seconds, so the page updates by itself
+    quoteCacheMs: 1000,
     pinnedUser: 'primary',
     maxStake: 100,
     newId: () => `f${(++n).toString(36)}${Math.random().toString(36).slice(2, 5)}`,
   });
 let api = handler();
+
 
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost');
@@ -81,6 +88,7 @@ const server = createServer((req, res) => {
     return void res.end(JSON.stringify({ resolvedAt: spot, yes: STRIKES.filter((k) => spot >= k) }));
   }
   if (req.method === 'POST' && url.pathname === '/dev/reset') {
+    api.close();
     exchange = build();
     ledger = new Ledger(join(mkdtempSync(join(tmpdir(), 'given-fake-')), 'ledger.json'));
     api = handler();

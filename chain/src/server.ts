@@ -13,6 +13,7 @@ import type { Chain } from './chain.ts';
 import { isLoopback, loadConfig } from './config.ts';
 import { ExecutorClient, ServiceError } from './executor.ts';
 import { createHandler } from './http.ts';
+import { createLiveHub } from './live.ts';
 import { loadKeypair } from './keypair.ts';
 import { ChainService } from './service.ts';
 import { Store } from './store.ts';
@@ -64,6 +65,9 @@ const service = new ChainService({
   selfIngest: config.selfIngest,
 });
 
+const live = createLiveHub();
+service.onChange((topic) => live.publish(topic));
+
 let cachedBalance: { at: number; value: number | null } = { at: 0, value: null };
 const balance = async () => {
   if (Date.now() - cachedBalance.at > 30_000) cachedBalance = { at: Date.now(), value: await chain.balanceLamports().catch(() => null) };
@@ -77,6 +81,7 @@ const server = createServer(
     corsOrigins: config.corsOrigins,
     hook: { token: config.hookToken, qnSecurityToken: config.qnSecurityToken, insecure: config.hookInsecure },
     adminToken: config.adminToken,
+    live,
     rateLimit: config.rateLimitPerMin ? { max: config.rateLimitPerMin, windowMs: 60_000 } : undefined,
     trustProxy: config.trustProxy,
     balance,
@@ -108,6 +113,7 @@ if (config.backfillMs > 0) {
 
 function shutdown(): void {
   if (timer) clearInterval(timer);
+  live.close(); // open streams would otherwise hold the server up
   void service.idle().then(() => server.close(() => process.exit(0)));
   setTimeout(() => process.exit(0), 1500).unref();
 }

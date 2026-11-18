@@ -58,6 +58,9 @@ export interface CallView {
   };
 }
 
+/** What changed: `calls` (a call was committed, revealed or voided) or `leaderboard` (a verified reveal was recorded). */
+export type ChangeTopic = 'calls' | 'leaderboard';
+
 export type IngestResult = 'new' | 'duplicate' | 'ignored' | 'unverified';
 
 const r6 = (x: number) => Math.round(x * 1e6) / 1e6;
@@ -77,6 +80,7 @@ export class ChainService {
   private readonly locks = new Map<string, Promise<unknown>>();
   /** Ingestion is serial: the Stream and the backfill can race on the same signature. */
   private ingestQueue: Promise<unknown> = Promise.resolve();
+  private readonly listeners: Array<(topic: ChangeTopic) => void> = [];
 
   constructor(o: ServiceOptions) {
     this.chain = o.chain;
@@ -89,6 +93,21 @@ export class ChainService {
     this.newId = o.newId ?? (() => `c${Math.random().toString(36).slice(2, 10)}`);
     this.sleep = o.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.log = o.log ?? ((line) => console.error(line));
+  }
+
+  /** Called after every change a page could show. The service itself never depends on anyone listening. */
+  onChange(fn: (topic: ChangeTopic) => void): void {
+    this.listeners.push(fn);
+  }
+
+  private changed(topic: ChangeTopic): void {
+    for (const fn of this.listeners) {
+      try {
+        fn(topic);
+      } catch (err) {
+        this.log(`[chain] a change listener failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
   }
 
   private locked<T>(key: string, job: () => Promise<T>): Promise<T> {
@@ -177,6 +196,7 @@ export class ChainService {
       row.commitSlot = sent.slot;
       this.store.data.commits[sent.signature] = { signature: sent.signature, hash: row.hash, handle: row.handle, at: row.fields.at };
       this.store.save();
+      this.changed('calls');
       return this.view(row);
     });
   }
@@ -197,6 +217,7 @@ export class ChainService {
     row.state = 'committed';
     row.commitSignature = seen.signature;
     this.store.save();
+    this.changed('calls');
     return true;
   }
 
@@ -211,7 +232,10 @@ export class ChainService {
       row.commitSignature = seen.signature;
       n++;
     }
-    if (n > 0) this.store.save();
+    if (n > 0) {
+      this.store.save();
+      this.changed('calls');
+    }
     return n;
   }
 
@@ -251,6 +275,7 @@ export class ChainService {
       if (bet.settlement.conditionResolved === 'no') {
         row.state = 'void';
         this.store.save();
+        this.changed('calls');
         throw new ServiceError(409, 'void_call', 'The first half failed, so your stake came back and this call does not count.');
       }
 
@@ -265,6 +290,7 @@ export class ChainService {
       delete row.revealing;
       row.reveal = { signature: sent.signature, slot: sent.slot, revealedAt: this.now().toISOString(), outcome, edge: edge(outcome, f.fairPrice) };
       this.store.save();
+      this.changed('calls');
       if (this.selfIngest) await this.ingest(sent.signature, 'local');
       return this.view(row);
     });
@@ -286,6 +312,7 @@ export class ChainService {
     delete row.revealing;
     row.reveal = { signature: seen.signature, slot: 0, revealedAt: new Date(seen.revealedAt * 1000).toISOString(), outcome: seen.outcome, edge: seen.edge };
     this.store.save();
+    this.changed('calls');
     return true;
   }
 
@@ -364,6 +391,7 @@ export class ChainService {
       ...(reason ? { reason } : {}),
     };
     this.store.save();
+    if (!reason) this.changed('leaderboard');
     return reason ? 'unverified' : 'new';
   }
 

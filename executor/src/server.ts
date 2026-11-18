@@ -16,6 +16,7 @@ import { GeminiExchange } from './exchange.ts';
 import type { Exchange } from './exchange.ts';
 import { GeminiPublic } from './gemini/rest.ts';
 import { Ledger } from './ledger.ts';
+import { createLiveHub } from './live.ts';
 import { ReadOnlyExchange } from './readonly.ts';
 
 const config = loadConfig();
@@ -51,12 +52,16 @@ function exchangeFor(user: string): Exchange {
   return session;
 }
 
+const live = createLiveHub();
 const api = createApi({
   ledger,
   users,
   exchangeFor,
   isConnected: (user) => sessions.get(user)?.connected ?? false,
   readOnly: config.readOnly,
+  live,
+  quoteCacheMs: 1500,
+  autoSettleMs: Number.isFinite(config.autoSettleMs) ? config.autoSettleMs : 0,
   markets: { listEvents: () => pub.listEvents('active'), getEvent: (ticker) => pub.getEvent(ticker) },
   isSandbox: config.isSandbox,
   feeCoef: config.takerFeeCoef,
@@ -100,6 +105,8 @@ server.listen(config.port, config.host, () => {
 });
 
 function shutdown(): void {
+  api.close();
+  live.close();
   for (const session of sessions.values()) session.close();
   readOnlyExchange?.close();
   server.close(() => process.exit(0));

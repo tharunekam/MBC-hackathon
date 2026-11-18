@@ -7,6 +7,7 @@
  *   POST /calls/:id/reveal                           reveal after settlement
  *   GET  /calls/:id/verify                           re-read both records from Solana and recompute the hash
  *   GET  /leaderboard
+ *   GET  /events?topics=calls,leaderboard   server-sent events: a topic name means "it changed, refetch"
  *   GET  /reveals/:signature     a verified, revealed call (public: no salt, no account)
  *   POST /hooks/quicknode                           QuickNode Stream deliveries
  *   POST /admin/backfill                             re-scan our authority's recent transactions
@@ -14,7 +15,9 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { ServiceError } from './executor.ts';
+import { encodeBody, etagOf, notModified } from './http-cache.ts';
 import { createLimiter } from './limiter.ts';
+import type { LiveHub } from './live.ts';
 import type { ChainService } from './service.ts';
 import { hookAuthentic, signaturesIn } from './webhook.ts';
 import type { HookAuth } from './webhook.ts';
@@ -26,6 +29,10 @@ export interface HttpDeps {
   corsOrigins?: string[];
   hook: HookAuth;
   adminToken?: string;
+  /** Server-sent events hub for `GET /events`. Without it that route answers 404. */
+  live?: LiveHub;
+  /** Streams one client address may hold open. Default 8. */
+  maxStreamsPerClient?: number;
   rateLimit?: { max: number; windowMs: number };
   trustProxy?: boolean;
   now?: () => Date;
@@ -60,6 +67,7 @@ const parseJson = (text: string): Record<string, unknown> => {
 
 export function createHandler(deps: HttpDeps): (req: IncomingMessage, res: ServerResponse) => void {
   const now = deps.now ?? (() => new Date());
+  const streams = new Map<string, number>();
   const limiter = createLimiter(deps.rateLimit, () => now().getTime());
   const limited = (req: IncomingMessage): boolean => {
     const fwd = deps.trustProxy ? String(req.headers['x-forwarded-for'] ?? '').split(',')[0]?.trim() : '';
@@ -77,6 +85,20 @@ export function createHandler(deps: HttpDeps): (req: IncomingMessage, res: Serve
       headers['Access-Control-Max-Age'] = '600';
     }
     const send = (status: number, body: unknown) => {
+      // A 200 GET answer carries a validator, so an unchanged one is a 304 and a large one travels gzipped.
+      if (status === 200 && req.method === 'GET' && body !== null && typeof body === 'object') {
+        const etag = etagOf(body);
+        const common = { ...headers, ETag: etag, 'Cache-Control': 'no-cache', Vary: 'Origin, Accept-Encoding' };
+        if (notModified(req.headers['if-none-match'], etag)) {
+          res.writeHead(304, common);
+          res.end();
+          return;
+        }
+        const { body: bytes, encoding } = encodeBody(JSON.stringify(body), req.headers['accept-encoding']);
+        res.writeHead(200, { ...common, ...(encoding ? { 'Content-Encoding': encoding } : {}), 'Content-Length': String(bytes.length) });
+        res.end(bytes);
+        return;
+      }
       res.writeHead(status, headers);
       res.end(status === 204 ? undefined : JSON.stringify(body));
     };
@@ -89,6 +111,23 @@ export function createHandler(deps: HttpDeps): (req: IncomingMessage, res: Serve
         // The webhook is called by QuickNode, not a browser; it is authenticated by its own headers instead of an origin.
         if (!allowed && !isHook) throw new ServiceError(403, 'origin_not_allowed', `Requests from ${origin} are not allowed.`);
         if (req.method === 'OPTIONS') return send(204, null);
+
+        if (req.method === 'GET' && path === '/events') {
+          if (!deps.live) throw new ServiceError(404, 'not_available', 'Live updates are not enabled on this server.');
+          const asked = (url.searchParams.get('topics') ?? 'calls,leaderboard').split(',').map((t) => t.trim()).filter((t) => t === 'calls' || t === 'leaderboard');
+          if (asked.length === 0) throw new ServiceError(400, 'unknown_topic', 'Choose topics from: calls, leaderboard.');
+          const fwd = deps.trustProxy ? String(req.headers['x-forwarded-for'] ?? '').split(',')[0]?.trim() : '';
+          const who = fwd || req.socket.remoteAddress || 'unknown';
+          if ((streams.get(who) ?? 0) >= (deps.maxStreamsPerClient ?? 8)) throw new ServiceError(429, 'too_many_streams', 'Too many open live connections from this address.');
+          if (!deps.live.subscribe(req, res, headers, new Set(asked))) throw new ServiceError(503, 'streams_full', 'The server is at its limit of live connections. Updates will arrive by refresh instead.');
+          streams.set(who, (streams.get(who) ?? 0) + 1);
+          res.on('close', () => {
+            const left = (streams.get(who) ?? 1) - 1;
+            if (left <= 0) streams.delete(who);
+            else streams.set(who, left);
+          });
+          return;
+        }
 
         if (req.method === 'GET' && path === '/health') {
           const balance = deps.balance ? await deps.balance().catch(() => null) : null;

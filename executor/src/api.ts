@@ -12,6 +12,7 @@
  *   GET  /flow[?user=]
  *   GET  /reconcile[?user=]
  */
+import { createHash } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { BetRefused, isScorable, placeConditionalBet, settleBets } from './bets.ts';
 import type { Exchange } from './exchange.ts';
@@ -32,7 +33,9 @@ import {
 import { findPair, ladder, linkedPairs } from './pairs.ts';
 import type { LinkedPair, Rung } from './pairs.ts';
 import { floorToStep } from './pricing.ts';
+import { encodeBody, etagOf, notModified } from './http-cache.ts';
 import { createLimiter } from './limiter.ts';
+import type { LiveHub } from './live.ts';
 import { ensureBaseline, reconcile } from './reconcile.ts';
 
 export interface ApiDeps {
@@ -57,6 +60,22 @@ export interface ApiDeps {
   corsOrigins?: string[];
   /** How long a /markets answer is reused, in ms. Default 5000. */
   marketsCacheMs?: number;
+  /**
+   * An answer older than marketsCacheMs but younger than this is still served at once while a fresh one loads in the
+   * background (stale-while-revalidate), so nobody waits two seconds for the market list. Default 60000. Only applies
+   * when marketsCacheMs is above 0.
+   */
+  staleMarketsMs?: number;
+  /** Server-sent events hub for `GET /stream`. Without it that route answers 404. */
+  live?: LiveHub;
+  /** While at least one page is watching `markets`, re-read the market list this often (ms). Default 3000. */
+  refreshMs?: number;
+  /** Settle finished bets by itself this often (ms). 0 or unset: only when asked. Reads Gemini and writes the ledger; places no order. */
+  autoSettleMs?: number;
+  /** Identical quote requests within this many ms share one answer (each costs two live book reads). Default 0: only requests in flight at the same moment share. */
+  quoteCacheMs?: number;
+  /** Streams one client address may hold open. Default 8. */
+  maxStreamsPerClient?: number;
   /** True when no account is connected: ladders and quotes are live, but nothing can be ordered, settled or reconciled. */
   readOnly?: boolean;
   /** Name shown for the venue. Set it when the exchange is not Gemini (the local test exchange), so nothing claims to be Gemini. */
@@ -130,7 +149,12 @@ async function inBatches<T, R>(items: T[], size: number, fn: (item: T) => Promis
 }
 
 /** Builds the request handler. Pass it to `http.createServer`. */
-export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResponse) => void {
+export type ApiHandler = ((req: IncomingMessage, res: ServerResponse) => void) & {
+  /** Stops this API's background timers. The live hub belongs to whoever created it and is closed by them. */
+  close(): void;
+};
+
+export function createApi(deps: ApiDeps): ApiHandler {
   const now = deps.now ?? (() => new Date());
   const venue = deps.venueName ?? (deps.isSandbox ? 'Gemini sandbox' : 'Gemini');
   const pairOpts = { feeCoef: deps.feeCoef, waiveMarkup: deps.waiveMarkup };
@@ -209,11 +233,11 @@ export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResp
     };
   }
 
-  let marketsCache: { at: number; events: GeminiEvent[] } | null = null;
+  let marketsCache: { at: number; events: GeminiEvent[]; fingerprint: string } | null = null;
   let marketsLoading: Promise<GeminiEvent[]> | null = null;
-  async function ladderEvents(): Promise<GeminiEvent[]> {
-    const ttl = deps.marketsCacheMs ?? 5000;
-    if (marketsCache && now().getTime() - marketsCache.at < ttl) return marketsCache.events;
+
+  /** Reads the whole market list once (shared by everyone who asks while it runs) and tells watchers if anything changed. */
+  function refreshMarkets(): Promise<GeminiEvent[]> {
     marketsLoading ??= (async () => {
       try {
         const listed = await deps.markets.listEvents();
@@ -221,13 +245,28 @@ export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResp
         // The list can lag by a minute after a market opens, so each ladder is re-read from the single-event endpoint.
         const fresh = await inBatches(withLadder, 8, (e) => deps.markets.getEvent(e.ticker).catch(() => null));
         const events = fresh.filter((e): e is GeminiEvent => e !== null);
-        marketsCache = { at: now().getTime(), events };
+        const fingerprint = deps.live ? createHash('sha1').update(JSON.stringify(events)).digest('base64url') : '';
+        const changed = marketsCache !== null && marketsCache.fingerprint !== fingerprint;
+        marketsCache = { at: now().getTime(), events, fingerprint };
+        if (changed) deps.live?.publish('markets');
         return events;
       } finally {
         marketsLoading = null;
       }
     })();
     return marketsLoading;
+  }
+
+  async function ladderEvents(): Promise<GeminiEvent[]> {
+    const ttl = deps.marketsCacheMs ?? 5000;
+    const age = marketsCache ? now().getTime() - marketsCache.at : Infinity;
+    if (marketsCache && age < ttl) return marketsCache.events;
+    // Stale-while-revalidate: an answer that is a little old is served at once and refreshed behind the caller's back.
+    if (marketsCache && ttl > 0 && age < (deps.staleMarketsMs ?? 60_000)) {
+      void refreshMarkets().catch((err: unknown) => console.error(`[executor] market refresh failed: ${err instanceof Error ? err.message : String(err)}`));
+      return marketsCache.events;
+    }
+    return refreshMarkets();
   }
 
   const offerRule = () => ({
@@ -251,6 +290,7 @@ export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResp
       readOnly: deps.readOnly === true,
       users: deps.users.map((user) => ({ user, connected: deps.isConnected ? deps.isConnected(user) : null })),
       feeCoefCharged: deps.feeCoef,
+      streams: deps.live ? deps.live.count() : null,
       offerRule: offerRule(),
       time: now().toISOString(),
     };
@@ -276,7 +316,30 @@ export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResp
     };
   }
 
-  async function quote(q: URLSearchParams) {
+  // Identical quote requests share one answer: each costs two live order-book reads, and many pages look at the same pair.
+  const quotesInFlight = new Map<string, { at: number; promise: Promise<unknown> }>();
+  function quote(q: URLSearchParams): Promise<unknown> {
+    const key = [...q.entries()].sort().map(([k, v]) => `${k}=${v}`).join('&');
+    const ttl = deps.quoteCacheMs ?? 0;
+    const hit = quotesInFlight.get(key);
+    if (hit && (hit.at === 0 || now().getTime() - hit.at < ttl)) return hit.promise;
+    const promise = quoteNow(q);
+    const entry = { at: 0, promise };
+    quotesInFlight.set(key, entry);
+    const finish = (ok: boolean) => {
+      if (!ok || ttl <= 0) quotesInFlight.delete(key); // a failure is never reused; with no TTL only simultaneous callers share
+      else entry.at = now().getTime();
+      if (quotesInFlight.size > 200) for (const [k, e] of quotesInFlight) if (e.at !== 0 && now().getTime() - e.at >= ttl) quotesInFlight.delete(k);
+    };
+    // A quote whose book read failed still resolves (with depth.unavailable); it is degraded, so it is never reused either.
+    promise.then(
+      (r) => finish(!((r as { depth?: { unavailable?: unknown } } | null)?.depth && 'unavailable' in (r as { depth: object }).depth)),
+      () => finish(false),
+    );
+    return promise;
+  }
+
+  async function quoteNow(q: URLSearchParams) {
     const eventTicker = text(q.get('event'), 'event');
     const conditionSymbol = text(q.get('condition'), 'condition');
     const targetSymbol = text(q.get('target'), 'target');
@@ -431,17 +494,94 @@ export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResp
     return limiter.limited(fwd || req.socket.remoteAddress || 'unknown');
   };
 
+  // ---------------------------------------------------------------- live updates
+  const streamsByClient = new Map<string, number>();
+  const TOPICS = new Set(['markets', 'bets']);
+  function openStream(req: IncomingMessage, res: ServerResponse, headers: Record<string, string>, url: URL): void {
+    if (!deps.live) throw new HttpError(404, 'not_available', 'Live updates are not enabled on this server.');
+    const asked = (url.searchParams.get('topics') ?? 'markets,bets').split(',').map((t) => t.trim()).filter((t) => TOPICS.has(t));
+    if (asked.length === 0) throw new HttpError(400, 'unknown_topic', `Choose topics from: ${[...TOPICS].join(', ')}.`);
+    const fwd = deps.trustProxy ? String(req.headers['x-forwarded-for'] ?? '').split(',')[0]?.trim() : '';
+    const who = fwd || req.socket.remoteAddress || 'unknown';
+    if ((streamsByClient.get(who) ?? 0) >= (deps.maxStreamsPerClient ?? 8)) throw new HttpError(429, 'too_many_streams', 'Too many open live connections from this address.');
+    if (!deps.live.subscribe(req, res, headers, new Set(asked))) throw new HttpError(503, 'streams_full', 'The server is at its limit of live connections. Updates will arrive by refresh instead.');
+    streamsByClient.set(who, (streamsByClient.get(who) ?? 0) + 1);
+    res.on('close', () => {
+      const left = (streamsByClient.get(who) ?? 1) - 1;
+      if (left <= 0) streamsByClient.delete(who);
+      else streamsByClient.set(who, left);
+    });
+  }
+
+  /** A 200 GET answer with a validator, so an unchanged answer is a 304 and a large one travels gzipped. */
+  function sendCached(req: IncomingMessage, res: ServerResponse, headers: Record<string, string>, body: object): void {
+    const etag = etagOf(body);
+    const common = { ...headers, ETag: etag, 'Cache-Control': 'no-cache', Vary: 'Origin, Accept-Encoding' };
+    if (notModified(req.headers['if-none-match'], etag)) {
+      res.writeHead(304, common);
+      res.end();
+      return;
+    }
+    const { body: bytes, encoding } = encodeBody(JSON.stringify(body), req.headers['accept-encoding']);
+    res.writeHead(200, { ...common, ...(encoding ? { 'Content-Encoding': encoding } : {}), 'Content-Length': String(bytes.length) });
+    res.end(bytes);
+  }
+
+  // The market list is only re-read in the background while someone is watching it; idle servers do not poll Gemini.
+  let refresher: NodeJS.Timeout | undefined;
+  const unwatch = deps.live?.onWatch((topic, watching) => {
+    if (topic !== 'markets') return;
+    if (!watching) {
+      if (refresher) clearInterval(refresher);
+      refresher = undefined;
+      return;
+    }
+    if (refresher) return;
+    refresher = setInterval(() => void refreshMarkets().catch(() => undefined), deps.refreshMs ?? 3000);
+    refresher.unref();
+  });
+
+  // Finished bets are settled by themselves, so a bet flips to settled on the page when its event closes.
+  let autoSettle: NodeJS.Timeout | undefined;
+  if (deps.autoSettleMs && deps.autoSettleMs > 0 && !deps.readOnly) {
+    autoSettle = setInterval(() => {
+      if (!deps.ledger.data.bets.some((b) => b.status === 'open' || b.status === 'unhedged')) return;
+      settle().then(
+        (done) => (done.settled.length > 0 || done.needsReview.length > 0) && deps.live?.publish('bets'),
+        (err: unknown) => console.error(`[executor] auto-settle failed: ${err instanceof Error ? err.message : String(err)}`),
+      );
+    }, deps.autoSettleMs);
+    autoSettle.unref();
+  }
+
   const routes: Record<string, Partial<Record<'GET' | 'POST', (q: URLSearchParams, req: IncomingMessage) => Promise<unknown>>>> = {
     '/health': { GET: () => health() },
     '/markets': { GET: (q) => markets(q) },
     '/quote': { GET: (q) => quote(q) },
-    '/bets': { GET: (q) => listBets(q), POST: async (_q, req) => (refuseIfReadOnly(), placeBet(await readJson(req))) },
-    '/settle': { POST: async () => (refuseIfReadOnly(), settle()) },
+    '/bets': {
+      GET: (q) => listBets(q),
+      POST: async (_q, req) => {
+        refuseIfReadOnly();
+        try {
+          return await placeBet(await readJson(req));
+        } finally {
+          deps.live?.publish('bets'); // a bet that failed part-way is recorded too, so tell watchers either way
+        }
+      },
+    },
+    '/settle': {
+      POST: async () => {
+        refuseIfReadOnly();
+        const done = await settle();
+        if (done.settled.length > 0 || done.needsReview.length > 0) deps.live?.publish('bets');
+        return done;
+      },
+    },
     '/flow': { GET: (q) => flow(q) },
     '/reconcile': { GET: async (q) => (refuseIfReadOnly(), reconcileRoute(q)) },
   };
 
-  return (req, res) => {
+  const handler = (req: IncomingMessage, res: ServerResponse): void => {
     const origin = req.headers.origin;
     const allowed = origin === undefined || LOCAL_ORIGIN.test(origin) || (deps.corsOrigins ?? []).includes(origin);
     const headers: Record<string, string> = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', Vary: 'Origin' };
@@ -464,6 +604,7 @@ export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResp
 
         const url = new URL(req.url ?? '/', 'http://localhost');
         const path = url.pathname.replace(/\/+$/, '') || '/';
+        if (path === '/stream' && req.method === 'GET') return openStream(req, res, headers, url);
         const route = routes[path];
         if (!route) throw new HttpError(404, 'not_found', `No such endpoint: ${path}. Try /health, /markets, /quote, /bets, /settle, /flow or /reconcile.`);
         const handler = route[req.method as 'GET' | 'POST'];
@@ -479,6 +620,7 @@ export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResp
         if (result !== null && typeof result === 'object' && 'status' in result && 'body' in result) {
           return send((result as { status: number }).status, (result as { body: unknown }).body);
         }
+        if (req.method === 'GET' && result !== null && typeof result === 'object') return sendCached(req, res, headers, result);
         send(200, result);
       } catch (err) {
         if (err instanceof HttpError) return send(err.status, { error: err.message, code: err.code, ...err.extra });
@@ -489,4 +631,11 @@ export function createApi(deps: ApiDeps): (req: IncomingMessage, res: ServerResp
       }
     })();
   };
+  return Object.assign(handler, {
+    close(): void {
+      if (refresher) clearInterval(refresher);
+      if (autoSettle) clearInterval(autoSettle);
+      unwatch?.();
+    },
+  });
 }

@@ -46,6 +46,8 @@ export interface Config {
   trustProxy: boolean;
   /** GIVEN_READONLY=1: real Gemini prices and order books with no account. Quotes work; every order is refused. */
   readOnly: boolean;
+  /** GIVEN_AUTO_SETTLE_MS: settle finished bets by itself this often. 0 turns it off. Default 20000. */
+  autoSettleMs: number;
 }
 
 /** True for loopback addresses: the only ones that may run without the hosted-demo protections. */
@@ -119,6 +121,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     rateLimitPerMin: merged.GIVEN_RATE_LIMIT_PER_MIN ? Number(merged.GIVEN_RATE_LIMIT_PER_MIN) : null,
     trustProxy: merged.GIVEN_TRUST_PROXY === '1',
     readOnly: merged.GIVEN_READONLY === '1',
+    autoSettleMs: merged.GIVEN_AUTO_SETTLE_MS !== undefined ? Number(merged.GIVEN_AUTO_SETTLE_MS) : 20_000,
   };
 }
 
