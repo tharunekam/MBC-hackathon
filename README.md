@@ -57,7 +57,7 @@ app **refuses** pairs that cost too much over fair (all-in 95¢ or more, or more
 web (React/Vite)  ──►  executor (Node)  ──►  Gemini REST + WebSocket (sandbox)
       │                    │
       │                    ▼ bet details, read by the chain service
-      └────────────►  chain service (Node)  ──►  Solana devnet (Memo program)
+      └────────────►  chain service (Node)  ──►  Solana devnet (Memo + our program)
                            ▲                            │ program logs
                            │ POST /hooks/quicknode      ▼
                            └──────────────────  QuickNode Stream (filter + webhook)
@@ -65,10 +65,11 @@ web (React/Vite)  ──►  executor (Node)  ──►  Gemini REST + WebSocket
 
 | Package | Role |
 |---|---|
-| `executor/` | Quotes, the two-leg bet with depth guard and hedge sizing, a ledger written before every order, settlement, and **reconcile to the cent against Gemini** (it counts Gemini's YES/NO netting). 132 tests. |
-| `chain/` | Commit and reveal on Solana, the QuickNode webhook, the leaderboard, a public proof endpoint. 105 tests. |
-| `web/` | The app: a probability ladder with two draggable markers, the four-number quote, bets, leaderboard, proof page. Pages update on their own over server-sent events. 80 tests. |
-| `scripts/` | The dev stack, the hosted-demo server (`serve.mjs`: the built app plus an allowlist of API paths on one port), the deploy checker, the browser end-to-end test, and the rehearsals. 17 tests. |
+| `executor/` | Quotes, the two-leg bet with depth guard and hedge sizing, a ledger written before every order, settlement, and **reconcile to the cent against Gemini** (it counts Gemini's YES/NO netting). A sandbox liquidity seeder, disclosed (below). 169 tests. |
+| `chain/` | Commit and reveal on Solana, the QuickNode webhook, the leaderboard, a public proof endpoint. 115 tests. |
+| `receipts-program/` | `given_receipts`, our Solana program (Anchor): checks each reveal against its commit on chain, refuses a repeat, keeps each handle's score. Deployed on devnet, interface published on chain. 8 tests against the built program. |
+| `web/` | The app: a probability ladder with two draggable markers, the four-number quote, bets, leaderboard, proof page. Pages update on their own over server-sent events. 109 tests. |
+| `scripts/` | The dev stack, the hosted-demo server (`serve.mjs`: the built app plus an allowlist of API paths on one port), the deploy checker, the browser end-to-end test, and the rehearsals. A recorder and replayer for the stage (`docs/DEPLOY.md`). 45 tests. |
 | `docs/` | `PLAN.md`, `GIVEN.md` (decision log), `CONTRACTS.md` (interfaces), `GEMINI_API_NOTES.md`, `SUBMISSION.md`. |
 
 ### Gemini endpoints used
@@ -116,10 +117,12 @@ the fair price at entry, summed. Luck on a few calls washes out.
   Solana and verifies it, so a forged delivery cannot add a row. Solana Streams cannot backfill and pause after repeated
   failed deliveries, so an RPC backfill runs every minute as a safety net.
 
-Status: the receiver is built and tested (authentication, replay window, deduplication), and `npm run quicknode` creates and
-manages the Stream and sends signed test deliveries. **The Stream itself is not created yet** and the filter has not been run
-against a live Stream. The receiver has been exercised with real devnet
-signatures. A real commit and reveal with our own key has run on devnet, both as Memo records and through the Anchor program
+Status: the receiver is built and tested (authentication, replay window, deduplication, gzipped deliveries), and
+`npm run quicknode` tests the filter on QuickNode, creates and manages the Stream, and sends signed test deliveries. **The
+Stream itself is not created yet** and the filter has not run on a live Stream. Its field names and the signature check
+were confirmed against QuickNode's documentation on 2026-11-18, and the filter is tested on the log lines of real devnet
+records. A running devnet Stream uses about 10.8M credits a day, so it runs only for tests and demos. The receiver has been
+exercised with real devnet signatures. A real commit and reveal with our own key has run on devnet, both as Memo records and through the Anchor program
 (`chain/README.md` lists what is verified and what is not).
 
 ## Run it
@@ -132,8 +135,9 @@ npm run dev         # whole stack with no keys and no SOL: local test exchange +
 npm run dev:quotes  # REAL Gemini sandbox prices and order books with no keys; every order is refused (read-only)
 node scripts/seed-history.mjs all   # optional: a win, a loss and a refund, committed and revealed
 npm run stop        # stop this project's servers
-npm test            # 334 tests: executor 132, chain service 105, web 80, hosted-demo server 17
-npm run e2e         # the production build in real Chrome (15 checks; e2e:sabotage must fail)
+npm test            # 438 tests: executor 169, chain service 115, web 109, hosted-demo server and scripts 45
+npm run e2e         # the production build in real Chrome (17 checks; e2e:sabotage must fail)
+npm run e2e:replay  # records a bet through the real app, then replays it with nothing running behind it (7 checks)
 npm run rehearse    # (also rehearse:chaos) the whole golden path through the real clients, Gemini and Solana stood in on the wire
 npm run preflight   # what is ready for the real thing and what is missing, with the fix for each
 npm run build && npm start   # the hosted-demo server on one port (see docs/DEPLOY.md); npm run check:deploy -- <url> checks a deployment
@@ -153,6 +157,12 @@ address unless it is on the sandbox with a pinned account, a stake cap and a rat
 wide (production's median is about 4¢), so on the sandbox the value rule would refuse almost everything; `npm run
 start:demo` in `executor/` waives the markup check **on the sandbox only**, and the verdict shown is never softened.
 
+**The liquidity seeder, disclosed.** `executor/src/seeder.ts` can rest tight two-sided quotes on the sandbox from a
+second sandbox account of ours, so the same rules can run with the waiver off against a production-like book. Those
+quotes are ours: a bet filled by them is two of our own test accounts trading with each other, and is not order flow.
+Whenever it runs the app shows "Seeded prices" and says so in the footer. It is built and tested but **has not been run
+on the sandbox yet** (it needs a second sandbox account), so nothing shown so far used it.
+
 ## What has been run for real
 
 On 2026-11-18 the whole stack ran on the **real Gemini sandbox and real Solana devnet** together: three bets placed from the
@@ -169,6 +179,8 @@ against a NO on the same contract and pays $1 a pair early, which the reconcile 
 - Gemini OAuth sign-in. Bets use demo accounts. Production needs Gemini's review.
 - The QuickNode Stream itself (above). Without it the leaderboard fills from an RPC backfill, about three minutes behind.
 - Production has never been run. Gemini's sandbox is not production: its books are far thinner and wider.
-- Maker-first pricing, sports ladders and a sandbox liquidity seeder. See `docs/PLAN.md`.
+- Maker-first pricing and sports ladders. See `docs/PLAN.md`.
+- Built but never run against the real sandbox: the liquidity seeder (it needs a second sandbox account) and a replay
+  of a real session (the recorder and replayer work on the local test exchange; a real session has not been recorded).
 
 The earlier "Living Tokens" draft is preserved at the git tag `living-tokens-draft`.

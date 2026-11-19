@@ -201,10 +201,28 @@ export class ChainService {
     });
   }
 
+  /**
+   * With the program, a call has its own account on chain, so "did my commit or reveal land?" is one lookup, however
+   * long ago it happened and whether or not recent history can be read. Every signature found goes through the same
+   * verification as any other record. Without the program this does nothing and the history scan below is the way.
+   */
+  private async readOwnRecord(row: CallRow): Promise<void> {
+    if (!this.chain.recordsFor) return;
+    try {
+      for (const signature of await this.chain.recordsFor(row.hash)) await this.ingest(signature, 'rpc');
+    } catch (err) {
+      this.log(`[chain] could not read the on-chain record of a call: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   /** The commit for this pending row is on chain already (a previous attempt landed). If so, mark it committed. */
   private async promoteIfLanded(row: CallRow): Promise<boolean> {
     const find = () => Object.values(this.store.data.commits).find((c) => c.hash === row.hash && c.handle === row.handle);
     let seen = find();
+    if (!seen) {
+      await this.readOwnRecord(row);
+      seen = find();
+    }
     if (!seen) {
       try {
         await this.backfill(50, 3);
@@ -299,6 +317,10 @@ export class ChainService {
   private async adoptReveal(row: CallRow, checkChain: boolean): Promise<boolean> {
     const find = () => Object.values(this.store.data.reveals).find((r) => r.commitSignature === row.commitSignature && r.verified);
     let seen = find();
+    if (!seen && checkChain) {
+      await this.readOwnRecord(row);
+      seen = find();
+    }
     if (!seen && checkChain) {
       try {
         await this.backfill(50, 3);

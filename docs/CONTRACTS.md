@@ -30,7 +30,8 @@ sandbox.
 | `GET /bets` | My bets, chain service | Newest first. The chain service reads bets from here and never from the browser |
 | `POST /settle` | "Check results" | |
 | `GET /flow` | Proof page | |
-| `GET /reconcile` | Proof page | **New.** Ledger vs Gemini: orders found, cash tied out |
+| `GET /reconcile` | Proof page | **New.** Ledger vs Gemini: orders found, cash tied out. `betsNeedingReview` are bets Gemini settled without a plain yes or no; `betsResolvedByHand` are those whose payout a person has entered |
+| `POST /review` | operator only | `{ betId, payout, note }` with `X-Admin-Token`: records what Gemini paid for a `needs_review` bet so the cash ties out. 404 unless `GIVEN_ADMIN_TOKEN` is set; never forwarded by the hosted server. The bet gains `review.resolved` and is still never scored |
 
 ### Live updates and caching (both services)
 

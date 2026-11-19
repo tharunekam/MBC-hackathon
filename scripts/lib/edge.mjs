@@ -132,16 +132,43 @@ export function serveStatic(req, res, found) {
   else stream.pipe(res);
 }
 
+const TAP_LIMIT = 4 * 1024 * 1024;
+
 /**
  * Forwards one request to a backend on loopback and streams the answer back unchanged (so server-sent events flow).
  * The client address is replaced, never appended to, so the backend's per-client limits see the real client and a caller
  * cannot choose it.
  */
-export function proxy(req, res, { port, path, client }) {
+export function proxy(req, res, { port, path, client, tap }) {
   const headers = { ...req.headers, host: `127.0.0.1:${port}`, 'x-forwarded-for': client };
   delete headers.connection;
+  // `tap(requestBody, status, responseBody)` is how a session is recorded (scripts/lib/replay.mjs). So that what is recorded
+  // is the whole plain answer, the backend is asked for it uncompressed and unconditionally. Never used for streams.
+  const asked = [];
+  if (tap) {
+    delete headers['if-none-match'];
+    delete headers['if-modified-since'];
+    headers['accept-encoding'] = 'identity';
+    req.on('data', (c) => asked.push(c));
+  }
   const upstream = httpRequest({ host: '127.0.0.1', port, path: path + (req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''), method: req.method, headers }, (up) => {
     res.writeHead(up.statusCode ?? 502, up.headers);
+    if (tap) {
+      const answered = [];
+      let size = 0;
+      up.on('data', (c) => {
+        size += c.length;
+        if (size <= TAP_LIMIT) answered.push(c);
+      });
+      up.on('end', () => {
+        if (size > TAP_LIMIT) return; // far larger than any answer of ours: not worth a broken recording
+        try {
+          tap(Buffer.concat(asked).toString('utf8'), up.statusCode ?? 0, Buffer.concat(answered).toString('utf8'));
+        } catch {
+          /* recording must never break the request it is recording */
+        }
+      });
+    }
     up.pipe(res);
     res.on('close', () => up.destroy());
   });

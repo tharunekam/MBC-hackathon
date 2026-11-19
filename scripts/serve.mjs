@@ -12,17 +12,22 @@
  *   quotes  real Gemini sandbox prices and order books, no account: bets are switched off. In-memory test chain.
  *   fake    the local test exchange and the in-memory test chain. Staging only; it labels itself as a test everywhere.
  *   auto    (default) live when the keys are present, otherwise quotes. The page says which one it is.
+ *   replay  no executor, no chain service, no keys, no network: the app is answered from a session recorded earlier
+ *           (GIVEN_REPLAY=<file>). The stage fallback. The page says "Replay" and when it was recorded.
+ *
+ * GIVEN_RECORD=<file> (any mode but replay) records the session for that: every answer the app receives, as it happens.
  *
  * Hosted protections are always on here: one pinned account, a stake cap, a per-client rate limit, and only the paths
  * listed in scripts/lib/edge.mjs reach the backends. Set GIVEN_PUBLIC_URL to the address people will use (it is the one
  * browser origin the backends accept). Build the web app first:  npm run build
  */
 import { spawn } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { clientAddress, proxy, resolveStatic, route, serveStatic } from './lib/edge.mjs';
+import { Replayer, SNAPSHOT, STREAMS, entry, header, parseRecording, recordable } from './lib/replay.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const env = process.env;
@@ -67,7 +72,28 @@ if (env.GIVEN_AUTHORITY_KEY && !existsSync(keyFile)) {
 const haveAuthority = existsSync(keyFile);
 
 let mode = env.GIVEN_MODE ?? 'auto';
-if (!['auto', 'live', 'quotes', 'fake'].includes(mode)) fail(`GIVEN_MODE must be auto, live, quotes or fake, not "${mode}".`);
+if (!['auto', 'live', 'quotes', 'fake', 'replay'].includes(mode)) fail(`GIVEN_MODE must be auto, live, quotes, fake or replay, not "${mode}".`);
+
+// A recorded session to replay with nothing behind it, or a file to record this session into (scripts/lib/replay.mjs).
+let replayer = null;
+if (mode === 'replay') {
+  if (!env.GIVEN_REPLAY) fail('replay mode needs GIVEN_REPLAY: the file a session was recorded into (run once with GIVEN_RECORD=<file>).');
+  try {
+    replayer = new Replayer(parseRecording(readFileSync(resolve(env.GIVEN_REPLAY), 'utf8')), { steps: Number(env.GIVEN_REPLAY_STEPS ?? 12) });
+  } catch (err) {
+    fail(`the recording at ${env.GIVEN_REPLAY} cannot be used: ${err.message}`);
+  }
+}
+let record = null;
+if (env.GIVEN_RECORD && mode !== 'replay') {
+  const file = resolve(env.GIVEN_RECORD);
+  if (existsSync(file) && statSync(file).size > 0) fail(`${file} already holds a recording. Move it or choose another name: two sessions in one file cannot be replayed.`);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, `${header(new Date().toISOString(), `GIVEN_MODE=${mode}`)}\n`, { mode: 0o600 });
+  let seq = 0;
+  record = (method, url, asked, status, answered) => appendFileSync(file, `${entry(++seq, new Date().toISOString(), method, url, asked, status, answered)}\n`);
+  console.log(`Recording this session into ${file} (what the page is shown; never a key or a salt).`);
+}
 if (mode === 'auto') mode = haveGeminiKeys && haveAuthority ? 'live' : 'quotes';
 if (mode === 'live') {
   if (!haveGeminiKeys) fail('live mode needs GEMINI_API_KEY and GEMINI_API_SECRET (Gemini sandbox keys).');
@@ -76,6 +102,16 @@ if (mode === 'live') {
 }
 if (mode === 'fake' && env.GIVEN_I_KNOW_THIS_IS_A_TEST !== '1' && HOST !== '127.0.0.1') {
   fail('fake mode shows a local test exchange and is only for staging. Set GIVEN_I_KNOW_THIS_IS_A_TEST=1 to run it on a public address.');
+}
+
+// The liquidity seeder (executor/src/seeder.ts): our own SECOND sandbox account resting tight quotes, so bets fill at a
+// production-like price and size. Opt-in. Running it here is what switches the app's "Seeded prices" label on, so the
+// two cannot come apart.
+const seeding = env.GIVEN_SEEDER === '1';
+if (seeding) {
+  if (mode !== 'live') fail('GIVEN_SEEDER=1 only makes sense in live mode: the seeder rests orders on the Gemini sandbox.');
+  if (!env.GEMINI_USER_SEEDER_KEY || !env.GEMINI_USER_SEEDER_SECRET) fail('GIVEN_SEEDER=1 needs GEMINI_USER_SEEDER_KEY and GEMINI_USER_SEEDER_SECRET: a second sandbox account, not the one that bets.');
+  if (env.GEMINI_USER_SEEDER_KEY === env.GEMINI_API_KEY) fail('The seeder must use a different sandbox account from the one that bets.');
 }
 
 const shared = {
@@ -101,6 +137,8 @@ const services = [
       ...(mode === 'quotes' ? { GIVEN_READONLY: '1' } : {}),
       // The sandbox's books are about 20 cents wide, so without this nothing passes the value rule there. Sandbox only.
       ...(mode !== 'fake' ? { GIVEN_SANDBOX_WAIVE_MARKUP: env.GIVEN_SANDBOX_WAIVE_MARKUP ?? '1' } : {}),
+      // /health then says seeded: true and the app labels its prices.
+      ...(seeding ? { GIVEN_SEEDED: '1' } : {}),
     },
   },
   {
@@ -123,6 +161,7 @@ const services = [
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const children = [];
+let seeder = null;
 let shuttingDown = false;
 let edge = null;
 async function shutdown(code = 0) {
@@ -132,11 +171,16 @@ async function shutdown(code = 0) {
   edge?.closeAllConnections?.();
   for (const c of children) c.kill('SIGTERM');
   await sleep(1200);
+  // The seeder cancels every order it has resting before it exits; give it time to finish that.
+  for (let waited = 0; seeder && seeder.exitCode === null && waited < 8000; waited += 200) await sleep(200);
   for (const c of children) if (c.exitCode === null) c.kill('SIGKILL');
   process.exit(code);
 }
 process.on('SIGINT', () => shutdown(0));
 process.on('SIGTERM', () => shutdown(0));
+
+// A replay starts nothing: there is no exchange and no chain behind it, only the recording.
+if (replayer) services.length = 0;
 
 for (const s of services) {
   const child = spawn(s.cmd[0], s.cmd.slice(1), { cwd: resolve(ROOT, s.cwd), env: { ...env, ...s.env }, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -178,6 +222,52 @@ for (const s of services) {
   }
 }
 
+/**
+ * While recording: reads the main pages straight from the backends and adds them to the recording, at the start and after
+ * every step. A replay can then show any of them at any point, whatever the person recording happened to look at.
+ */
+async function snapshot() {
+  if (!record) return;
+  for (const url of SNAPSHOT) {
+    const to = route('GET', url);
+    if (!to) continue;
+    try {
+      const r = await fetch(`http://127.0.0.1:${to.target === 'executor' ? EXEC_PORT : CHAIN_PORT}${to.path}`, { signal: AbortSignal.timeout(8000) });
+      record('GET', url, '', r.status, await r.text());
+    } catch {
+      /* a page that could not be read just now is simply not in this snapshot */
+    }
+  }
+}
+await snapshot();
+
+// The seeder starts once the backends are up. The demo does not depend on it (bets still work against the sandbox's own
+// books), so if it stops it is restarted a while later and never takes the server down with it.
+function startSeeder(attempt = 0) {
+  const child = spawn('node', ['src/seed.ts', '--user', 'seeder'], { cwd: resolve(ROOT, 'executor'), env: { ...env, GIVEN_PINNED_USER: shared.GIVEN_PINNED_USER }, stdio: ['ignore', 'pipe', 'pipe'] });
+  seeder = child;
+  children.push(child);
+  for (const stream of [child.stdout, child.stderr]) {
+    let buf = '';
+    stream.on('data', (d) => {
+      buf += d;
+      const lines = buf.split('\n');
+      buf = lines.pop() ?? '';
+      for (const l of lines) if (l.trim()) console.log(`[seed ] ${l}`);
+    });
+  }
+  child.on('exit', (code) => {
+    children.splice(children.indexOf(child), 1);
+    if (shuttingDown) return;
+    if (attempt >= 20) return void console.error('[seed ] the seeder keeps stopping; not restarting it again. Bets carry on against the sandbox\'s own books.');
+    console.error(`[seed ] stopped with code ${code}; starting it again in 30 seconds.`);
+    setTimeout(() => {
+      if (!shuttingDown) startSeeder(attempt + 1);
+    }, 30_000).unref();
+  });
+}
+if (seeding) startSeeder();
+
 // ------------------------------------------------------------------------------------------------ the public server
 
 edge = createServer((req, res) => {
@@ -185,6 +275,11 @@ edge = createServer((req, res) => {
   const path = url.split('?')[0];
 
   if (path === '/healthz') {
+    if (replayer) {
+      // Nothing is behind a replay to be unhealthy; say what it is and how far through the recording it has got.
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+      return void res.end(JSON.stringify({ ok: true, mode, recordedAt: replayer.meta.startedAt, ...replayer.progress() }));
+    }
     void Promise.all([healthOf(EXEC_PORT), healthOf(CHAIN_PORT)]).then(([e, c]) => {
       const ok = Boolean(e && c);
       res.writeHead(ok ? 200 : 503, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -194,7 +289,31 @@ edge = createServer((req, res) => {
   }
 
   const hit = route(req.method ?? 'GET', path);
-  if (hit) return proxy(req, res, { port: hit.target === 'executor' ? EXEC_PORT : CHAIN_PORT, path: hit.path, client: clientAddress(req.socket.remoteAddress, req.headers['x-forwarded-for'], TRUST_PROXY) });
+  if (hit && replayer) {
+    // Answered from the recording. Live update streams are not part of one: without them the page refreshes by itself.
+    const reply = (status, body) => {
+      res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Given-Replay': '1' });
+      res.end(JSON.stringify(body));
+    };
+    if (STREAMS.has(path.replace(/\/+$/, ''))) return reply(404, { error: 'Live updates are not part of a recording.', code: 'not_in_recording' });
+    const asked = [];
+    req.on('data', (c) => asked.push(c));
+    req.on('end', () => {
+      const a = replayer.answer(req.method ?? 'GET', url, Buffer.concat(asked).toString('utf8'));
+      reply(a.status, a.body);
+    });
+    return;
+  }
+  if (hit) {
+    const tap =
+      record && recordable(path)
+        ? (asked, status, answered) => {
+            record(req.method ?? 'GET', url, asked, status, answered);
+            if (req.method !== 'GET') void snapshot(); // a step was taken: note what every main page shows now
+          }
+        : undefined;
+    return proxy(req, res, { port: hit.target === 'executor' ? EXEC_PORT : CHAIN_PORT, path: hit.path, client: clientAddress(req.socket.remoteAddress, req.headers['x-forwarded-for'], TRUST_PROXY), tap });
+  }
   if (path.startsWith('/api/') || path.startsWith('/chain/')) {
     res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     return void res.end(JSON.stringify({ error: 'No such endpoint.', code: 'not_found' }));
@@ -216,8 +335,14 @@ edge.on('clientError', (_e, socket) => socket.destroy());
 edge.requestTimeout = 0;
 edge.keepAliveTimeout = 65_000;
 edge.listen(PORT, HOST, () => {
-  const label = { live: 'Gemini SANDBOX + Solana DEVNET', quotes: 'real Gemini sandbox prices, bets switched off', fake: 'LOCAL TEST EXCHANGE (staging)' }[mode];
+  const label = { live: 'Gemini SANDBOX + Solana DEVNET', quotes: 'real Gemini sandbox prices, bets switched off', fake: 'LOCAL TEST EXCHANGE (staging)', replay: 'A RECORDED SESSION, nothing live behind it' }[mode];
   console.log(`\nGiven is up on http://${HOST}:${PORT}  [${mode}: ${label}]`);
+  if (replayer) {
+    const p = replayer.progress();
+    console.log(`Replaying the session recorded ${replayer.meta.startedAt}: ${p.steps} step(s). First: ${p.next ?? 'none (it only looked)'}.`);
+    console.log('The page says "Replay". Say so on stage too: it shows what happened then, and places nothing now.');
+  }
   console.log(`Public address ${PUBLIC_URL || '(GIVEN_PUBLIC_URL not set)'}   data: executor ${execData}, chain ${chainData}`);
+  if (seeding) console.log('SEEDING: our own second sandbox account is resting quotes, and the app says "Seeded prices". Say so wherever this is shown.');
   if (mode === 'quotes' && !haveGeminiKeys) console.log('No Gemini keys were found, so this is the quotes-only demo. Add GEMINI_API_KEY / GEMINI_API_SECRET and the authority key for live bets.');
 });

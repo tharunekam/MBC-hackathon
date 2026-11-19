@@ -38,6 +38,12 @@ expired blockhash. `SolanaChain(rpcUrl, keypair, programId?, options?)`; his cal
    signatures `5P8xNpVv…` and `4FkLnjHR…`. See the build status in `docs/PLAN.md`.
 2. **The QuickNode Stream** delivering real logs. The webhook route, authentication and ingestion are tested, including
    with real devnet signatures; the Stream itself does not exist yet.
-3. **That the deployed program equals the source tree.** Someone should run a verifiable build before the submission
-   claims it, and decide who holds the upgrade authority: an upgradeable program can be changed by whoever holds it.
-4. **The program's Rust tests** need the Anchor toolchain (not installed here); I ran none of them.
+3. ~~That the deployed program equals the source tree.~~ **Checked 2026-11-18** on the machine that deployed it: the
+   program downloaded from devnet is byte for byte the file the committed source builds there (SHA-256 `5462d1fc…4ac7`;
+   `receipts-program/scripts/verify-deployed.sh` repeats the check), and a clean checkout built there gives the same
+   bytes. It is not a Docker-reproducible build, so another
+   machine may not get the same bytes; `receipts-program/README.md` lists the toolchain. The program's interface is
+   published on chain. **Still to decide: the upgrade authority.** It is the deploy key on Victor's machine; the plan
+   is to make the program final after the feature freeze (command and consequences in that README).
+4. ~~The program's Rust tests.~~ **Run 2026-11-17 and again 2026-11-18** on the machine with the toolchain: 8 pass
+   against the built program. They are not in CI, which has no Solana toolchain.

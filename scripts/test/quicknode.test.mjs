@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { addMissing, buildStreamBody, creditEstimate, sampleDelivery, signDelivery } from '../lib/quicknode.mjs';
+import { addMissing, buildStreamBody, creditEstimate, filterResult, mentions, sampleDelivery, signDelivery, testFilterBody, validStreamId } from '../lib/quicknode.mjs';
 import { hookAuthentic } from '../../chain/src/webhook.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -45,8 +45,38 @@ describe('the Stream we ask QuickNode for', () => {
 
   it('estimates what an always-on Stream costs', () => {
     const { blocks, credits } = creditEstimate(24);
-    assert.equal(blocks, 216_000);
-    assert.equal(credits, 6_480_000);
+    // Devnet measured at 4.17 slots a second on 2026-11-18, not the 2.5 a 400 ms slot would give.
+    assert.equal(blocks, 360_000);
+    assert.equal(credits, 10_800_000);
+    assert.ok(credits > 10_000_000, 'a day of running is more than the whole free trial');
+  });
+
+  it('asks for enough retries that a restart of the service does not pause the Stream', () => {
+    const d = buildStreamBody({ webhookUrl: 'https://given.example.com/chain/hooks/quicknode', filterSource: 'function main(stream) { return null; }', hookToken: 'h'.repeat(32), securityToken: 's'.repeat(32) }).destination_attributes;
+    assert.ok(d.max_retry * d.retry_interval_sec >= 30, `${d.max_retry} tries ${d.retry_interval_sec}s apart`);
+  });
+
+  it('a stream id must be a full id: an empty one would address every stream on the account', () => {
+    assert.equal(validStreamId('3f2a9c1e-7b4d-4e2a-9c1f-0a1b2c3d4e5f'), true);
+    for (const bad of ['', ' ', '..', 'abc', '3f2a9c1e-7b4d-4e2a-9c1f-0a1b2c3d4e5f/', undefined, null, 7]) assert.equal(validStreamId(bad), false, String(bad));
+  });
+
+  it('a filter test names the network and dataset, sends the filter as base64 and the block as text', () => {
+    const body = testFilterBody('function main() {}', 523513407);
+    assert.deepEqual(body, { network: 'solana-devnet', dataset: 'programs_with_logs', filter_function: Buffer.from('function main() {}').toString('base64'), block: '523513407' });
+    assert.throws(() => testFilterBody('x', -1));
+    assert.throws(() => testFilterBody('x', 1.5));
+  });
+
+  it('a filter test answer is read whether QuickNode returns JSON text or a value, and searched for our record', () => {
+    assert.deepEqual(filterResult({ logs: [], result: '[{"sig":"abc","slot":5}]' }), [{ sig: 'abc', slot: 5 }]);
+    assert.deepEqual(filterResult({ logs: [], result: [{ sig: 'abc' }] }), [{ sig: 'abc' }]);
+    assert.equal(filterResult({ logs: [], result: 'null' }), null);
+    assert.equal(filterResult({ logs: [] }), null);
+    assert.equal(mentions([{ sig: 'abc', slot: 5 }], 'abc'), true);
+    assert.equal(mentions({ data: [[{ sig: 'abc' }]] }, 'abc'), true);
+    assert.equal(mentions([{ sig: 'abcd' }], 'abc'), false);
+    assert.equal(mentions(null, 'abc'), false);
   });
 
   it('adds only the keys that are missing and leaves existing values alone', () => {

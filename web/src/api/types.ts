@@ -171,6 +171,11 @@ export interface Bet {
     pnl: number;
     settledAt: string;
   };
+  /**
+   * Present when Gemini settled the market without a plain yes or no (`needs_review`). `resolved` is what it actually
+   * paid, read from the account and entered by hand. Such a bet is never scored.
+   */
+  review?: { reason: string; resolved?: { payout: number; pnl: number; recordedAt: string; note: string } };
   scorable: boolean;
   flow: BetFlow;
 }
@@ -211,6 +216,10 @@ export interface HealthResponse {
   sandbox: boolean;
   /** True when the executor has no Gemini keys: live prices and quotes, but every order is refused. */
   readOnly?: boolean;
+  /** True when our own liquidity seeder is quoting on the sandbox, so some of the prices shown are ours. */
+  seeded?: boolean;
+  /** Present when the server is playing back a recorded session with nothing live behind it, and when it was recorded. */
+  replay?: { recordedAt: string };
   users: { user: string; connected: boolean | null }[];
   time: string;
 }
@@ -246,6 +255,8 @@ export interface ReconcileResponse {
   actualCash: number;
   cashDifference: number | null;
   betsNeedingReview: string[];
+  /** Bets Gemini settled without a plain yes or no whose payout was read from the account and entered by hand. */
+  betsResolvedByHand?: string[];
   ok: boolean;
 }
 

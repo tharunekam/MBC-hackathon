@@ -12,6 +12,7 @@
     "start:demo": "GIVEN_SANDBOX_WAIVE_MARKUP=1 node src/server.ts",
     "start:fake": "node test/serve-fake.ts",
     "cli": "node src/cli.ts",
+    "seed": "node src/seed.ts",
     "test": "node --test \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit"
   },

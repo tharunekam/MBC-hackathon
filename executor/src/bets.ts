@@ -429,6 +429,46 @@ export interface SettleResult {
 /** True when a bet's result may be used for scoring: settled with a clean yes/no on both contracts. */
 export const isScorable = (bet: BetRecord): boolean => bet.status === 'settled' && bet.settlement !== undefined;
 
+/** Why a payout could not be recorded by hand. */
+export class ReviewError extends Error {
+  readonly code: 'unknown_bet' | 'not_in_review' | 'bad_payout' | 'bad_note';
+  constructor(code: ReviewError['code'], message: string) {
+    super(message);
+    this.name = 'ReviewError';
+    this.code = code;
+  }
+}
+
+/** The most a bet's two legs could ever pay: every contract it holds, at a dollar each. */
+export function maxPayout(bet: BetRecord): number {
+  const yes = netHolding(bet, bet.target.symbol, 'yes').quantity;
+  const no = netHolding(bet, bet.condition.symbol, 'no').quantity;
+  return clean(Math.max(0, yes) + Math.max(0, no));
+}
+
+/**
+ * Records, by hand, what Gemini actually paid for a bet it settled WITHOUT a clean yes/no (a void or fractional
+ * settlement). This service cannot work that payout out, so until someone reads it off the account the cash check is off
+ * by exactly that amount. Only a bet in needs_review can be given one; the note says where the number came from.
+ *
+ * It does not make the bet scorable: it stays needs_review, has no `settlement`, and no call is ever revealed for it.
+ * If Gemini later reports a clean result, settleBets replaces this with the computed payout.
+ */
+export function recordReviewedPayout(ledger: Ledger, betId: string, payout: number, note: string, now: () => Date = () => new Date()): BetRecord {
+  const bet = ledger.data.bets.find((b) => b.id === betId);
+  if (!bet) throw new ReviewError('unknown_bet', `No bet ${betId}.`);
+  if (bet.status !== 'needs_review' || !bet.review) throw new ReviewError('not_in_review', `Bet ${betId} is "${bet.status}". Only a bet Gemini settled without a clean result can be given a payout by hand.`);
+  if (typeof payout !== 'number' || !Number.isFinite(payout) || payout < 0) throw new ReviewError('bad_payout', 'The payout must be a dollar amount of zero or more.');
+  const most = maxPayout(bet);
+  if (payout > most + 0.005) throw new ReviewError('bad_payout', `This bet holds ${most} contracts in all, so it cannot have paid more than $${most.toFixed(2)}. Check the amount.`);
+  const text = typeof note === 'string' ? note.trim() : '';
+  if (text.length < 5 || text.length > 300) throw new ReviewError('bad_note', 'Say where the amount came from (5 to 300 characters), for whoever checks this later.');
+  const paid = clean(Math.round(payout * 100) / 100);
+  bet.review.resolved = { payout: paid, pnl: clean(paid - bet.cost), recordedAt: now().toISOString(), note: text };
+  ledger.save();
+  return bet;
+}
+
 /**
  * Records results once Gemini has resolved both contracts.
  *
@@ -466,7 +506,14 @@ export async function settleBets(deps: Deps): Promise<SettleResult> {
         pnl: clean(payout - bet.cost),
         settledAt: now().toISOString(),
       };
-      if (bet.status === 'needs_review') bet.note = 'Gemini reported a clean result after this bet had been flagged for review.';
+      if (bet.status === 'needs_review') {
+        bet.note = 'Gemini reported a clean result after this bet had been flagged for review.';
+        // A payout recorded by hand gives way to the computed one. It is never counted beside it.
+        if (bet.review?.resolved) {
+          bet.note += ` It replaced a payout of $${bet.review.resolved.payout.toFixed(2)} recorded by hand.`;
+          bet.review.resolved = undefined;
+        }
+      }
       bet.status = 'settled';
       result.settled.push(bet);
       continue;

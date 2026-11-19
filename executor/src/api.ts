@@ -12,9 +12,9 @@
  *   GET  /flow[?user=]
  *   GET  /reconcile[?user=]
  */
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { BetRefused, isScorable, placeConditionalBet, settleBets } from './bets.ts';
+import { BetRefused, ReviewError, isScorable, placeConditionalBet, recordReviewedPayout, settleBets } from './bets.ts';
 import type { Exchange } from './exchange.ts';
 import { betFlow, flowTotals } from './flow.ts';
 import type { GeminiEvent } from './gemini/types.ts';
@@ -56,6 +56,10 @@ export interface ApiDeps {
   feeCoef: number;
   /** Sandbox demo switch; see config.waiveMarkup. */
   waiveMarkup: boolean;
+  /** Our own seeder is quoting on this sandbox (config.seeded). Reported by /health so the app can say so. */
+  seeded?: boolean;
+  /** GIVEN_ADMIN_TOKEN. Without it POST /review (record a payout by hand) answers 404. */
+  adminToken?: string;
   /** Extra allowed browser origins besides localhost. */
   corsOrigins?: string[];
   /** How long a /markets answer is reused, in ms. Default 5000. */
@@ -288,6 +292,7 @@ export function createApi(deps: ApiDeps): ApiHandler {
       venue,
       sandbox: deps.isSandbox,
       readOnly: deps.readOnly === true,
+      seeded: deps.seeded === true,
       users: deps.users.map((user) => ({ user, connected: deps.isConnected ? deps.isConnected(user) : null })),
       feeCoefCharged: deps.feeCoef,
       streams: deps.live ? deps.live.count() : null,
@@ -575,6 +580,29 @@ export function createApi(deps: ApiDeps): ApiHandler {
         const done = await settle();
         if (done.settled.length > 0 || done.needsReview.length > 0) deps.live?.publish('bets');
         return done;
+      },
+    },
+    // Not a public route: the hosted server's allowlist (scripts/lib/edge.mjs) does not forward it, and it does nothing
+    // without GIVEN_ADMIN_TOKEN. It records what Gemini actually paid for a bet it settled without a clean result.
+    '/review': {
+      POST: async (_q, req) => {
+        if (!deps.adminToken) throw new HttpError(404, 'not_enabled', 'Recording a payout by hand is switched off. Set GIVEN_ADMIN_TOKEN to enable it.');
+        const given = String(req.headers['x-admin-token'] ?? '');
+        const ok = given.length === deps.adminToken.length && timingSafeEqual(Buffer.from(given), Buffer.from(deps.adminToken));
+        if (!ok) throw new HttpError(401, 'unauthorized', 'Admin token required.');
+        const body = await readJson(req);
+        const owner = deps.ledger.data.bets.find((b) => b.id === body.betId)?.user ?? 'review';
+        // Queued with that account's bets, so it never lands in the middle of one.
+        const bet = await queued(owner, async () => {
+          try {
+            return recordReviewedPayout(deps.ledger, String(body.betId ?? ''), body.payout as number, body.note as string, now);
+          } catch (err) {
+            if (err instanceof ReviewError) throw new HttpError(err.code === 'unknown_bet' ? 404 : err.code === 'not_in_review' ? 409 : 400, err.code, err.message);
+            throw err;
+          }
+        });
+        deps.live?.publish('bets');
+        return betView(bet);
       },
     },
     '/flow': { GET: (q) => flow(q) },

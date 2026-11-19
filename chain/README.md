@@ -30,7 +30,7 @@ test in `test/memo.test.ts`, so a verifier written anywhere else can reproduce i
 
 ```bash
 cd chain && npm install
-npm test                     # 64 tests, no network
+npm test                     # 115 tests, no network
 GIVEN_CHAIN=fake npm start   # in-memory chain: no SOL needed; signatures are not real and are labelled "test chain"
 ```
 
@@ -59,6 +59,7 @@ demo: `SOLANA_RPC_URL=https://<your-endpoint>`.
 #   GIVEN_PROGRAM_ID=8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK
 npm run smoke     # as above, plus: the program's record before and after the reveal, a changed reveal refused,
                   # a repeated reveal refused, and the program's running score
+npm run drill     # a crash drill: forget a commit and a reveal that landed, cut off history, and recover both
 ```
 
 The program's accounts hold rent, so a call costs about 0.002 SOL (plus about 0.0015 SOL the first time a handle
@@ -70,41 +71,56 @@ reveals) instead of a fee alone: one devnet SOL pays for roughly 450 calls. The 
 The Stream tells the service which transactions to look at; the service re-reads each one from Solana and verifies it,
 so the payload is never trusted.
 
-Scripted: `scripts/quicknode.mjs` (`npm run quicknode`). Slugs and fields below are from QuickNode's OpenAPI spec; the
-script has not been run against the live API yet.
+| | |
+|---|---|
+| Network | Solana devnet (`solana-devnet`) |
+| Dataset | Programs + Logs (`programs_with_logs`) |
+| Filter | `quicknode/filter.js`: of each batch of blocks, keeps successful transactions that logged a Given memo, as `{ sig, slot }`; `null` for a batch with none |
+| Destination | Webhook: `https://<host>/chain/hooks/quicknode` on the hosted demo (`https://<host>/hooks/quicknode` on a bare chain service), with the header `Authorization: Bearer <GIVEN_HOOK_TOKEN>` |
+
+**Mind the credits.** A Stream is charged for every block it reads, whether or not the filter matches: 30 credits a
+block for this dataset. Devnet makes a block about every 240 ms (measured over 30 minutes on 2026-11-18: 4.17 slots a
+second), which is **about 10.8 million credits a day. The free trial holds 10 million in total, under a day of
+running**, and RPC calls draw on the same credits. Create the Stream paused, start it for a test or a demo, and pause it
+afterwards. A paused Stream costs nothing and resumes where it stopped.
+
+Scripted: `scripts/quicknode.mjs` (`npm run quicknode`, from the repo root). Slugs and fields are from QuickNode's
+OpenAPI spec; the script has not been run against the live API yet.
 
 1. `npm run quicknode -- keys` makes `GIVEN_HOOK_TOKEN` and `QN_SECURITY_TOKEN` in `.env` (never overwrites, never prints).
    Put the same two values and `GIVEN_PUBLIC_URL` into the host's secrets. The chain service must be up with them first.
 2. Put `QUICKNODE_API_KEY` in `.env` (QuickNode dashboard > API keys, with Streams access).
-3. `npm run quicknode -- test-delivery` sends signed sample deliveries to the hosted webhook: QuickNode-style signature
+3. `npm run quicknode -- test-filter` runs `filter.js` on QuickNode itself against the block of a real Given record on
+   devnet, with no Stream, and says whether the record came back in a shape the webhook reads.
+4. `npm run quicknode -- test-delivery` sends signed sample deliveries to the hosted webhook: QuickNode-style signature
    headers and the shared-token header must give 202, no credentials must give 401. Do this before the Stream exists.
-4. `npm run quicknode -- plan` shows the Stream (network `solana-devnet`, dataset `programs_with_logs`, `filter.js`,
-   webhook to `<GIVEN_PUBLIC_URL>/chain/hooks/quicknode`, no compression, batch size 5) and what it costs. `create` makes it
-   **paused**; `activate` starts it; `pause` stops it. Or make the same Stream in the dashboard by hand.
-5. Open the Stream's filter test on a recent block and confirm the field names in `filter.js` (`signature`, `slot`,
-   `success`, `logs`). Then send one real bet (`npm run check:deploy -- <url> --bet`) and watch the leaderboard `source`
-   change from `rpc` to `quicknode-stream`.
-6. **Check it is not paused**: a Stream pauses after 3 failed deliveries and resumes with `activate`. Solana Streams cannot
-   backfill, so anything before the Stream started is filled by `POST /admin/backfill` (`X-Admin-Token`) or the automatic
-   backfill (`GIVEN_BACKFILL_MS`, every 60 s on devnet by default).
-7. **Credits:** 30 credits per block on devnet whether or not the filter matches, about 6.5M a day left running. Pause it
-   outside testing and demo windows, and compare with the free plan's allowance on the dashboard.
+5. `npm run quicknode -- plan` shows the Stream (the four settings above, no compression, batch size 5) and what it
+   costs. `create` makes it **paused**; `activate` starts it; `pause` stops it. Or make the same Stream in the dashboard
+   by hand, with batch size 5 or more and compression off (the receiver also accepts gzip; QuickNode signs the
+   uncompressed JSON).
+6. Send one real bet (`npm run check:deploy -- <url> --bet`) and watch the leaderboard `source` change from `rpc` to
+   `quicknode-stream`.
+7. **Check it is not paused** before every demo. The script asks QuickNode for 10 retries 3 seconds apart, so a restart
+   of the service does not pause it; the dashboard's default is 3 retries a second apart, which does. `activate`
+   resumes it. Solana Streams cannot backfill, so anything before the Stream started is filled by `POST /admin/backfill`
+   (`X-Admin-Token`) or the automatic backfill (`GIVEN_BACKFILL_MS`, every 60 s on devnet by default).
 
-Batch size is 5 because QuickNode answers 422 for less on a sub-second chain; that adds about two seconds before a delivery.
+Batch size is 5 because QuickNode answers 422 for less on a sub-second chain; that adds about a second before a delivery.
 
 ### What is and is not verified
 
 | Verified by running | Not yet verified |
 |---|---|
 | Hash, memo format, tamper cases, forged signers, duplicate reveals (46 tests) | A commit and reveal driven by a **real executor bet** (the devnet runs below use a synthetic bet) |
-| Real executor + chain service over HTTP: win, refund, loss (5 e2e tests) | The filter against a live Stream's payload (`quicknode/filter.js` is written from the docs) |
-| Our parser against a real devnet Memo transaction (`npm run inspect -- --latest`) | QuickNode's HMAC against a live delivery (matches the documented hex HMAC of nonce + timestamp + body, tested) |
-| Webhook auth, replay window, size cap, rate limit | Whether Streams runs on the free plan for devnet (30 credits per block per QuickNode's billing page) |
+| Real executor + chain service over HTTP: win, refund, loss (5 e2e tests) | The filter on a **live Stream**. Its field names match QuickNode's documented payload (checked 2026-11-18) and it is tested on the log lines of real devnet records; `npm run quicknode -- test-filter` runs it on QuickNode itself |
+| Our parser against a real devnet Memo transaction (`npm run inspect -- --latest`) | QuickNode's signature on a **live delivery**. The construction matches QuickNode's docs and sample code (checked 2026-11-18), gzip included; the shared-token header remains the dependable path |
+| Webhook auth, replay window, size cap, rate limit, gzipped deliveries | `npm run quicknode` against the live API: written from QuickNode's published spec with no key to hand; its request shapes are pinned by tests |
 | The program: hash check, tamper cases, double reveal, other signers (8 tests against the built program) | |
 | **Our own authority key on real devnet, 2026-11-18**, Memo only and through the program: `npm run smoke` passed both ways. Through the program, a reveal with a changed fair price and a second reveal were refused on chain, and the program's own score matched (edge 0.59). Polled confirmation (no WebSocket) worked against the real network. Commit and reveal: [Memo](https://explorer.solana.com/tx/2dA2XhyJyomMuTVXNhs7CSR2nouBnUp96bd8V54djtNiA1aa8n93sy3ynxjgk3Rv86tDCifDJJ82Fdt4Rq7nKHQo?cluster=devnet) / [program](https://explorer.solana.com/tx/5TpSzKdai8P4DVrS7cneVMeR3nJtYKukwdHMnjNBzqPTUcnmrnUN13GL8VQ3gK8u9Qyh8gHRmpPWdN7NJgY6Sj6g?cluster=devnet) | |
 | **The proof page in a real browser on real devnet data** (Victor's first program call, ingested through the webhook route): all seven checks passed, program row included | |
 | Crash consistency: a salt is saved before its commit is sent; a commit or reveal that landed unrecorded is adopted on retry; a damaged store falls back to its backup or refuses to start (17 tests) | |
 | This service's program instructions against bytes captured from the real program (8 tests) | |
+| **A record that landed but was never saved, with the program on** (`npm run drill`, local validator and devnet, 2026-11-18): the service forgets a commit and a reveal, cannot read its own history, and still finds each through the call's own account and adopts it, sending nothing twice. Without that lookup the program refuses the retry and the call stays pending until history can be read (5 tests model this) | |
 | Memo + program in one transaction through this service, **on devnet** (`npm run smoke`, 2026-11-17): [commit](https://explorer.solana.com/tx/2DFD8UjXaPofQh82UXFpwsUm47ArcVkteQAxFSeyjp76CRFtr8tNK7JvZD8Th8NepmctkYqnDypHdKRavEJxQnQL?cluster=devnet), [reveal](https://explorer.solana.com/tx/45iRt5TRfiiyBTY8PDJNp4gbscBsTSfmsW4sZkqPSbKLPgAiGcFTLTKX9hvEgA8hYCP6oFx1iGsBL6LoBJ3DT9xU?cluster=devnet); a changed reveal and a repeated reveal were refused by the program | |
 
 ## Environment

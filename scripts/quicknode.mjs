@@ -4,6 +4,7 @@
  *
  *   npm run quicknode -- keys                 make GIVEN_HOOK_TOKEN and QN_SECURITY_TOKEN in .env (never overwrites, never prints them)
  *   npm run quicknode -- plan                 print the Stream that would be created (secrets hidden), and what it costs. Sends nothing
+ *   npm run quicknode -- test-filter [SIG]    run chain/quicknode/filter.js ON QUICKNODE against the block of a real Given record. No Stream needed
  *   npm run quicknode -- test-delivery        send a correctly signed sample delivery to our webhook, as QuickNode would
  *   npm run quicknode -- create [--active]    create the Stream (paused unless --active)
  *   npm run quicknode -- status               the Stream's state
@@ -16,7 +17,10 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { API, CREDITS_PER_BLOCK, addMissing, buildStreamBody, creditEstimate, newToken, sampleDelivery, signDelivery } from './lib/quicknode.mjs';
+import { API, CREDITS_PER_BLOCK, addMissing, buildStreamBody, creditEstimate, filterResult, mentions, newToken, sampleDelivery, signDelivery, testFilterBody, validStreamId } from './lib/quicknode.mjs';
+
+/** The first call recorded through our program on devnet: a block known to hold a Given record. */
+const KNOWN_RECORD = '2DFD8UjXaPofQh82UXFpwsUm47ArcVkteQAxFSeyjp76CRFtr8tNK7JvZD8Th8NepmctkYqnDypHdKRavEJxQnQL';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ENV_FILE = resolve(ROOT, '.env');
@@ -31,7 +35,14 @@ const die = (msg) => {
 
 const webhookUrl = () => env.QN_WEBHOOK_URL || (env.GIVEN_PUBLIC_URL ? `${env.GIVEN_PUBLIC_URL.replace(/\/+$/, '')}/chain/hooks/quicknode` : '');
 const filterSource = () => readFileSync(resolve(ROOT, 'chain/quicknode/filter.js'), 'utf8');
-const body = (active = false) => buildStreamBody({ webhookUrl: webhookUrl(), filterSource: filterSource(), hookToken: env.GIVEN_HOOK_TOKEN, securityToken: env.QN_SECURITY_TOKEN, active });
+const body = (active = false) => {
+  try {
+    return buildStreamBody({ webhookUrl: webhookUrl(), filterSource: filterSource(), hookToken: env.GIVEN_HOOK_TOKEN, securityToken: env.QN_SECURITY_TOKEN, active });
+  } catch (err) {
+    // A missing setting is something to fix, not a crash to read a stack trace for.
+    return die(`Cannot describe the Stream yet: ${err.message}. Set GIVEN_PUBLIC_URL (or QN_WEBHOOK_URL) and run: npm run quicknode -- keys`);
+  }
+};
 const mask = (b) => ({ ...b, filter_function: `<${b.filter_function.length} chars of base64>`, destination_attributes: { ...b.destination_attributes, security_token: '<hidden>', headers: { Authorization: 'Bearer <hidden>' } } });
 
 async function api(method, path, payload) {
@@ -50,10 +61,12 @@ async function api(method, path, payload) {
 
 /** Finds our Stream by its external id (a repeat create returns the same one). */
 async function ours() {
-  const list = await api('GET', '/streams?limit=100');
+  const list = await api('GET', '/streams?limit=100&offset=0');
   const rows = Array.isArray(list) ? list : (list?.data ?? list?.streams ?? []);
   const found = rows.find((s) => s.external_id === 'given-calls-devnet' || s.name === 'given-calls');
   if (!found) die('No Given Stream on this account yet. Run: npm run quicknode -- create');
+  // Never build a path from anything but a full id: an empty one would address every stream on the account.
+  if (!validStreamId(found.id)) die(`QuickNode listed our Stream without a usable id (${JSON.stringify(found.id)}). Nothing was done.`);
   return found;
 }
 
@@ -74,6 +87,31 @@ switch (cmd) {
     hr(`Cost: ${CREDITS_PER_BLOCK} credits a block on Solana devnet whether or not the filter matches. Left running that is about ${day.blocks.toLocaleString()} blocks and ${(day.credits / 1e6).toFixed(1)}M credits a day.`);
     console.log('Compare with the free plan\'s credit allowance on the dashboard; pause the Stream outside testing and demo windows.');
     console.log(`Delivers to: ${b.destination_attributes.url}`);
+    break;
+  }
+  case 'test-filter': {
+    const signature = rest.find((a) => !a.startsWith('--')) ?? KNOWN_RECORD;
+    const rpc = async (method, params) => {
+      const res = await fetch(env.SOLANA_RPC_URL || 'https://api.devnet.solana.com', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
+      return (await res.json()).result ?? null;
+    };
+    const tx = await rpc('getTransaction', [signature, { encoding: 'json', commitment: 'confirmed', maxSupportedTransactionVersion: 0 }]);
+    if (!tx) die(`Solana has no transaction ${signature}.`);
+    // QuickNode's docs call the argument a block number and do not say whether, for Solana, that is the slot or the block
+    // height. Try the slot first, then the height, and say which one found the record.
+    const block = await rpc('getBlock', [tx.slot, { transactionDetails: 'none', rewards: false, maxSupportedTransactionVersion: 0 }]);
+    const tries = [['slot', tx.slot], ...(block?.blockHeight ? [['block height', block.blockHeight]] : [])];
+    let found = false;
+    for (const [what, number] of tries) {
+      const result = filterResult(await api('POST', '/streams/test_filter', testFilterBody(filterSource(), number)));
+      console.log(`by ${what} ${number}: the filter returned ${result === null ? 'nothing' : JSON.stringify(result).slice(0, 300)}`);
+      if (mentions(result, signature)) {
+        hr(`FILTER OK. QuickNode ran chain/quicknode/filter.js on that block and it returned our record. (Solana blocks are numbered by ${what} here.)`);
+        found = true;
+        break;
+      }
+    }
+    if (!found) die('\nFILTER DID NOT RETURN THE RECORD. Compare the output above with what chain/quicknode/filter.js expects before creating a Stream.');
     break;
   }
   case 'test-delivery': {

@@ -40,3 +40,37 @@ test('delivers nothing (null) for a block with nothing of ours, and survives odd
   assert.equal(main({ data: [[{ signature: SIG_A, slot: 1, success: true }]] }), null, 'a transaction with no logs');
   assert.equal(main({ data: { nested: { deeper: [{ signature: SIG_A, slot: 2, success: true, logs: [escaped] }] } } })?.length, 1, 'found even when nested');
 });
+
+// ---- the shape QuickNode documents, carrying the log lines of real devnet records
+const real = JSON.parse(readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'fixtures/devnet-logs.json'), 'utf8')) as {
+  txs: Array<{ signature: string; slot: number; blockTime: number; success: boolean; logs: string[] }>;
+};
+/** One transaction as the "Programs + Logs" dataset lists it. */
+const asDelivered = (t: (typeof real.txs)[number]) => ({
+  ...t,
+  programInvocations: [{ programId: 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr', instruction: { index: 0, accounts: [{ pubkey: 'x', preBalance: 1, postBalance: 1 }], data: 'x', tokenBalances: [] } }],
+});
+const stranger = { signature: 'E'.repeat(88), slot: 523513408, blockTime: 1, success: true, logs: ['Program 11111111111111111111111111111111 invoke [1]', 'Program 11111111111111111111111111111111 success'], programInvocations: [] };
+
+test('real devnet records, a commit and a reveal written through our program, are picked out of a batch of blocks', () => {
+  const [commit, reveal] = real.txs.map(asDelivered);
+  // A batch is one array of transactions per block. Ours sit in two of three blocks, among other people's.
+  const batch = { data: [[stranger, commit], [stranger], [reveal, stranger]], metadata: { network: 'solana-devnet', dataset: 'programs_with_logs' } };
+  assert.deepEqual(main(batch), [
+    { sig: real.txs[0]!.signature, slot: real.txs[0]!.slot },
+    { sig: real.txs[1]!.signature, slot: real.txs[1]!.slot },
+  ]);
+  assert.ok(real.txs[0]!.logs.some((l) => l.includes('Instruction: CommitCall')), 'the fixture really is a program call');
+});
+
+test('what the filter returns is what the webhook reads: the same signatures come out the other end', async () => {
+  const { signaturesIn } = await import('../src/webhook.ts');
+  const delivered = main({ data: [real.txs.map(asDelivered)] });
+  assert.deepEqual(signaturesIn(delivered), real.txs.map((t) => t.signature));
+  assert.deepEqual(signaturesIn({ data: delivered }), real.txs.map((t) => t.signature), 'also if QuickNode wraps the result');
+});
+
+test('a batch with nothing of ours delivers nothing, and a failed copy of a real record is ignored', () => {
+  assert.equal(main({ data: [[stranger], [stranger, stranger]] }), null);
+  assert.equal(main({ data: [[{ ...asDelivered(real.txs[0]!), success: false }]] }), null);
+});

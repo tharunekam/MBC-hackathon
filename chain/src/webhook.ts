@@ -8,7 +8,8 @@
  *     header on the Stream's destination). This needs nothing from QuickNode beyond custom headers.
  *  2. QuickNode's signature headers (`X-QN-Nonce`, `X-QN-Timestamp`, `X-QN-Signature`): an HMAC-SHA256 of
  *     nonce + timestamp + body keyed by the stream's security token. The construction (hex digest, key = the
- *     token's UTF-8 bytes) is from QuickNode's webhook-validation guide and is tested here, but has NOT been checked against
+ *     token's UTF-8 bytes) is from QuickNode's webhook-validation guide and is tested here. The body is the
+ *     uncompressed JSON even when the delivery is gzipped (http.ts inflates it first). It has NOT been checked against
  *     a live delivery; confirm it on the first real one. The shared token is the path that does not depend on it.
  * With neither configured, deliveries are refused unless GIVEN_HOOK_INSECURE=1 (local testing only).
  */

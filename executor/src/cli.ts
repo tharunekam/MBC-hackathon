@@ -9,13 +9,15 @@
  *   node src/cli.ts reconcile                  check the ledger against Gemini
  *   node src/cli.ts recover                    repair bets interrupted mid-flight
  *   node src/cli.ts flow                       what Given's bets have sent to Gemini's book
+ *   node src/cli.ts review                     bets Gemini settled without a clean result, and what is recorded for each
+ *   node src/cli.ts resolve <bet> <paid> --note "..."   record by hand what such a bet actually paid
  *
  * `pairs --all` also lists the pairs the offer rule refuses, with the reason.
  * Do not run bet/settle/recover while the HTTP server (src/server.ts) is
  * running: both keep the ledger in memory and the last one to save wins.
  */
 import { resolve } from 'node:path';
-import { placeConditionalBet, recoverBets, settleBets } from './bets.ts';
+import { maxPayout, placeConditionalBet, recordReviewedPayout, recoverBets, settleBets } from './bets.ts';
 import { loadConfig, requireUser } from './config.ts';
 import { flowTotals } from './flow.ts';
 import { GeminiExchange } from './exchange.ts';
@@ -62,6 +64,7 @@ function printBet(bet: ReturnType<Ledger['bet']>): void {
     );
   }
   if (bet.review) console.log(`  NEEDS REVIEW: ${bet.review.reason}`);
+  if (bet.review?.resolved) console.log(`  RECORDED BY HAND: paid ${money(bet.review.resolved.payout)}, result ${money(bet.review.resolved.pnl)} (${bet.review.resolved.note})`);
   if (bet.settlement) {
     const s = bet.settlement;
     console.log(`  SETTLED condition=${s.conditionResolved} target=${s.targetResolved}  payout ${money(s.payout)}  result ${money(s.pnl)}`);
@@ -109,6 +112,45 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'review') {
+    // Bets Gemini settled without a clean yes/no. Until someone records what each paid, the cash check is off by it.
+    const flagged = ledger.data.bets.filter((b) => b.status === 'needs_review');
+    for (const bet of flagged) {
+      const r = bet.review?.resolved;
+      console.log(`\nBet ${bet.id}  ${bet.eventTitle} (${bet.eventTicker})   cost ${money(bet.cost)}   could have paid at most ${money(maxPayout(bet))}`);
+      console.log(`  ${bet.review?.reason ?? ''}`);
+      console.log(r ? `  recorded by hand: paid ${money(r.payout)}, result ${money(r.pnl)} (${r.note})` : `  nothing recorded yet. After reading the account:  node src/cli.ts resolve ${bet.id} <dollars paid> --note "where the number came from"`);
+    }
+    console.log(`\n${flagged.length} bet(s) settled without a clean result, ${flagged.filter((b) => !b.review?.resolved).length} still to be recorded.`);
+    return;
+  }
+
+  if (command === 'resolve') {
+    const [, betId, amount] = args;
+    const note = flag('note');
+    if (!betId || amount === undefined || amount.startsWith('--') || !note) {
+      console.log('Usage: node src/cli.ts resolve <betId> <dollars paid> --note "where the number came from" [--server http://127.0.0.1:8741]');
+      console.log('Records what Gemini actually paid for a bet it settled without a clean result (see: node src/cli.ts review).');
+      process.exitCode = 1;
+      return;
+    }
+    const server = flag('server');
+    if (server) {
+      // A running executor holds the ledger in memory, so the change has to go through it.
+      if (!config.adminToken) throw new Error('GIVEN_ADMIN_TOKEN is not set here. It must match the running executor\'s.');
+      const res = await fetch(`${server.replace(/\/+$/, '')}/review`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-token': config.adminToken }, body: JSON.stringify({ betId, payout: Number(amount), note }) });
+      const body = (await res.json().catch(() => null)) as { error?: string; review?: { resolved?: { payout: number; pnl: number } } } | null;
+      if (!res.ok) throw new Error(`The executor refused (HTTP ${res.status}): ${body?.error ?? 'no reason given'}`);
+      console.log(`Recorded on the running executor: bet ${betId} paid ${money(body?.review?.resolved?.payout ?? Number(amount))}, result ${money(body?.review?.resolved?.pnl ?? 0)}.`);
+    } else {
+      const bet = recordReviewedPayout(ledger, betId, Number(amount), note);
+      console.log(`Recorded: bet ${bet.id} paid ${money(bet.review!.resolved!.payout)}, result ${money(bet.review!.resolved!.pnl)}.`);
+      console.log('If an executor is running it still has the old ledger in memory: stop it first, or use --server.');
+    }
+    console.log('Check the cash now ties out:  node src/cli.ts reconcile   (or the Proof page).');
+    return;
+  }
+
   const exchange = new GeminiExchange(config, requireUser(config, user));
   try {
     if (command === 'bet') {
@@ -143,7 +185,7 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(r, null, 2));
       process.exitCode = r.ok ? 0 : 1;
     } else {
-      console.log('Commands: pairs [event] [--all] | bet ... | bets | settle | recover | reconcile | flow');
+      console.log('Commands: pairs [event] [--all] | bet ... | bets | settle | recover | reconcile | flow | review | resolve <bet> <paid> --note "..."');
       process.exitCode = 1;
     }
   } finally {

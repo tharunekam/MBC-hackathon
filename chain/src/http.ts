@@ -14,6 +14,7 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
+import { gunzipSync } from 'node:zlib';
 import { ServiceError } from './executor.ts';
 import { encodeBody, etagOf, notModified } from './http-cache.ts';
 import { createLimiter } from './limiter.ts';
@@ -43,7 +44,9 @@ export interface HttpDeps {
 const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|[a-z0-9-]+\.localhost)(:\d+)?$/i;
 const MAX_BODY = 256 * 1024;
 
-async function readBody(req: IncomingMessage): Promise<string> {
+const MAX_INFLATED = 4 * MAX_BODY;
+
+async function readBytes(req: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const c of req) {
@@ -51,7 +54,25 @@ async function readBody(req: IncomingMessage): Promise<string> {
     if (size > MAX_BODY) throw new ServiceError(413, 'body_too_large', 'The request body is too large.');
     chunks.push(c as Buffer);
   }
-  return Buffer.concat(chunks).toString('utf8');
+  return Buffer.concat(chunks);
+}
+
+const readBody = async (req: IncomingMessage): Promise<string> => (await readBytes(req)).toString('utf8');
+
+/**
+ * A Stream's webhook can be set to gzip its payloads. QuickNode signs the uncompressed JSON, so the body is inflated
+ * before it is authenticated or parsed. Without this, switching compression on would fail every delivery and the Stream
+ * would pause. The inflated size is capped, so a small body cannot expand without limit.
+ */
+async function readHookBody(req: IncomingMessage): Promise<string> {
+  const bytes = await readBytes(req);
+  if (!/\bgzip\b/i.test(String(req.headers['content-encoding'] ?? ''))) return bytes.toString('utf8');
+  try {
+    return gunzipSync(bytes, { maxOutputLength: MAX_INFLATED }).toString('utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ERR_BUFFER_TOO_LARGE') throw new ServiceError(413, 'body_too_large', 'The request body is too large.');
+    throw new ServiceError(400, 'invalid_encoding', 'The body is marked gzip but does not decompress.');
+  }
 }
 
 const parseJson = (text: string): Record<string, unknown> => {
@@ -136,7 +157,7 @@ export function createHandler(deps: HttpDeps): (req: IncomingMessage, res: Serve
 
         if (isHook) {
           if (req.method !== 'POST') throw new ServiceError(405, 'method_not_allowed', 'POST only.');
-          const raw = await readBody(req);
+          const raw = await readHookBody(req);
           if (!hookAuthentic(req.headers, raw, deps.hook, now().getTime())) throw new ServiceError(401, 'unauthorized', 'Not an authorised delivery.');
           let payload: unknown = null;
           try {

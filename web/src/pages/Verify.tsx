@@ -5,6 +5,7 @@ import { ApiError } from '../api/client';
 import { explorerTx } from '../api/types';
 import { cents, money, trunc } from '../lib/format';
 import { useAsync } from '../lib/hooks';
+import { savePng, shareCardSvg } from '../lib/shareCard';
 import { assetOf, solanaRpc, strikeOf, verifyOnChain } from '../lib/verify';
 import type { Verification } from '../lib/verify';
 
@@ -18,6 +19,7 @@ export default function Verify() {
   const [running, setRunning] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [picture, setPicture] = useState<'idle' | 'saved' | 'failed'>('idle');
 
   const c = call.data;
 
@@ -73,6 +75,33 @@ export default function Verify() {
   const asset = assetOf(c.event);
   const real = c.network === 'devnet';
 
+  const edgeText = `${c.edge > 0 ? '+' : c.edge < 0 ? '−' : ''}${Math.abs(c.edge).toFixed(2)}`;
+  const revealedOn = new Date(c.revealedAt);
+
+  /** The card above as a picture to post: the same words and numbers, and where to check them. */
+  async function savePicture() {
+    if (!c) return;
+    try {
+      const svg = shareCardSvg({
+        handle: c.handle,
+        won,
+        question: `Given ${asset} at ${cond !== null ? money(cond) : c.condition} or above, will it reach ${targ !== null ? money(targ) : c.target}?`,
+        fair: cents(c.fairPrice),
+        paid: cents(c.entryPrice),
+        edge: edgeText,
+        edgeGood: c.edge >= 0,
+        when: revealedOn.toLocaleDateString('en-US', { dateStyle: 'medium' }),
+        network: real ? 'Solana devnet' : 'Test chain',
+        link: `${window.location.host}${window.location.pathname}`,
+      });
+      await savePng(svg, `given-${c.handle}-${c.signature.slice(0, 8)}.png`);
+      setPicture('saved');
+    } catch {
+      setPicture('failed');
+    }
+    window.setTimeout(() => setPicture('idle'), 2200);
+  }
+
   return (
     <div className="page narrow">
       <header className="page-head">
@@ -107,16 +136,20 @@ export default function Verify() {
           <div>
             <dt>Edge</dt>
             <dd className={c.edge >= 0 ? 'good' : 'bad'}>
-              {c.edge > 0 ? '+' : c.edge < 0 ? '−' : ''}
-              {Math.abs(c.edge).toFixed(2)}
+              {edgeText}
             </dd>
           </div>
         </dl>
         <div className="pc-foot">
-          <span className="fine">Revealed {new Date(c.revealedAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</span>
-          <button className="btn btn-ghost" onClick={copy}>
-            {copied ? 'Link copied' : 'Copy link'}
-          </button>
+          <span className="fine">Revealed {revealedOn.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+          <div className="pc-actions">
+            <button className="btn btn-ghost" onClick={savePicture}>
+              {picture === 'saved' ? 'Image saved' : picture === 'failed' ? 'Could not save' : 'Save image'}
+            </button>
+            <button className="btn btn-ghost" onClick={copy}>
+              {copied ? 'Link copied' : 'Copy link'}
+            </button>
+          </div>
         </div>
       </article>
 

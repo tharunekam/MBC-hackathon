@@ -11,7 +11,8 @@ export const DATASET = 'programs_with_logs';
 
 /** Credits per block on Solana devnet for this dataset, from QuickNode's billing page (account rates may differ). */
 export const CREDITS_PER_BLOCK = 30;
-const SLOT_SECONDS = 0.4;
+/** Devnet's slot time, measured over 30 minutes on 2026-11-18 (getRecentPerformanceSamples: 4.17 slots a second). Not 400 ms. */
+const SLOT_SECONDS = 0.24;
 
 /** What a Stream costs to leave running, so nobody finds out from the credit meter. */
 export function creditEstimate(hours = 24) {
@@ -47,8 +48,10 @@ export function buildStreamBody({ name = 'given-calls', webhookUrl, filterSource
     destination_attributes: {
       url: webhookUrl,
       compression: 'none',
-      max_retry: 3,
-      retry_interval_sec: 1,
+      // QuickNode pauses a Stream when its retries run out. The dashboard's default (3 tries, a second apart) would
+      // pause it on any restart of the service; these ride out about half a minute.
+      max_retry: 10,
+      retry_interval_sec: 3,
       post_timeout_sec: 10,
       security_token: securityToken,
       headers: { Authorization: `Bearer ${hookToken}` },
@@ -56,6 +59,37 @@ export function buildStreamBody({ name = 'given-calls', webhookUrl, filterSource
     status: active ? 'active' : 'paused',
     external_id: externalId,
   };
+}
+
+/**
+ * QuickNode's stream ids are UUIDs. This matters: `DELETE /streams/` with an empty id deletes EVERY stream on the
+ * account, so no path is ever built from an id that has not passed this.
+ */
+export const validStreamId = (id) => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+/** The body of POST /streams/test_filter: QuickNode runs the filter against one block, with no Stream. `block` goes as text. */
+export function testFilterBody(filterSource, block) {
+  if (!Number.isInteger(block) || block < 0) throw new Error('the block must be a whole number');
+  return { network: NETWORK, dataset: DATASET, filter_function: Buffer.from(filterSource).toString('base64'), block: String(block) };
+}
+
+/** A test_filter answer's result: QuickNode types it as a string, which may itself be JSON. */
+export function filterResult(json) {
+  const result = json && typeof json === 'object' ? json.result : undefined;
+  if (typeof result !== 'string') return result ?? null;
+  try {
+    return JSON.parse(result);
+  } catch {
+    return result;
+  }
+}
+
+/** True if `value` (whatever shape the filter returned) contains this transaction signature. */
+export function mentions(value, signature) {
+  if (typeof value === 'string') return value === signature;
+  if (Array.isArray(value)) return value.some((v) => mentions(v, signature));
+  if (value && typeof value === 'object') return Object.values(value).some((v) => mentions(v, signature));
+  return false;
 }
 
 /** The headers QuickNode adds to a delivery: HMAC-SHA256 (hex) over nonce + timestamp + body, keyed by the security token. */
