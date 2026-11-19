@@ -153,6 +153,16 @@ await check('"How this bet pays" shows the placed bet, not the quote', async () 
   need(panel.includes(ifBoth), `expected ${ifBoth} in the panel, got: ${panel.replace(/\n/g, ' | ')}`);
 });
 
+await check('after placing: the chart is locked to the bet, and the receipt says what happens next', async () => {
+  const locked = await page.locator('.chart-locked').count();
+  need(locked === 1, 'the chart is still interactive after the bet was placed');
+  const events = await page.evaluate(() => getComputedStyle(document.querySelector('.chart-locked')).pointerEvents);
+  need(events === 'none', `the locked chart still takes pointer events (${events})`);
+  need(!/Drag the two markers/.test(await page.locator('.chart-hint').innerText()), 'the chart still tells you to drag the markers');
+  const next = await page.locator('.receipt .next-step').innerText();
+  need(/My bets by itself/.test(next), `no next-step line on the receipt: ${next}`);
+});
+
 await check('My bets lists it', async () => {
   await page.getByRole('link', { name: 'See my bets' }).click();
   await page.waitForURL('**/app/bets');

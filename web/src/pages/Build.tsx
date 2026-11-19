@@ -241,11 +241,16 @@ export default function Build() {
                 : `${ladders.unpriced.length} more ${ladders.unpriced.length === 1 ? 'market has' : 'markets have'} no prices right now. Show ${ladders.unpriced.length === 1 ? 'it' : 'them'}`}
             </button>
           )}
-          <p className="chart-hint">Chance of finishing at or above each price. Drag the two markers, or tap the chart.</p>
+          <p className="chart-hint">
+            {phase === 'placed' ? 'Your bet, on the market’s chance of finishing at or above each price. Choose “Make another” to change it.' : 'Chance of finishing at or above each price. Drag the two markers, or tap the chart.'}
+          </p>
           {loadingFirst ? (
             <div className="skeleton chart-skel" />
           ) : event && sel ? (
-            <LadderChart rungs={event.rungs} condition={sel.c} target={sel.t} onChange={(c, t) => setSel({ c, t })} />
+            // Once the bet is placed the markers show that bet and stay put; "Make another" frees them again.
+            <div className={phase === 'placed' ? 'chart-locked' : undefined}>
+              <LadderChart rungs={event.rungs} condition={sel.c} target={sel.t} onChange={(c, t) => phase !== 'placed' && setSel({ c, t })} />
+            </div>
           ) : (
             <div className="empty">No ladders are open right now. Check back in a few minutes.</div>
           )}
@@ -451,6 +456,10 @@ function Receipt({ bet, call, callError, onAgain }: { bet: Bet; call: CallRecord
           <b>{usdSigned(bet.payoffs?.ifConditionOnly ?? -bet.cost)}</b>
         </li>
       </ul>
+
+      <p className="fine next-step">
+        {timeLeft(bet.expiry) ?? 'The market closes soon'}. The result appears on My bets by itself, and you do not need to keep this page open.
+      </p>
 
       <div className="row-actions">
         <Link className="btn btn-primary" to="/app/bets">

@@ -66,10 +66,10 @@ web (React/Vite)  ──►  executor (Node)  ──►  Gemini REST + WebSocket
 | Package | Role |
 |---|---|
 | `executor/` | Quotes, the two-leg bet with depth guard and hedge sizing, a ledger written before every order, settlement, and **reconcile to the cent against Gemini** (it counts Gemini's YES/NO netting). A sandbox liquidity seeder, disclosed (below). 169 tests. |
-| `chain/` | Commit and reveal on Solana, the QuickNode webhook, the leaderboard, a public proof endpoint. 115 tests. |
+| `chain/` | Commit and reveal on Solana, the QuickNode webhook, the leaderboard, a public proof endpoint. 120 tests. |
 | `receipts-program/` | `given_receipts`, our Solana program (Anchor): checks each reveal against its commit on chain, refuses a repeat, keeps each handle's score. Deployed on devnet, interface published on chain. 8 tests against the built program. |
 | `web/` | The app: a probability ladder with two draggable markers, the four-number quote, bets, leaderboard, proof page. Pages update on their own over server-sent events. 109 tests. |
-| `scripts/` | The dev stack, the hosted-demo server (`serve.mjs`: the built app plus an allowlist of API paths on one port), the deploy checker, the browser end-to-end test, and the rehearsals. A recorder and replayer for the stage (`docs/DEPLOY.md`). 45 tests. |
+| `scripts/` | The dev stack, the hosted-demo server (`serve.mjs`: the built app plus an allowlist of API paths on one port), the deploy checker, the browser end-to-end test, and the rehearsals. A recorder and replayer for the stage (`docs/DEPLOY.md`). 50 tests. |
 | `docs/` | `PLAN.md`, `GIVEN.md` (decision log), `CONTRACTS.md` (interfaces), `GEMINI_API_NOTES.md`, `SUBMISSION.md`. |
 
 ### Gemini endpoints used
@@ -135,8 +135,8 @@ npm run dev         # whole stack with no keys and no SOL: local test exchange +
 npm run dev:quotes  # REAL Gemini sandbox prices and order books with no keys; every order is refused (read-only)
 node scripts/seed-history.mjs all   # optional: a win, a loss and a refund, committed and revealed
 npm run stop        # stop this project's servers
-npm test            # 438 tests: executor 169, chain service 115, web 109, hosted-demo server and scripts 45
-npm run e2e         # the production build in real Chrome (17 checks; e2e:sabotage must fail)
+npm test            # 448 tests: executor 169, chain service 120, web 109, hosted-demo server and scripts 50
+npm run e2e         # the production build in real Chrome (18 checks; e2e:sabotage must fail)
 npm run e2e:replay  # records a bet through the real app, then replays it with nothing running behind it (7 checks)
 npm run rehearse    # (also rehearse:chaos) the whole golden path through the real clients, Gemini and Solana stood in on the wire
 npm run preflight   # what is ready for the real thing and what is missing, with the fix for each

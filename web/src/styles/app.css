@@ -1713,3 +1713,11 @@ button.chip:hover {
   white-space: nowrap;
   border: 0;
 }
+.receipt .next-step {
+  margin-top: 4px;
+}
+/* A placed bet's chart is a record, not a control. */
+.chart-locked {
+  pointer-events: none;
+  opacity: 0.9;
+}
