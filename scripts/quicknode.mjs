@@ -10,6 +10,8 @@
  *   npm run quicknode -- status               the Stream's state
  *   npm run quicknode -- activate | pause     start or stop it (it bills per block while active, matched or not)
  *   npm run quicknode -- delete --yes
+ *   npm run quicknode -- pitch-on [--recreate]  the one command before presenting: checks our webhook answers, then starts the Stream
+ *   npm run quicknode -- pitch-off            the one command after: pauses it
  *
  * Needs: QUICKNODE_API_KEY (dashboard > API keys, with Streams access) for create/status/activate/pause/delete, and a webhook
  * URL: QN_WEBHOOK_URL, or GIVEN_PUBLIC_URL (then <it>/chain/hooks/quicknode).
@@ -17,7 +19,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { API, CREDITS_PER_BLOCK, addMissing, buildStreamBody, creditEstimate, filterResult, mentions, newToken, sampleDelivery, signDelivery, testFilterBody, validStreamId } from './lib/quicknode.mjs';
+import { API, CREDITS_PER_BLOCK, addMissing, buildStreamBody, creditEstimate, filterResult, mentions, needsFreshStream, newToken, sampleDelivery, signDelivery, testFilterBody, validStreamId } from './lib/quicknode.mjs';
 
 /** The first call recorded through our program on devnet: a block known to hold a Given record. */
 const KNOWN_RECORD = '2DFD8UjXaPofQh82UXFpwsUm47ArcVkteQAxFSeyjp76CRFtr8tNK7JvZD8Th8NepmctkYqnDypHdKRavEJxQnQL';
@@ -45,7 +47,8 @@ const body = (active = false) => {
 };
 const mask = (b) => ({ ...b, filter_function: `<${b.filter_function.length} chars of base64>`, destination_attributes: { ...b.destination_attributes, security_token: '<hidden>', headers: { Authorization: 'Bearer <hidden>' } } });
 
-async function api(method, path, payload) {
+/** With `soft`, an error answer is returned ({ failed, status, text }) instead of ending the program. */
+async function api(method, path, payload, soft = false) {
   if (!env.QUICKNODE_API_KEY) die('QUICKNODE_API_KEY is not set (QuickNode dashboard > API keys, with Streams access). Put it in .env.');
   const res = await fetch(API + path, { method, headers: { 'content-type': 'application/json', accept: 'application/json', 'x-api-key': env.QUICKNODE_API_KEY }, body: payload ? JSON.stringify(payload) : undefined });
   const text = await res.text();
@@ -55,7 +58,10 @@ async function api(method, path, payload) {
   } catch {
     /* keep text */
   }
-  if (!res.ok) die(`QuickNode answered HTTP ${res.status} to ${method} ${path}:\n${text}`);
+  if (!res.ok) {
+    if (soft) return { failed: true, status: res.status, text };
+    die(`QuickNode answered HTTP ${res.status} to ${method} ${path}:\n${text}`);
+  }
   return json;
 }
 
@@ -148,6 +154,40 @@ switch (cmd) {
   case 'pause': {
     const s = await ours();
     console.log(JSON.stringify(await api('POST', `/streams/${s.id}/${cmd}`, cmd === 'activate' ? {} : undefined), null, 2));
+    break;
+  }
+  case 'pitch-on': {
+    // 1. Never burn credits into a dead endpoint: our webhook must answer, over the public address, before the Stream starts.
+    const url = webhookUrl();
+    if (!url || !env.QN_SECURITY_TOKEN) die('Set GIVEN_PUBLIC_URL and run: npm run quicknode -- keys');
+    const probe = sampleDelivery('1'.repeat(88));
+    const answered = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...signDelivery(probe, env.QN_SECURITY_TOKEN) }, body: probe }).then((r) => r.status, () => 0);
+    if (answered !== 202) die(`Our webhook did not accept a signed test delivery (HTTP ${answered || 'no answer'}). Is the server up and GIVEN_PUBLIC_URL the address people open? The Stream was NOT started.`);
+    console.log('ok   our webhook accepts a signed delivery at the public address');
+    // 2. Start it. A Stream paused for long cannot be resumed on the free plan; then a fresh one, which starts at the tip.
+    let s = await ours();
+    if (s.status === 'active') console.log('ok   the Stream is already active');
+    else {
+      const r = await api('POST', `/streams/${s.id}/activate`, {}, true);
+      if (r?.failed && needsFreshStream(r.status, r.text)) {
+        if (!flag('--recreate')) die('QuickNode will not resume this Stream: it fell too far behind for the free plan. Run again with --recreate to replace it with a fresh Stream that starts at the tip (this deletes the old one).');
+        await api('DELETE', `/streams/${s.id}`);
+        await api('POST', '/streams', body(true));
+        console.log('ok   replaced it with a fresh Stream, started at the tip');
+      } else if (r?.failed) die(`QuickNode answered HTTP ${r.status} to activate:\n${r.text}`);
+      else console.log('ok   the Stream was resumed');
+    }
+    s = await ours();
+    console.log(`Stream status: ${s.status}.`);
+    const hour = creditEstimate(1);
+    hr(`It now bills about ${(hour.credits / 1000).toFixed(0)}k credits an hour. When you are done presenting: npm run quicknode -- pitch-off`);
+    break;
+  }
+  case 'pitch-off': {
+    const s = await ours();
+    const r = await api('POST', `/streams/${s.id}/pause`, undefined, true);
+    if (r?.failed) die(`QuickNode answered HTTP ${r.status} to pause:\n${r.text}`);
+    console.log(`Stream status: ${(await ours()).status}. Nothing is billed while it is paused.`);
     break;
   }
   case 'delete': {

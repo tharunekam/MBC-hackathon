@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { addMissing, buildStreamBody, creditEstimate, filterResult, mentions, sampleDelivery, signDelivery, testFilterBody, validStreamId } from '../lib/quicknode.mjs';
+import { addMissing, buildStreamBody, creditEstimate, filterResult, mentions, needsFreshStream, sampleDelivery, signDelivery, testFilterBody, validStreamId } from '../lib/quicknode.mjs';
 import { hookAuthentic } from '../../chain/src/webhook.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -77,6 +77,14 @@ describe('the Stream we ask QuickNode for', () => {
     assert.equal(mentions({ data: [[{ sig: 'abc' }]] }, 'abc'), true);
     assert.equal(mentions([{ sig: 'abcd' }], 'abc'), false);
     assert.equal(mentions(null, 'abc'), false);
+  });
+
+  it('recognises the free-plan refusal to resume a Stream that fell behind, and nothing else', () => {
+    const msg = 'Your account is on the free plan. Please upgrade to a paid plan to backfill more than 100 blocks for solana-devnet';
+    assert.equal(needsFreshStream(422, msg), true);
+    assert.equal(needsFreshStream(500, msg), false);
+    assert.equal(needsFreshStream(422, 'dataset batch size is greater than max'), false);
+    assert.equal(needsFreshStream(200, ''), false);
   });
 
   it('adds only the keys that are missing and leaves existing values alone', () => {

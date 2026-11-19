@@ -128,3 +128,10 @@ export function addMissing(envText, wanted) {
   }
   return { text, added };
 }
+
+/**
+ * True when QuickNode refused to resume a Stream because it had fallen too far behind the chain. The free plan only resumes
+ * within 100 blocks of the tip ("upgrade to a paid plan to backfill more than 100 blocks"); the fix is a fresh Stream, which
+ * starts at the tip and so has nothing to backfill.
+ */
+export const needsFreshStream = (status, text) => status === 422 && /backfill more than \d+ blocks/i.test(String(text));

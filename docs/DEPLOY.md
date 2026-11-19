@@ -132,3 +132,7 @@ cash check come back, under the Replay label.
 
 `npm run build && npm start` runs the same server on this machine. Behind a tunnel (any HTTPS tunnel to port 8080, with
 `GIVEN_PUBLIC_URL` set to the tunnel's address) it is a serviceable demo link for a few hours. It is a fallback, not the plan.
+Measured with a Cloudflare quick tunnel (`trycloudflare.com`, 2026-11-18): 10 of the 11 deploy checks pass; the live-updates one
+fails because the tunnel holds the event stream back (a 2 KB padding first write did not change that), so the page refreshes
+by polling instead. Everything works, only slower. A tunnel's address also changes whenever it restarts, which means
+`GIVEN_PUBLIC_URL` and the QuickNode Stream must be updated each time. The day-of steps are in `docs/PITCH_DAY.md`.
