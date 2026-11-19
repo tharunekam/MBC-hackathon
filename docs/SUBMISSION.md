@@ -36,8 +36,10 @@ On a ladder of contracts at rising thresholds, buying YES on the higher threshol
 stake back if the lower threshold fails. The executor sizes the hedge so the refund covers the stake and fees, checks the
 book depth, places both orders over Gemini's WebSocket, and keeps a ledger that reconciles to Gemini's balance to the cent.
 A chain service writes a salted hash of each call to Solana and later reveals it; our Solana program, in the same
-transaction, rejects a reveal that does not reproduce its commit. A QuickNode Stream delivers those transactions to the
-leaderboard, and a proof page re-checks them from Solana in the browser.
+transaction, rejects a reveal that does not reproduce its commit. A QuickNode Stream (Solana devnet, Programs + Logs, filtered
+to our memo transactions) delivers those transactions to a webhook that re-reads each one from Solana before it adds a
+leaderboard row, so a forged delivery cannot add anything; a minute-by-minute read of the chain is the safety net under it.
+A proof page re-checks every call from Solana in the browser.
 
 **What makes it unique?**
 A refund-if-the-condition-fails bet as a one-tap product on a regulated exchange, an honest cost (four numbers on every
@@ -109,9 +111,11 @@ recorded fallback.
 - [ ] Repo public; secret scan over **history** (`.env`, `executor/data/`, `chain/data/` are ignored; run a scanner anyway).
 - [ ] Video recorded on real devnet + Gemini sandbox; checked logged out.
 - [ ] A real devnet commit and reveal exist, and `/verify/…` passes in the browser against them.
-- [ ] The Stream exists, is not paused, and a screenshot of its dashboard (network, dataset, filter, webhook) is in the README.
-- [ ] The Stream is **running only when needed**: `npm run quicknode -- activate` before recording and before
-      judging, `pause` after. Running, it uses about 10.8M credits a day; the free trial holds 10M in total.
+- [ ] The Stream exists (it does: `given-calls`, kept paused) and, while it is running, a screenshot of its dashboard
+      (network, dataset, filter, webhook, delivery count) is in the README. Not yet taken: it needs a real delivery.
+- [ ] The Stream is **running only when needed**: `npm run quicknode -- pitch-on` before recording and before
+      judging, `pitch-off` after (`docs/PITCH_DAY.md`). Running, it uses about 270k credits an hour (10.8M a day); the free
+      trial holds 10M in total, shared with RPC calls.
 - [ ] If the liquidity seeder is running while recording or presenting: `GIVEN_SEEDED=1` is set (the nav shows "Seeded
       prices"), the narration says the tight prices are our own test quotes, and nothing calls its fills order flow.
 - [ ] `npm run dev:quotes` looked at on the day of recording: it shows the sandbox's real listing, which changes.
