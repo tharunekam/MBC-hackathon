@@ -53,6 +53,17 @@ export default function Proof() {
               {err}
             </p>
           )}
+          {!rec && !err && (
+            // What the result will look like, so the card is not an empty box before the first check.
+            <dl className="recon is-idle" aria-label="What the check reports">
+              {['Orders found', 'Our books say', 'Account holds', 'Difference'].map((t) => (
+                <div key={t}>
+                  <dt>{t}</dt>
+                  <dd>–</dd>
+                </div>
+              ))}
+            </dl>
+          )}
           {rec && (
             <dl className="recon" aria-live="polite">
               <div>

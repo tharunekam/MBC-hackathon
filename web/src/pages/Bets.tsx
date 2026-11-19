@@ -158,9 +158,11 @@ export default function Bets() {
                       <b className={hand ? (hand.pnl > 0.004 ? 'good' : hand.pnl < -0.004 ? 'bad' : 'back') : ''}>{hand ? usdSigned(hand.pnl) : '–'}</b>
                     ) : (
                       <b className={result ? (o === 'back' ? 'back' : result.pnl > 0.004 ? 'good' : result.pnl < -0.004 ? 'bad' : 'back') : ''}>
-                        {result ? (o === 'back' ? 'Stake back' : usdSigned(result.pnl)) : `Wins ${usdSigned(b.payoffs?.ifBothHit ?? 0)}`}
+                        {result ? (o === 'back' ? 'Stake back' : usdSigned(result.pnl)) : usdSigned(b.payoffs?.ifBothHit ?? 0)}
                       </b>
                     )}
+                    {/* "Wins" would claim a result that is not in yet: say what it takes to get this number. */}
+                    {!result && o === 'open' && <small className="fine">if it reaches {money(b.target.strike)}</small>}
                   </div>
                 </div>
 

@@ -1175,8 +1175,11 @@ button.chip:hover {
 .explain {
   margin-top: 24px;
   display: grid;
-  gap: 8px;
-  max-width: 720px;
+  gap: 16px;
+  max-width: 920px;
+}
+.explain .payoff-grid {
+  margin-top: 4px;
 }
 .explain p {
   color: var(--soft);
@@ -1219,6 +1222,9 @@ button.chip:hover {
   font-variant-numeric: tabular-nums;
   font-size: 20px;
   font-weight: 500;
+}
+.recon.is-idle dd {
+  color: var(--muted);
 }
 .recon .is-ok dd {
   color: var(--good);

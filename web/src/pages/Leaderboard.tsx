@@ -64,7 +64,24 @@ export default function Leaderboard() {
         <p>
           Every call has a fair price when you make it. A win scores one minus that price, a loss scores minus that price, and the scores add up. Beat the odds consistently and your edge climbs; luck on a few calls washes out. Calls where the first half failed are refunded and don’t count.
         </p>
-        <p className="fine">Players are anonymous handles. Only calls you choose to reveal appear here.</p>
+        <div className="payoff-grid" role="group" aria-label="Worked example: a call made at a fair price of 41 cents">
+          <div data-kind="win">
+            <span className="po-chance">Fair price 41¢ when made</span>
+            <b>+0.59</b>
+            <p>The second half happens: 1 − 0.41</p>
+          </div>
+          <div data-kind="back">
+            <span className="po-chance">Refunded</span>
+            <b>Not scored</b>
+            <p>The first half fails, so there is nothing to judge</p>
+          </div>
+          <div data-kind="lose">
+            <span className="po-chance">Fair price 41¢ when made</span>
+            <b>−0.41</b>
+            <p>The first half holds, the second does not</p>
+          </div>
+        </div>
+        <p className="fine">Worked example, not a real call. Players are anonymous handles, and only calls you choose to reveal appear here.</p>
       </div>
     </div>
   );
