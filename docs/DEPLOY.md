@@ -40,6 +40,7 @@ Set these as the host's secrets/environment. Nothing is read from a `.env` file 
 | `GIVEN_MODE` | no | `auto` (default): live if keys are present, else quotes. `live`, `quotes` or `fake` to force one. `replay` plays back a recorded session with nothing behind it (see "Replay" below) |
 | `GIVEN_RECORD` | no | A file to record this session into, for replay later. Refused if the file already holds a recording |
 | `GIVEN_REPLAY` | replay | The recording to play back when `GIVEN_MODE=replay` |
+| `GIVEN_QUOTES_CHAIN` | no | Set to `devnet` to index the real Solana chain in quotes mode; requires an existing authority key file. Defaults to `fake`. Orders and chain writes remain disabled. The index is in memory and must be rebuilt by backfill after a restart. |
 | `GEMINI_API_KEY`, `GEMINI_API_SECRET` | live | **Sandbox** keys, with time-based nonce enabled. The server refuses a non-sandbox `GEMINI_BASE_URL` |
 | `GIVEN_AUTHORITY_KEY` | live | The Solana authority key as the JSON array of its 64 bytes (the contents of `chain/data/authority.json`). Written once to `/data/chain/authority.json` with mode 600, never overwritten |
 | `GIVEN_PROGRAM_ID` | live, optional | `8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK`: each record is also checked on chain by our program. Costs about 0.002 SOL of rent per call |

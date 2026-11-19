@@ -19,6 +19,8 @@ import { ChainService } from './service.ts';
 import { Store } from './store.ts';
 
 const config = loadConfig();
+// An index-only process accepts deliveries but never writes calls or persists its handle secret.
+const indexOnly = process.env.GIVEN_CHAIN_INDEX_ONLY === '1';
 
 if (!isLoopback(config.host)) {
   const missing: string[] = [];
@@ -40,7 +42,7 @@ try {
     chain = solana;
   }
 } catch (err) {
-  console.error(err instanceof Error ? err.message : String(err));
+  console.error(indexOnly ? 'Could not initialize the devnet chain.' : err instanceof Error ? err.message : String(err));
   process.exit(1);
 }
 
@@ -55,7 +57,7 @@ try {
   console.warn(`The executor at ${config.executorUrl} is not reachable yet; bets will be looked up once it is.`);
 }
 
-const store = new Store(config.network === 'fake' ? null : resolve(config.dataDir, 'calls.json'), () => randomBytes(32).toString('hex'));
+const store = new Store(config.network === 'fake' || indexOnly ? null : resolve(config.dataDir, 'calls.json'), () => randomBytes(32).toString('hex'));
 const service = new ChainService({
   chain,
   store,
@@ -81,6 +83,7 @@ const server = createServer(
     corsOrigins: config.corsOrigins,
     hook: { token: config.hookToken, qnSecurityToken: config.qnSecurityToken, insecure: config.hookInsecure },
     adminToken: config.adminToken,
+    indexOnly,
     live,
     rateLimit: config.rateLimitPerMin ? { max: config.rateLimitPerMin, windowMs: 60_000 } : undefined,
     trustProxy: config.trustProxy,
@@ -92,8 +95,8 @@ server.on('error', (err) => {
   process.exit(1);
 });
 server.listen(config.port, config.host, () => {
-  console.log(`Given chain service on http://${config.host}:${config.port}  (${config.network === 'fake' ? 'FAKE in-memory chain' : `Solana devnet via ${new URL(config.rpcUrl).hostname}`})`);
-  console.log(`Authority ${chain.authority}   executor ${config.executorUrl}   serving user "${config.user}"`);
+  console.log(`Given chain service on http://${config.host}:${config.port}  (${config.network === 'fake' ? 'FAKE in-memory chain' : 'Solana devnet'})`);
+  console.log(`Authority configured   executor ${config.executorUrl}   serving user "${config.user}"`);
   if (config.network !== 'fake') console.log(chain.program ? `Each record is checked on chain by program ${chain.program}` : 'Records are Memos only (set GIVEN_PROGRAM_ID to have the program check each one).');
   if (!config.hookToken && !config.qnSecurityToken && !config.hookInsecure) console.log('No webhook secret set: Stream deliveries will be refused until GIVEN_HOOK_TOKEN is set.');
   if (config.hookInsecure) console.log('GIVEN_HOOK_INSECURE=1: webhook deliveries are NOT authenticated. Local testing only.');
@@ -101,12 +104,18 @@ server.listen(config.port, config.host, () => {
 
 let timer: NodeJS.Timeout | undefined;
 if (config.backfillMs > 0) {
+  // The first pass reads deep (up to 500 transactions) to rebuild after a restart. Later passes read only the newest page:
+  // each page is one billed RPC request, so re-reading old history every minute would multiply the cost for nothing.
+  let first = true;
   const run = () =>
-    service.backfill().then(
+    service.backfill(100, first ? 5 : 1).then(
       (r) => r.added > 0 && console.log(`Backfill added ${r.added} record(s) the Stream had not delivered.`),
-      (e: unknown) => console.error(`Backfill failed: ${e instanceof Error ? e.message : String(e)}`),
+      (e: unknown) => console.error(indexOnly ? 'Backfill failed: RPC request error.' : `Backfill failed: ${e instanceof Error ? e.message : String(e)}`),
     );
-  timer = setInterval(run, config.backfillMs);
+  timer = setInterval(() => {
+    first = false;
+    void run();
+  }, config.backfillMs);
   timer.unref();
   void run();
 }

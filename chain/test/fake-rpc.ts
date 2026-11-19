@@ -48,6 +48,8 @@ interface StoredTx {
   keys: Array<{ pubkey: string; signer: boolean; writable: boolean }>;
   memo: string;
   blockhash: string;
+  /** Test fixture: expose a confirmed message with no Memo instruction. */
+  omitMemo?: boolean;
 }
 
 interface RpcError {
@@ -197,7 +199,7 @@ export async function startFakeRpc(): Promise<FakeRpc> {
         message: {
           accountKeys: t.keys.map((k) => ({ pubkey: k.pubkey, signer: k.signer, writable: k.writable, source: 'transaction' })),
           recentBlockhash: t.blockhash,
-          instructions: [{ program: 'spl-memo', programId: MEMO_PROGRAM, parsed: t.memo, stackHeight: null }],
+          instructions: t.omitMemo ? [] : [{ program: 'spl-memo', programId: MEMO_PROGRAM, parsed: t.memo, stackHeight: null }],
         },
       },
     };

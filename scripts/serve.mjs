@@ -9,7 +9,8 @@
  * Mode (GIVEN_MODE):
  *   live    real Gemini SANDBOX executor + Solana DEVNET chain service. Needs GEMINI_API_KEY / GEMINI_API_SECRET and the
  *           authority key (a file in the chain data folder, or GIVEN_AUTHORITY_KEY holding its JSON array).
- *   quotes  real Gemini sandbox prices and order books, no account: bets are switched off. In-memory test chain.
+ *   quotes  real Gemini sandbox prices and order books, no account: bets are switched off. In-memory test chain by
+ *           default; GIVEN_QUOTES_CHAIN=devnet opts in to real devnet ingestion using the existing authority key.
  *   fake    the local test exchange and the in-memory test chain. Staging only; it labels itself as a test everywhere.
  *   auto    (default) live when the keys are present, otherwise quotes. The page says which one it is.
  *   replay  no executor, no chain service, no keys, no network: the app is answered from a session recorded earlier
@@ -28,8 +29,11 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { clientAddress, proxy, resolveStatic, route, serveStatic } from './lib/edge.mjs';
 import { Replayer, SNAPSHOT, STREAMS, entry, header, parseRecording, recordable } from './lib/replay.mjs';
+import { hostedModeSettings } from './lib/hosted-mode.mjs';
+import { loadProjectEnv } from './lib/project-env.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+if (process.env.GIVEN_NO_PROJECT_ENV !== '1') loadProjectEnv(resolve(ROOT, '.env')); // the tests set it, so a developer's real .env never leaks into them
 const env = process.env;
 
 const PORT = Number(env.PORT ?? 8080);
@@ -52,12 +56,14 @@ const fail = (msg) => {
 
 if (!existsSync(resolve(DIST, 'index.html'))) fail(`there is no built web app at ${DIST}. Run: npm run build`);
 if (!PUBLIC_URL && HOST !== '127.0.0.1') fail('GIVEN_PUBLIC_URL is not set. It is the address people open (for example https://given.example.com), and the one browser origin the backends accept; without it every bet from the page would be refused.');
-if (PUBLIC_URL && !/^https?:\/\/[^/]+$/.test(PUBLIC_URL)) fail(`GIVEN_PUBLIC_URL must be an origin with no path, like https://given.example.com. Got "${PUBLIC_URL}".`);
+if (PUBLIC_URL && !/^https?:\/\/[^/]+$/.test(PUBLIC_URL)) fail('GIVEN_PUBLIC_URL must be an origin with no path.');
 
 const haveGeminiKeys = Boolean(env.GEMINI_API_KEY && env.GEMINI_API_SECRET);
 // The authority key may arrive as a secret in the environment; it is written once to a private file and never overwritten.
 const keyFile = resolve(chainData, 'authority.json');
-if (env.GIVEN_AUTHORITY_KEY && !existsSync(keyFile)) {
+// The quotes/devnet indexer must not write an authority secret to disk.
+const quotesDevnet = env.GIVEN_MODE === 'quotes' && env.GIVEN_QUOTES_CHAIN === 'devnet';
+if (env.GIVEN_AUTHORITY_KEY && !existsSync(keyFile) && !quotesDevnet) {
   try {
     const bytes = JSON.parse(env.GIVEN_AUTHORITY_KEY);
     if (!Array.isArray(bytes) || bytes.length !== 64) throw new Error('not 64 bytes');
@@ -95,10 +101,19 @@ if (env.GIVEN_RECORD && mode !== 'replay') {
   console.log(`Recording this session into ${file} (what the page is shown; never a key or a salt).`);
 }
 if (mode === 'auto') mode = haveGeminiKeys && haveAuthority ? 'live' : 'quotes';
+let modeSettings;
+try {
+  modeSettings = hostedModeSettings(mode, env.GIVEN_QUOTES_CHAIN || 'fake');
+} catch (err) {
+  fail(err.message);
+}
 if (mode === 'live') {
   if (!haveGeminiKeys) fail('live mode needs GEMINI_API_KEY and GEMINI_API_SECRET (Gemini sandbox keys).');
   if (!haveAuthority) fail(`live mode needs the Solana authority key at ${keyFile}, or GIVEN_AUTHORITY_KEY. Create one with: cd chain && npm run keygen`);
   if (env.GEMINI_BASE_URL && !/sandbox/.test(env.GEMINI_BASE_URL)) fail('this server is for the Gemini sandbox. GEMINI_BASE_URL points elsewhere.');
+}
+if (mode === 'quotes' && modeSettings.chain === 'devnet' && !haveAuthority) {
+  fail(`quotes mode with a devnet chain needs an existing Solana authority key file at ${keyFile}.`);
 }
 if (mode === 'fake' && env.GIVEN_I_KNOW_THIS_IS_A_TEST !== '1' && HOST !== '127.0.0.1') {
   fail('fake mode shows a local test exchange and is only for staging. Set GIVEN_I_KNOW_THIS_IS_A_TEST=1 to run it on a public address.');
@@ -134,7 +149,7 @@ const services = [
       GIVEN_PORT: String(EXEC_PORT),
       GIVEN_DATA_DIR: execData,
       GIVEN_MAX_STAKE: env.GIVEN_MAX_STAKE ?? '25',
-      ...(mode === 'quotes' ? { GIVEN_READONLY: '1' } : {}),
+      ...(modeSettings.readOnly ? { GIVEN_READONLY: '1' } : {}),
       // The sandbox's books are about 20 cents wide, so without this nothing passes the value rule there. Sandbox only.
       ...(mode !== 'fake' ? { GIVEN_SANDBOX_WAIVE_MARKUP: env.GIVEN_SANDBOX_WAIVE_MARKUP ?? '1' } : {}),
       // /health then says seeded: true and the app labels its prices.
@@ -150,7 +165,8 @@ const services = [
       ...shared,
       GIVEN_CHAIN_HOST: '127.0.0.1',
       GIVEN_CHAIN_PORT: String(CHAIN_PORT),
-      GIVEN_CHAIN: mode === 'live' ? 'devnet' : 'fake',
+      GIVEN_CHAIN: modeSettings.chain,
+      ...(modeSettings.indexOnly ? { GIVEN_CHAIN_INDEX_ONLY: '1' } : {}),
       GIVEN_CHAIN_DATA_DIR: chainData,
       GIVEN_EXECUTOR_URL: exec,
     },
@@ -342,7 +358,7 @@ edge.listen(PORT, HOST, () => {
     console.log(`Replaying the session recorded ${replayer.meta.startedAt}: ${p.steps} step(s). First: ${p.next ?? 'none (it only looked)'}.`);
     console.log('The page says "Replay". Say so on stage too: it shows what happened then, and places nothing now.');
   }
-  console.log(`Public address ${PUBLIC_URL || '(GIVEN_PUBLIC_URL not set)'}   data: executor ${execData}, chain ${chainData}`);
+  console.log(`Public address ${PUBLIC_URL ? 'configured' : '(GIVEN_PUBLIC_URL not set)'}   data: executor ${execData}, chain ${chainData}`);
   if (seeding) console.log('SEEDING: our own second sandbox account is resting quotes, and the app says "Seeded prices". Say so wherever this is shown.');
   if (mode === 'quotes' && !haveGeminiKeys) console.log('No Gemini keys were found, so this is the quotes-only demo. Add GEMINI_API_KEY / GEMINI_API_SECRET and the authority key for live bets.');
 });

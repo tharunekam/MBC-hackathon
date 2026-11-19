@@ -62,6 +62,21 @@ describe('SolanaChain over the wire', () => {
     assert.equal(await chain.getTx(other), null);
   });
 
+  it('caches a confirmed message without a Memo, but not an unavailable transaction', async () => {
+    const { chain } = funded();
+    const sent = await chain.sendMemo('fixture');
+    const stored = rpc.txs().find((tx) => tx.signature === sent.signature)!;
+    stored.omitMemo = true;
+    const unknown = sent.signature.replace(/.$/, sent.signature.endsWith('A') ? 'B' : 'A');
+    rpc.calls.clear();
+    assert.equal(await chain.getTx(sent.signature), null);
+    assert.equal(await chain.getTx(sent.signature), null);
+    assert.equal(rpc.calls.get('getTransaction'), 1, 'confirmed messages without a Memo are fetched once');
+    assert.equal(await chain.getTx(unknown), null);
+    assert.equal(await chain.getTx(unknown), null);
+    assert.equal(rpc.calls.get('getTransaction'), 3, 'a missing transaction may become confirmed later');
+  });
+
   it('lists the authority’s transactions newest first and pages with `before`', async () => {
     const { chain } = funded();
     const sigs: string[] = [];

@@ -22,7 +22,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const show = process.argv.includes('--show');
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
-if (!existsSync(join(ROOT, 'web/dist/index.html'))) {
+// GIVEN_WEB_DIST points the run at another build folder (the server reads it too), so a build under test need not replace web/dist.
+if (!existsSync(join(process.env.GIVEN_WEB_DIST ?? join(ROOT, 'web/dist'), 'index.html'))) {
   console.log('Building the web app first (npm run build)...');
   const b = spawnSync('npm', ['run', 'build'], { cwd: ROOT, stdio: 'inherit' });
   if (b.status !== 0) process.exit(1);
@@ -43,7 +44,7 @@ const base = `http://127.0.0.1:${PORT}`;
 const internal = `http://127.0.0.1:${EXEC}`;
 
 // ---------------------------------------------------------------------------------------------------- the server
-const env = { ...process.env, PORT: String(PORT), HOST: '127.0.0.1', GIVEN_MODE: 'fake', GIVEN_INTERNAL_EXECUTOR_PORT: String(EXEC), GIVEN_INTERNAL_CHAIN_PORT: String(CHAIN), GIVEN_PUBLIC_URL: base, GIVEN_RATE_LIMIT_PER_MIN: '1000', GIVEN_DATA_ROOT: mkdtempSync(join(tmpdir(), 'given-e2e-')) };
+const env = { ...process.env, PORT: String(PORT), HOST: '127.0.0.1', GIVEN_MODE: 'fake', GIVEN_INTERNAL_EXECUTOR_PORT: String(EXEC), GIVEN_INTERNAL_CHAIN_PORT: String(CHAIN), GIVEN_PUBLIC_URL: base, GIVEN_NO_PROJECT_ENV: '1', GIVEN_RATE_LIMIT_PER_MIN: '1000', GIVEN_DATA_ROOT: mkdtempSync(join(tmpdir(), 'given-e2e-')) };
 for (const k of ['GEMINI_API_KEY', 'GEMINI_API_SECRET', 'GIVEN_PROGRAM_ID', 'GIVEN_EDGE_TRUST_PROXY']) delete env[k];
 let server = null;
 let serverLog = '';

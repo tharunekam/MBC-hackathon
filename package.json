@@ -25,7 +25,7 @@
     "install:all": "npm --prefix executor install && npm --prefix chain install && npm --prefix web install",
     "test": "npm --prefix executor test && npm --prefix chain test && npm --prefix web test && npm run test:edge",
     "typecheck": "npm --prefix executor run typecheck && npm --prefix chain run typecheck && npm --prefix web run typecheck",
-    "test:edge": "node --test \"scripts/test/*.test.mjs\""
+    "test:edge": "GIVEN_NO_PROJECT_ENV=1 node --test \"scripts/test/*.test.mjs\""
   },
   "devDependencies": {
     "playwright-core": "^1.49.1"

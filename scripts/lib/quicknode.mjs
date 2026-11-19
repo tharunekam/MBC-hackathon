@@ -24,13 +24,13 @@ export const newToken = (bytes = 24) => randomBytes(bytes).toString('hex'); // 4
 
 /**
  * The body of POST /streams.
- *  - dataset_batch_size is 5: QuickNode answers 422 for less on a chain with sub-second blocks (Solana).
+ *  - dataset_batch_size is 1: the live API rejected 5 because the maximum for this dataset is 1.
  *  - compression is none, so the receiver verifies the signature over the body exactly as received.
  *  - The Stream is created paused unless asked otherwise: it bills per block, matched or not.
  *  - Two ways to authenticate, both accepted by the receiver: our shared token as a custom header, and QuickNode's own
  *    signature headers keyed by `securityToken`.
  */
-export function buildStreamBody({ name = 'given-calls', webhookUrl, filterSource, hookToken, securityToken, active = false, region = 'usa_east', batchSize = 5, externalId = 'given-calls-devnet' }) {
+export function buildStreamBody({ name = 'given-calls', webhookUrl, filterSource, hookToken, securityToken, active = false, region = 'usa_east', batchSize = 1, externalId = 'given-calls-devnet' }) {
   if (!/^https:\/\/[^/\s]+\/.*hooks\/quicknode\/?$/.test(webhookUrl ?? '')) throw new Error('the webhook URL must be https and end in /hooks/quicknode (through our proxy: https://<host>/chain/hooks/quicknode)');
   if (!hookToken || hookToken.length < 16) throw new Error('GIVEN_HOOK_TOKEN is missing or too short');
   if (!securityToken || securityToken.length < 32) throw new Error('QN_SECURITY_TOKEN must be at least 32 characters');

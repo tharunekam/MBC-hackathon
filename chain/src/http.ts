@@ -30,6 +30,8 @@ export interface HttpDeps {
   corsOrigins?: string[];
   hook: HookAuth;
   adminToken?: string;
+  /** In-memory indexing only: block writes that need a durable salt. */
+  indexOnly?: boolean;
   /** Server-sent events hub for `GET /events`. Without it that route answers 404. */
   live?: LiveHub;
   /** Streams one client address may hold open. Default 8. */
@@ -152,7 +154,7 @@ export function createHandler(deps: HttpDeps): (req: IncomingMessage, res: Serve
 
         if (req.method === 'GET' && path === '/health') {
           const balance = deps.balance ? await deps.balance().catch(() => null) : null;
-          return send(200, { ...deps.service.health(), balanceSol: balance === null ? null : balance / 1e9, time: now().toISOString() });
+          return send(200, { ...deps.service.health(), indexOnly: Boolean(deps.indexOnly), balanceSol: balance === null ? null : balance / 1e9, time: now().toISOString() });
         }
 
         if (isHook) {
@@ -167,7 +169,7 @@ export function createHandler(deps: HttpDeps): (req: IncomingMessage, res: Serve
           }
           const sigs = signaturesIn(payload);
           // Answer at once (a Stream pauses after repeated failures or timeouts); process after.
-          for (const sig of sigs) deps.service.ingest(sig, 'stream').catch((e: unknown) => console.error(`ingest ${sig.slice(0, 8)}…: ${e instanceof Error ? e.message : String(e)}`));
+          for (const sig of sigs) deps.service.ingest(sig, 'stream').catch((e: unknown) => console.error(deps.indexOnly ? 'Stream ingest failed: RPC request error.' : `ingest ${sig.slice(0, 8)}…: ${e instanceof Error ? e.message : String(e)}`));
           return send(202, { accepted: sigs.length });
         }
 
@@ -184,6 +186,7 @@ export function createHandler(deps: HttpDeps): (req: IncomingMessage, res: Serve
         }
 
         if (req.method === 'POST' && path === '/calls') {
+          if (deps.indexOnly) throw new ServiceError(403, 'chain_index_only', 'Call writes are disabled in index-only mode.');
           const body = parseJson(await readBody(req));
           if (typeof body.betId !== 'string' || body.betId === '') throw new ServiceError(400, 'missing_field', '"betId" is required.');
           return send(201, await deps.service.commitCall(body.betId, deps.user));
@@ -197,7 +200,10 @@ export function createHandler(deps: HttpDeps): (req: IncomingMessage, res: Serve
         const m = /^\/calls\/([A-Za-z0-9_-]{1,64})\/(reveal|verify)$/.exec(path);
         if (m) {
           const [, id, action] = m as unknown as [string, string, string];
-          if (action === 'reveal' && req.method === 'POST') return send(200, await deps.service.revealCall(id, deps.user));
+          if (action === 'reveal' && req.method === 'POST') {
+            if (deps.indexOnly) throw new ServiceError(403, 'chain_index_only', 'Call writes are disabled in index-only mode.');
+            return send(200, await deps.service.revealCall(id, deps.user));
+          }
           if (action === 'verify' && req.method === 'GET') return send(200, await deps.service.verifyCall(id, deps.user));
           throw new ServiceError(405, 'method_not_allowed', `${path} does not accept ${req.method}.`);
         }

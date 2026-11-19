@@ -74,6 +74,20 @@ test('errors are plain sentences with a code', async () => {
   }
 });
 
+test('index-only mode accepts webhooks but cannot write calls or reveal salts', async () => {
+  const s = await start({ indexOnly: true });
+  try {
+    s.bets.add();
+    assert.equal((await s.call('GET', '/health')).json.indexOnly, true);
+    assert.equal((await s.call('POST', '/calls', { betId: 'b1' })).json.code, 'chain_index_only');
+    assert.equal((await s.call('POST', '/calls/existing/reveal')).json.code, 'chain_index_only');
+    assert.equal((await s.call('POST', '/hooks/quicknode', [], { Authorization: 'Bearer hook-secret' })).status, 202);
+    assert.equal(s.chain.txs.length, 0);
+  } finally {
+    await s.close();
+  }
+});
+
 test('browsers from other sites are refused; the webhook is judged by its secret, not its origin', async () => {
   const s = await start();
   try {
@@ -200,6 +214,9 @@ test('signaturesIn finds signatures in raw and filtered shapes, and caps the cou
   assert.deepEqual(signaturesIn([{ sig: a }, { signature: b }]).sort(), [a, b].sort());
   assert.deepEqual(signaturesIn({ data: [[{ signature: a, logs: ['Program log: Memo'] }]] }), [a]);
   assert.deepEqual(signaturesIn({ sigs: [a, 'short', 5, null] }), [a]);
+  // A Webhooks-style delivery: a whole transaction, with the signature nested and 44-character keys and hashes around it.
+  const webhook = { data: [{ transaction: { signatures: [a], message: { recentBlockhash: 'B'.repeat(44), accountKeys: ['C'.repeat(44)] } }, meta: { logMessages: ['Program log: Memo (len 5): "hello"'] } }], metadata: { network: 'solana-devnet' } };
+  assert.deepEqual(signaturesIn(webhook), [a]);
   assert.deepEqual(signaturesIn('not a payload'), []);
   assert.deepEqual(signaturesIn(null), []);
   const many = Array.from({ length: 500 }, (_, i) => ({ sig: `${i}`.padStart(2, '1').padEnd(88, 'C') }));

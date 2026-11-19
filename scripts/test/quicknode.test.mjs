@@ -21,11 +21,11 @@ const URL_OK = 'https://given.example.com/chain/hooks/quicknode';
 const base = { webhookUrl: URL_OK, filterSource, hookToken: HOOK, securityToken: QN };
 
 describe('the Stream we ask QuickNode for', () => {
-  it('uses the documented slugs, a batch size Solana accepts, no compression, and starts paused', () => {
+  it('uses the configured slugs and dataset batch limit, no compression, and starts paused', () => {
     const b = buildStreamBody(base);
     assert.equal(b.network, 'solana-devnet');
     assert.equal(b.dataset, 'programs_with_logs');
-    assert.ok(b.dataset_batch_size >= 5, 'QuickNode answers 422 below 5 on a sub-second chain');
+    assert.equal(b.dataset_batch_size, 1, 'QuickNode reported a maximum batch size of 1 for this dataset');
     assert.equal(b.destination, 'webhook');
     assert.equal(b.destination_attributes.compression, 'none');
     assert.equal(b.status, 'paused');

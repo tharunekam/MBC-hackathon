@@ -80,6 +80,8 @@ export class ChainService {
   private readonly locks = new Map<string, Promise<unknown>>();
   /** Ingestion is serial: the Stream and the backfill can race on the same signature. */
   private ingestQueue: Promise<unknown> = Promise.resolve();
+  /** Recently fetched, confirmed transactions that cannot be Given records. Bounded and not persisted. */
+  private readonly irrelevantTransactions = new Set<string>();
   private readonly listeners: Array<(topic: ChangeTopic) => void> = [];
 
   constructor(o: ServiceOptions) {
@@ -369,11 +371,22 @@ export class ChainService {
   private async ingestNow(signature: string, via: SeenReveal['via']): Promise<IngestResult> {
     const { commits, reveals } = this.store.data;
     if (commits[signature] || reveals[signature]) return 'duplicate';
+    if (this.irrelevantTransactions.has(signature)) return 'ignored';
 
     const tx = await this.fetchTx(signature, via);
-    if (!tx || !this.authorities.has(tx.signer)) return 'ignored';
+    // A missing result can be a temporarily unconfirmed transaction: always retry it later.
+    if (!tx) return 'ignored';
     const memo = parseMemo(tx.memo);
-    if (!memo) return 'ignored';
+    if (!this.authorities.has(tx.signer) || !memo) {
+      // A confirmed transaction's signer and memo cannot change. Cache only these definite
+      // negatives, not missing transactions or reveals whose commit has yet to arrive.
+      this.irrelevantTransactions.add(signature);
+      if (this.irrelevantTransactions.size > 1024) {
+        const oldest = this.irrelevantTransactions.values().next().value;
+        if (oldest !== undefined) this.irrelevantTransactions.delete(oldest);
+      }
+      return 'ignored';
+    }
 
     if (memo.t === 'c') {
       commits[signature] = { signature, hash: memo.h, handle: memo.u, at: memo.at };

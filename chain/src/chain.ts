@@ -141,6 +141,8 @@ const isUnfundedError = (message: string): boolean => /no record of a prior cred
 
 export class SolanaChain implements Chain {
   readonly network = 'devnet' as const;
+  /** Bounded cache of transactions whose signed message contains no Memo instruction. */
+  private readonly transactionsWithoutMemo = new Set<string>();
   readonly authority: string;
   private readonly connection: Connection;
   private readonly keypair: Keypair;
@@ -249,16 +251,30 @@ export class SolanaChain implements Chain {
   }
 
   async getTx(signature: string): Promise<ChainTx | null> {
+    if (this.transactionsWithoutMemo.has(signature)) return null;
     const tx = await this.connection.getParsedTransaction(signature, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 });
     if (!tx || tx.meta?.err) return null;
     let memo: string | null = null;
+    let hasMemoInstruction = false;
     for (const ix of tx.transaction.message.instructions) {
       if (ix.programId.toBase58() !== MEMO_PROGRAM_ID) continue;
+      hasMemoInstruction = true;
       if ('parsed' in ix && typeof ix.parsed === 'string') memo = ix.parsed;
       else if ('data' in ix) memo = base58Decode(ix.data).toString('utf8');
       break;
     }
-    if (memo === null) return null;
+    if (memo === null) {
+      // The message bound to a transaction signature cannot gain a Memo instruction later.
+      // Cache only an actual returned transaction, not missing, failed, or unconfirmed results.
+      if (!hasMemoInstruction) {
+        this.transactionsWithoutMemo.add(signature);
+        if (this.transactionsWithoutMemo.size > 1024) {
+          const oldest = this.transactionsWithoutMemo.values().next().value;
+          if (oldest !== undefined) this.transactionsWithoutMemo.delete(oldest);
+        }
+      }
+      return null;
+    }
     const signer = tx.transaction.message.accountKeys.find((k) => k.signer)?.pubkey.toBase58();
     if (!signer) return null;
     return { signature, slot: tx.slot, blockTime: tx.blockTime ?? null, memo, signer };

@@ -58,11 +58,16 @@ export function hookAuthentic(headers: Headers, rawBody: string, auth: HookAuth,
 const SIG = /^[1-9A-HJ-NP-Za-km-z]{64,90}$/;
 const MAX_SIGNATURES = 50;
 
-/** Collects transaction signatures from whatever shape the Stream's filter returned. */
+/**
+ * Collects transaction signatures from whatever shape a delivery has: our Stream filter's `{ sig, slot }`, QuickNode's
+ * Programs + Logs items, or a Webhooks payload (a Solana transaction with `transaction.signatures`). Any string anywhere
+ * in the payload that looks like a signature is a candidate; it costs one RPC read to dismiss, and the service verifies
+ * every candidate from Solana itself, so a wrong guess adds nothing. Capped at 50 per delivery.
+ */
 export function signaturesIn(payload: unknown): string[] {
   const found = new Set<string>();
   const visit = (v: unknown, depth: number): void => {
-    if (found.size >= MAX_SIGNATURES || depth > 6) return;
+    if (found.size >= MAX_SIGNATURES || depth > 9) return;
     if (typeof v === 'string') {
       if (SIG.test(v)) found.add(v);
       return;
@@ -72,8 +77,7 @@ export function signaturesIn(payload: unknown): string[] {
       return;
     }
     if (v !== null && typeof v === 'object') {
-      const o = v as Record<string, unknown>;
-      for (const key of ['sig', 'signature', 'signatures', 'sigs', 'data']) if (key in o) visit(o[key], depth + 1);
+      for (const x of Object.values(v as Record<string, unknown>)) visit(x, depth + 1);
     }
   };
   visit(payload, 0);

@@ -141,6 +141,26 @@ test('a verifier with no database rebuilds the leaderboard from the chain alone'
   assert.deepEqual(await verifier.backfill(), { scanned: 2, added: 0 });
 });
 
+test('a shallow backfill reads one page of signatures; the default reads up to five', async () => {
+  const { chain, service, bets, fresh } = setup();
+  bets.add();
+  const call = await service.commitCall('b1', 'primary');
+  bets.settle('b1', 'yes', 'yes');
+  await service.revealCall(call.id, 'primary');
+  const verifier = fresh();
+  let asked = 0;
+  const original = chain.recentSignatures.bind(chain);
+  chain.recentSignatures = (limit, before) => {
+    asked++;
+    return original(limit, before);
+  };
+  await verifier.backfill(1, 1);
+  assert.equal(asked, 1, 'one page when asked for one');
+  asked = 0;
+  await verifier.backfill(1, 5);
+  assert.equal(asked, 3, 'two full pages of 1, then an empty page ends the scan');
+});
+
 test('ingest ignores memos not signed by an authority, and memos that are not ours', async () => {
   const { chain, service, fresh } = setup();
   const verifier = fresh();
@@ -291,6 +311,42 @@ test('backfill pages through more transactions than one page holds', async () =>
   assert.equal(chain.txs.length, 5);
   const verifier = fresh();
   assert.deepEqual(await verifier.backfill(2, 5), { scanned: 5, added: 5 });
+});
+
+test('backfill avoids refetching confirmed irrelevant memos but retries transactions not yet visible', async () => {
+  const { chain, fresh } = setup();
+  const unrelated = chain.forge('some other application', chain.authority);
+  const pending = chain.forge(encode({ g: 1, t: 'c', h: 'a'.repeat(64), u: 'test', at: 1 }), chain.authority);
+  const getTx = chain.getTx.bind(chain);
+  const calls = new Map<string, number>();
+  chain.getTx = async (sig) => {
+    calls.set(sig, (calls.get(sig) ?? 0) + 1);
+    if (sig === pending.signature && calls.get(sig) === 1) return null;
+    return getTx(sig);
+  };
+  const verifier = fresh();
+  assert.equal((await verifier.backfill()).added, 0);
+  assert.equal((await verifier.backfill()).added, 1, 'a transaction unavailable on the first scan is retried');
+  assert.equal((await verifier.backfill()).added, 0);
+  assert.equal(calls.get(unrelated.signature), 1, 'a confirmed non-Given memo is fetched only once');
+  assert.equal(calls.get(pending.signature), 2, 'the valid memo remains eligible after a missing result');
+});
+
+test('ingest caches a confirmed untrusted signer without caching RPC failures', async () => {
+  const { chain, fresh } = setup();
+  const forged = chain.forge(encode({ g: 1, t: 'c', h: 'b'.repeat(64), u: 'test', at: 1 }), 'other-authority');
+  const getTx = chain.getTx.bind(chain);
+  let calls = 0;
+  chain.getTx = async (sig) => {
+    calls++;
+    if (calls === 1) throw new Error('temporary RPC failure');
+    return getTx(sig);
+  };
+  const verifier = fresh();
+  await assert.rejects(verifier.ingest(forged.signature, 'rpc'), /temporary RPC failure/);
+  assert.equal(await verifier.ingest(forged.signature, 'rpc'), 'ignored');
+  assert.equal(await verifier.ingest(forged.signature, 'rpc'), 'ignored');
+  assert.equal(calls, 2, 'the error was retried and the confirmed untrusted signer was cached');
 });
 
 test('verify: tampering with what is on chain is detected', async () => {

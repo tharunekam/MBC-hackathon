@@ -85,7 +85,7 @@ running**, and RPC calls draw on the same credits. Create the Stream paused, sta
 afterwards. A paused Stream costs nothing and resumes where it stopped.
 
 Scripted: `scripts/quicknode.mjs` (`npm run quicknode`, from the repo root). Slugs and fields are from QuickNode's
-OpenAPI spec; the script has not been run against the live API yet.
+OpenAPI spec; the first creation attempt reached the live API, which reported a maximum batch size of 1 for this dataset.
 
 1. `npm run quicknode -- keys` makes `GIVEN_HOOK_TOKEN` and `QN_SECURITY_TOKEN` in `.env` (never overwrites, never prints).
    Put the same two values and `GIVEN_PUBLIC_URL` into the host's secrets. The chain service must be up with them first.
@@ -94,9 +94,9 @@ OpenAPI spec; the script has not been run against the live API yet.
    devnet, with no Stream, and says whether the record came back in a shape the webhook reads.
 4. `npm run quicknode -- test-delivery` sends signed sample deliveries to the hosted webhook: QuickNode-style signature
    headers and the shared-token header must give 202, no credentials must give 401. Do this before the Stream exists.
-5. `npm run quicknode -- plan` shows the Stream (the four settings above, no compression, batch size 5) and what it
+5. `npm run quicknode -- plan` shows the Stream (the four settings above, no compression, batch size 1) and what it
    costs. `create` makes it **paused**; `activate` starts it; `pause` stops it. Or make the same Stream in the dashboard
-   by hand, with batch size 5 or more and compression off (the receiver also accepts gzip; QuickNode signs the
+   by hand, with batch size 1 (the most QuickNode allows for this dataset) and compression off (the receiver also accepts gzip; QuickNode signs the
    uncompressed JSON).
 6. Send one real bet (`npm run check:deploy -- <url> --bet`) and watch the leaderboard `source` change from `rpc` to
    `quicknode-stream`.
@@ -105,7 +105,25 @@ OpenAPI spec; the script has not been run against the live API yet.
    resumes it. Solana Streams cannot backfill, so anything before the Stream started is filled by `POST /admin/backfill`
    (`X-Admin-Token`) or the automatic backfill (`GIVEN_BACKFILL_MS`, every 60 s on devnet by default).
 
-Batch size is 5 because QuickNode answers 422 for less on a sub-second chain; that adds about a second before a delivery.
+On free-plan devnet the live QuickNode API accepted a batch size of 1 for this dataset and rejected 5 as above its maximum. Reactivating a
+Stream on the free plan was refused (HTTP 422) with "upgrade to a paid plan to backfill more than 100 blocks for
+solana-devnet", so a Stream cannot be resumed there once it has fallen far behind; see docs/DEPLOY.md.
+
+### Running it for less (researched in QuickNode's docs on 2026-11-18)
+
+- **Streams** bill by block read (30 credits, and the filter does not reduce it): about 270,000 credits an hour on devnet, so
+  the free 10 million lasts about 37 hours if left running. Run it for a test, the recording and the demo, then `pause`.
+  A paused Stream costs nothing; resuming "from the latest block" does not bill the blocks it missed. Free-plan devnet
+  refused to resume a Stream that had fallen far behind ("backfill more than 100 blocks"), so resume it soon after pausing,
+  or create a fresh one with `npm run quicknode -- create`.
+- **Webhooks** (a separate QuickNode product, REST `https://api.quicknode.com/webhooks/rest/v1/`) bill **30 credits per delivered
+  payload**, so ten transactions cost about 300 credits. It supports `solana-devnet`, but only through fixed templates, and
+  `solanaWalletFilter` takes a list of account addresses (ours: the authority). The docs do not say what the template matches or
+  what a Solana payload looks like; open the Webhook's test run on a block that holds one of our Memo transactions to find out.
+  It cannot filter on the Memo program or on logs. The receiver reads any signature-shaped string anywhere in a payload, so it
+  accepts either product's delivery without a code change. Signing is the same `X-QN-*` HMAC (not confirmed for Webhooks).
+- This is **not** a substitute for the Stream where the Streams bounty is concerned; it is a cheap always-on hint beside it.
+  The 60-second RPC poll is the safety net under both (one billed request a minute).
 
 ### What is and is not verified
 
