@@ -1,11 +1,16 @@
+import { Fragment, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { ago, pct } from '../lib/format';
 import { useResource } from '../lib/hooks';
 import { chainLive } from '../lib/liveClients';
 
+const edgeText = (e: number) => `${e > 0 ? '+' : e < 0 ? '−' : ''}${Math.abs(e).toFixed(2)}`;
+
 export default function Leaderboard() {
   const lb = useResource('leaderboard', () => api.leaderboard(), { live: [[chainLive, 'leaderboard']], pollMs: 10000 });
   const rows = lb.data?.rows ?? [];
+  const [open, setOpen] = useState<string | null>(null);
 
   return (
     <div className="page">
@@ -36,24 +41,55 @@ export default function Leaderboard() {
                 <th className="r">#</th>
                 <th>Player</th>
                 <th className="n">Calls</th>
-                <th className="n">Hit rate</th>
+                <th className="n hide-s">Hit rate</th>
                 <th className="n">Edge</th>
                 <th className="n hide-s">Last call</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
-                <tr key={r.handle} className={r.handle === 'you' ? 'is-you' : ''}>
-                  <td className="r">{r.rank}</td>
-                  <td>
-                    {r.handle === 'you' ? 'You' : r.handle}
-                  </td>
-                  <td className="n">{r.calls}</td>
-                  <td className="n">{pct(r.hitRate)}</td>
-                  <td className={`n ${r.edge > 0 ? 'good' : r.edge < 0 ? 'bad' : ''}`}>{r.edge > 0 ? '+' : r.edge < 0 ? '−' : ''}{Math.abs(r.edge).toFixed(2)}</td>
-                  <td className="n hide-s">{ago(r.lastRevealedAt)}</td>
-                </tr>
-              ))}
+              {rows.map((r) => {
+                const name = r.handle === 'you' ? 'You' : r.handle;
+                const isOpen = open === r.handle;
+                return (
+                  <Fragment key={r.handle}>
+                    <tr className={r.handle === 'you' ? 'is-you' : ''}>
+                      <td className="r">{r.rank}</td>
+                      <td>
+                        {r.recent && r.recent.length > 0 ? (
+                          <button type="button" className="lb-toggle" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : r.handle)}>
+                            <span className="lb-caret" aria-hidden="true" />
+                            {name}
+                          </button>
+                        ) : (
+                          name
+                        )}
+                      </td>
+                      <td className="n">{r.calls}</td>
+                      <td className="n hide-s">{pct(r.hitRate)}</td>
+                      <td className={`n ${r.edge > 0 ? 'good' : r.edge < 0 ? 'bad' : ''}`}>{edgeText(r.edge)}</td>
+                      <td className="n hide-s">{ago(r.lastRevealedAt)}</td>
+                    </tr>
+                    {isOpen && r.recent && (
+                      <tr className="lb-calls">
+                        <td colSpan={6}>
+                          <ul aria-label={`${name}'s revealed calls`}>
+                            {r.recent.map((c) => (
+                              <li key={c.signature}>
+                                <span className="status" data-outcome={c.outcome === 1 ? 'won' : 'lost'}>
+                                  {c.outcome === 1 ? 'Won' : 'Lost'}
+                                </span>
+                                <span className={c.edge >= 0 ? 'good' : 'bad'}>{edgeText(c.edge)}</span>
+                                <span className="fine">{ago(c.revealedAt)}</span>
+                                <Link to={`/verify/${c.signature}`}>Check it on Solana</Link>
+                              </li>
+                            ))}
+                          </ul>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         )}

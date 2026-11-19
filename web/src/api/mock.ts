@@ -13,6 +13,7 @@ import type {
   Bet,
   CallRecord,
   LeaderboardResponse,
+  LeaderboardRow,
   MarketEvent,
   OfferQuote,
   Pair,
@@ -483,7 +484,7 @@ export function mockApi(): Api {
         { calls: 7, edge: -0.34, hitRate: 0.43 },
       ].map((r, i) => ({ ...r, handle: handleFor(i), lastRevealedAt: new Date(startedAt - (i + 1) * 5400_000).toISOString() }));
       const mine = calls.filter((c) => c.state === 'revealed' && c.reveal);
-      const rows = [...others];
+      const rows: Omit<LeaderboardRow, 'rank'>[] = [...others];
       if (mine.length >= 1) {
         rows.push({
           handle: 'you',
@@ -491,6 +492,7 @@ export function mockApi(): Api {
           edge: cents(mine.reduce((n, c) => n + (c.reveal?.edge ?? 0), 0)),
           hitRate: mine.filter((c) => c.reveal?.outcome === 1).length / mine.length,
           lastRevealedAt: mine[mine.length - 1]!.reveal!.revealedAt,
+          recent: [...mine].reverse().slice(0, 5).map((c) => ({ signature: c.reveal!.signature, revealedAt: c.reveal!.revealedAt, outcome: c.reveal!.outcome === 1 ? 1 : 0, edge: c.reveal!.edge ?? 0 })),
         });
       }
       rows.sort((x, y) => y.edge - x.edge);

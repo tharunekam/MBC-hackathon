@@ -4,8 +4,10 @@ import type { ReconcileResponse } from '../api/types';
 import { usd } from '../lib/format';
 import { useResource } from '../lib/hooks';
 import { execLive } from '../lib/liveClients';
+import { useVenue } from '../lib/venue';
 
 export default function Proof() {
+  const venue = useVenue();
   const flow = useResource('flow', () => api.flow(), { live: [[execLive, 'bets']], pollMs: 10000 });
   const [rec, setRec] = useState<ReconcileResponse | null>(null);
   const [running, setRunning] = useState(false);
@@ -39,7 +41,7 @@ export default function Proof() {
           <span className="eyebrow">Books match Gemini</span>
           <h2 className="h-card">Reconcile to the cent</h2>
           <p>We compare every order we recorded with Gemini’s own order history, then compare our cash with the account balance.</p>
-          <button className="btn btn-primary" onClick={run} disabled={running}>
+          <button className="btn btn-primary" onClick={run} disabled={running || venue.readOnly} aria-describedby={venue.readOnly ? 'recon-why' : undefined}>
             {running ? (
               <>
                 <span className="spin" aria-hidden="true" /> Checking with Gemini
@@ -48,6 +50,11 @@ export default function Proof() {
               'Check against Gemini'
             )}
           </button>
+          {venue.readOnly && (
+            <p id="recon-why" className="fine">
+              This needs a connected Gemini account. This demo shows live prices only, so there is nothing to reconcile.
+            </p>
+          )}
           {err && (
             <p className="note note-bad" role="alert">
               {err}

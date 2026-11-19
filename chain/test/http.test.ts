@@ -119,6 +119,10 @@ test('webhook: a delivery without the secret is refused, with it the signatures 
     const board = (await s.call('GET', '/leaderboard')).json;
     assert.equal(board.rows.length, 1);
     assert.equal(board.source, 'quicknode-stream');
+    // Each row lists its newest verified calls, so a visitor can open one on the proof page.
+    assert.equal(board.rows[0].recent.length, 1);
+    assert.equal(board.rows[0].recent[0].signature, rev.json.reveal.signature);
+    assert.equal(board.rows[0].recent[0].outcome, 1);
     // The same delivery again changes nothing.
     await s.call('POST', '/hooks/quicknode', payload, { 'X-Given-Token': 'hook-secret' });
     await s.service.idle();

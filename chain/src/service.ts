@@ -489,14 +489,15 @@ export class ChainService {
   }
 
   leaderboard() {
-    const by = new Map<string, { calls: number; wins: number; edge: number; last: number }>();
+    const by = new Map<string, { calls: number; wins: number; edge: number; last: number; recent: { signature: string; revealedAt: number; outcome: 0 | 1; edge: number }[] }>();
     for (const r of Object.values(this.store.data.reveals)) {
       if (!r.verified) continue;
-      const cur = by.get(r.handle) ?? { calls: 0, wins: 0, edge: 0, last: 0 };
+      const cur = by.get(r.handle) ?? { calls: 0, wins: 0, edge: 0, last: 0, recent: [] };
       cur.calls++;
       cur.wins += r.outcome;
       cur.edge += r.edge;
       cur.last = Math.max(cur.last, r.revealedAt);
+      cur.recent.push({ signature: r.signature, revealedAt: r.revealedAt, outcome: r.outcome, edge: r.edge });
       by.set(r.handle, cur);
     }
     const rows = [...by.entries()]
@@ -507,6 +508,11 @@ export class ChainService {
         edge: Math.round(v.edge * 10_000) / 10_000,
         hitRate: v.wins / v.calls,
         lastRevealedAt: new Date(v.last * 1000).toISOString(),
+        // Newest first, so a visitor can open any of a player's calls on the proof page and check it against Solana.
+        recent: v.recent
+          .sort((a, b) => b.revealedAt - a.revealedAt)
+          .slice(0, 5)
+          .map((c) => ({ signature: c.signature, revealedAt: new Date(c.revealedAt * 1000).toISOString(), outcome: c.outcome, edge: Math.round(c.edge * 10_000) / 10_000 })),
       }))
       .sort((a, b) => b.edge - a.edge || b.calls - a.calls || a.handle.localeCompare(b.handle))
       .map((r, i) => ({ rank: i + 1, ...r }));

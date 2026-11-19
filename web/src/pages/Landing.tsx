@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import ProbBar from '../components/ProbBar';
 
@@ -29,6 +30,62 @@ function Example() {
   );
 }
 
+// The same numbers as the example card above: a $10 stake, first half $62,500, second half $64,000.
+const LOW = 61500;
+const HIGH = 65000;
+const FIRST = 62500;
+const SECOND = 64000;
+const span = HIGH - LOW;
+const at = (v: number) => `${(((v - LOW) / span) * 100).toFixed(2)}%`;
+const dollars = (v: number) => `$${v.toLocaleString('en-US')}`;
+
+/** Drag the finishing price and see which of the three outcomes it lands in. Illustrative, and labelled so. */
+function Outcomes() {
+  const [price, setPrice] = useState(63100);
+  const zone = price < FIRST ? 'back' : price < SECOND ? 'lose' : 'win';
+  const result = {
+    back: { label: 'Stake back', amount: '$0.00 lost', why: `BTC finished below ${dollars(FIRST)}, so the first half failed and your $10 comes back.` },
+    lose: { label: 'You lose', amount: '−$10.00', why: `BTC held ${dollars(FIRST)} but stopped short of ${dollars(SECOND)}.` },
+    win: { label: 'You win', amount: '+$9.61', why: `BTC held ${dollars(FIRST)} and reached ${dollars(SECOND)}.` },
+  }[zone];
+  return (
+    <div className="card outcomes-demo" aria-label="Where the bet lands">
+      <span className="eyebrow">Where does BTC finish the hour?</span>
+      <output className="od-price" htmlFor="od-range">
+        {dollars(price)}
+      </output>
+      <div className="od-track" data-zone={zone}>
+        <div className="od-zones" aria-hidden="true">
+          <span data-kind="back" style={{ width: at(FIRST) }} />
+          <span data-kind="lose" style={{ width: `calc(${at(SECOND)} - ${at(FIRST)})` }} />
+          <span data-kind="win" style={{ flex: 1 }} />
+        </div>
+        <input
+          id="od-range"
+          type="range"
+          min={LOW}
+          max={HIGH}
+          step={50}
+          value={price}
+          onChange={(e) => setPrice(Number(e.target.value))}
+          aria-label="Where Bitcoin finishes the hour"
+          aria-valuetext={`${dollars(price)}: ${result.label}`}
+        />
+        <div className="od-ticks" aria-hidden="true">
+          <span style={{ left: at(FIRST) }}>{dollars(FIRST)}</span>
+          <span style={{ left: at(SECOND) }}>{dollars(SECOND)}</span>
+        </div>
+      </div>
+      <div className="od-result" data-kind={zone} role="status">
+        <b>{result.label}</b>
+        <span className="od-amount">{result.amount}</span>
+        <p>{result.why}</p>
+      </div>
+      <p className="fine">Illustrative: a $10 stake at 51¢ per $1, the same bet as the example above.</p>
+    </div>
+  );
+}
+
 export default function Landing() {
   return (
     <>
@@ -52,26 +109,24 @@ export default function Landing() {
       </section>
 
       <section className="band band-dark" id="how">
-        <div className="wrap">
-          <h2 className="h-section">Two prices, three outcomes</h2>
-          <p className="lede">Every bet is built from two real orders on Gemini, in your own account. Nothing is held anywhere else.</p>
-          <div className="trio">
-            <article>
-              <span className="num">1</span>
-              <h3>Choose the first half</h3>
-              <p>Pick a price that has to hold, like Bitcoin finishing the hour at $62,500 or above.</p>
-            </article>
-            <article>
-              <span className="num">2</span>
-              <h3>Choose the second half</h3>
-              <p>Pick the higher price you are betting on. We show the odds, the fair price and what you actually pay.</p>
-            </article>
-            <article>
-              <span className="num">3</span>
-              <h3>Win, get it back, or lose</h3>
-              <p>Reach the second price and you win. Miss the first and your stake comes back. Hold the first but fall short and you lose it.</p>
-            </article>
+        <div className="wrap split">
+          <div>
+            <h2 className="h-section">Two prices, three outcomes</h2>
+            <p className="lede">Every bet is two real orders on Gemini, in your own account. Nothing is held anywhere else.</p>
+            <ol className="orders-list">
+              <li>
+                <span>Order 1</span>
+                <b>Buy YES at the higher price</b>
+                <p>This is the bet itself. If the second half happens, it pays.</p>
+              </li>
+              <li>
+                <span>Order 2</span>
+                <b>Buy NO at the lower price</b>
+                <p>This is the refund. It is sized so that if the first half fails, it pays your stake back.</p>
+              </li>
+            </ol>
           </div>
+          <Outcomes />
         </div>
       </section>
 

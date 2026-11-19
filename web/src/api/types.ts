@@ -315,6 +315,8 @@ export interface LeaderboardRow {
   edge: number;
   hitRate: number;
   lastRevealedAt: string;
+  /** Up to five of this player's newest verified calls, each openable on /verify/:signature. */
+  recent?: { signature: string; revealedAt: string; outcome: 0 | 1; edge: number }[];
 }
 
 export interface LeaderboardResponse {
