@@ -3,20 +3,26 @@
 
 /* ------------------------------------------------------------ first screen */
 .hero {
-  padding: clamp(40px, 6vw, 84px) 0 clamp(56px, 7vw, 96px);
+  padding: clamp(48px, 8vw, 120px) 0 clamp(64px, 8vw, 120px);
   overflow-x: clip;
 }
 .hero-title {
-  max-width: 21ch;
   font-family: var(--font-display);
   font-weight: 400;
-  font-size: clamp(32px, 4.7vw, 60px);
-  line-height: 1.08;
-  letter-spacing: -0.038em;
+  font-size: clamp(40px, 7vw, 92px);
+  line-height: 1;
+  letter-spacing: -0.045em;
+}
+.hero-sub {
+  margin-top: clamp(14px, 1.6vw, 22px);
+  font-size: clamp(16px, 1.5vw, 19px);
+  line-height: 1.4;
+  color: var(--muted);
 }
 /* The first screen arrives in order, once. */
 .hero-title,
-.hero-stage,
+.hero-sub,
+.hero-line,
 .hero-note {
   animation: hero-in 800ms var(--ease) both;
   animation-delay: calc(var(--i, 0) * 90ms + 40ms);
@@ -28,51 +34,6 @@
   }
 }
 
-/* ------------------------------------------------------------ stage */
-/* A stage is a flat panel, dotted like graph paper, that a piece of the product is shown on. */
-.stage {
-  --mx: -400px;
-  --my: -400px;
-  position: relative;
-  isolation: isolate;
-  padding: clamp(14px, 3.4vw, 44px);
-  border-radius: 16px;
-  background-color: var(--stage);
-  background-image: radial-gradient(var(--stage-dot) 1px, transparent 1.5px);
-  background-size: 18px 18px;
-}
-/* A second, brighter set of the same dots, shown only in a circle around the pointer. */
-.stage::before {
-  content: '';
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  border-radius: inherit;
-  background-image: radial-gradient(var(--accent) 1.2px, transparent 1.8px);
-  background-size: 18px 18px;
-  -webkit-mask-image: radial-gradient(circle 150px at var(--mx) var(--my), #000 0%, transparent 100%);
-  mask-image: radial-gradient(circle 150px at var(--mx) var(--my), #000 0%, transparent 100%);
-  opacity: 0;
-  transition: opacity 400ms var(--ease-ui);
-  pointer-events: none;
-}
-@media (hover: hover) {
-  .stage:hover::before {
-    opacity: 0.9;
-  }
-}
-.stage-panel,
-.stage > .card {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel);
-}
-.stage-panel {
-  padding: clamp(18px, 2.6vw, 32px);
-}
-.hero-stage {
-  margin-top: clamp(32px, 4.4vw, 56px);
-}
 /* What this copy of the app is really talking to, under the line. Room is held for it, so the first screen does not jump
    when the answer arrives. */
 .hero-note {
@@ -87,167 +48,102 @@
   }
 }
 /* ------------------------------------------------------------ the price line */
-/* The whole bet on one line of prices, cut at its two prices into the three outcomes. The zone the marker is in is solid;
-   the other two are a wash of the same colour. */
+/* The bet drawn on one thin line of prices, with nothing around it: no panel, no border. The line is cut at the bet's two
+   prices; the segment the handle is on takes its colour and the other two stay grey. What each one pays is written under it. */
+.hero-line {
+  margin-top: clamp(44px, 7vw, 96px);
+}
 .line {
   display: grid;
-  grid-template-columns: minmax(0, 1fr); /* not 1fr: the zones' labels must not be able to push the line wider than its panel */
-  gap: 18px;
+  grid-template-columns: minmax(0, 1fr); /* not 1fr: a long label must not be able to push the line wider than the page */
+  gap: clamp(28px, 4vw, 44px);
 }
 .line-head {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px 24px;
 }
-/* Which bet the line draws: a two-way switch, the chosen side in the accent. */
-.line-pick {
-  display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-ctl);
-}
-.line-pick button {
-  height: 30px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  font: inherit;
-  font-size: 13.5px;
-  font-weight: 500;
-  color: var(--muted);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background var(--t-fast) var(--ease-ui), color var(--t-fast) var(--ease-ui), transform var(--t-fast) var(--ease-ui);
-}
-.line-pick button:hover:not(.is-on) {
-  color: var(--ink);
-}
-.line-pick button:active {
-  transform: scale(0.97);
-}
-.line-pick button.is-on {
-  background: var(--accent);
-  color: var(--accent-ink);
-}
-.line-q {
-  font-family: var(--font-display);
-  font-size: clamp(17px, 1.8vw, 22px);
-  font-weight: 400;
-  letter-spacing: -0.022em;
-  line-height: 1.25;
-  color: var(--muted);
-}
-.line-q em {
-  font-weight: 500;
-  color: var(--ink);
-}
-.line-note,
 .ticket-kicker {
   font-size: 13px;
   color: var(--muted);
 }
+/* Which bet the line draws: two words, the chosen one underlined. */
+.line-pick {
+  display: inline-flex;
+  gap: 20px;
+}
+.line-pick button {
+  padding: 6px 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: none;
+  font: inherit;
+  font-size: 14.5px;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--t-fast) var(--ease-ui), border-color var(--t-fast) var(--ease-ui);
+}
+.line-pick button:hover {
+  color: var(--ink);
+}
+.line-pick button.is-on {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+.line-body {
+  display: grid;
+  gap: 18px;
+  cursor: ew-resize;
+}
 .line-track {
   --grip: 44px;
   position: relative;
-  padding-top: 44px; /* room for the price above the marker */
+  padding-top: 30px; /* room for the price over the handle */
 }
-.line-zones {
+.line-segs {
   display: flex;
-  gap: 3px;
-  height: clamp(100px, 11vw, 128px);
-}
-.line-zones li {
-  flex-basis: 0;
-  min-width: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
   gap: 4px;
-  padding: 14px 16px;
+  height: 6px;
+}
+.line-segs i {
+  flex-basis: 0;
   border-radius: 3px;
-  color: var(--muted);
-  transition: background var(--t-med) var(--ease-ui), color var(--t-med) var(--ease-ui);
+  background: var(--line-strong);
+  transition: background var(--t-med) var(--ease-ui);
 }
-.line-zones li:first-child {
-  border-radius: 8px 3px 3px 8px;
-}
-.line-zones li:last-child {
-  border-radius: 3px 8px 8px 3px;
-}
-.line-zones b {
-  font-family: var(--font-display);
-  font-size: clamp(18px, 2.3vw, 28px);
-  font-weight: 500;
-  letter-spacing: -0.03em;
-  line-height: 1;
-  white-space: nowrap;
-}
-.line-zones span {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.25;
-}
-.line-zones [data-kind='back'] {
-  background: var(--accent-soft);
-}
-.line-zones [data-kind='lose'] {
-  background: var(--bad-soft);
-}
-.line-zones [data-kind='win'] {
-  background: var(--good-soft);
-}
-.line-zones [data-kind='back'][data-on] {
+.line-segs [data-kind='back'][data-on] {
   background: var(--accent);
-  color: var(--accent-ink);
 }
-.line-zones [data-kind='lose'][data-on] {
+.line-segs [data-kind='lose'][data-on] {
   background: var(--bad);
-  color: var(--panel);
 }
-.line-zones [data-kind='win'][data-on] {
+.line-segs [data-kind='win'][data-on] {
   background: var(--good);
-  color: var(--panel);
 }
-/* The marker: the finishing price above, a rule down through the line, and a grip on it. */
+/* The handle sits on the line with the finishing price over it. */
 .line-marker {
   position: absolute;
   top: 0;
-  bottom: -8px;
+  bottom: 0;
   width: 0;
   pointer-events: none;
   transition: left 90ms linear;
 }
-.line-marker::before {
-  content: '';
-  position: absolute;
-  top: 32px;
-  bottom: 0;
-  left: -1px;
-  width: 2px;
-  border-radius: 2px;
-  background: var(--ink);
-}
 .line-marker::after {
   content: '';
   position: absolute;
-  left: -8px;
-  top: 58px;
-  width: 16px;
-  height: 16px;
+  left: -9px;
+  bottom: -6px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  background: var(--panel);
-  border: 2px solid var(--ink);
+  background: var(--ink);
+  box-shadow: 0 0 0 4px var(--bg);
   transition: transform var(--t-fast) var(--ease-ui);
 }
-.line-track:hover .line-marker::after {
-  transform: scale(1.2);
+.line-body:hover .line-marker::after {
+  transform: scale(1.15);
 }
-.line-track:active .line-marker::after {
+.line-body:active .line-marker::after {
   transform: scale(0.9);
 }
 .line-marker output {
@@ -255,24 +151,19 @@
   top: 0;
   left: 0;
   transform: translateX(-50%);
-  height: 28px;
-  padding: 0 11px;
-  display: grid;
-  place-items: center;
-  border-radius: 6px;
-  background: var(--ink);
-  color: var(--bg);
-  font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.01em;
   white-space: nowrap;
+  color: var(--ink);
 }
 /* The real control is a range input laid over the line. Its thumb is as wide as a fingertip and invisible, and the input
    overhangs the line by half a thumb each side, so the thumb's centre runs exactly from one end of the line to the other. */
 .line-track input[type='range'] {
   position: absolute;
-  top: 0;
-  bottom: -8px;
+  top: 6px;
+  bottom: -19px;
   left: calc(var(--grip) / -2);
   width: calc(100% + var(--grip));
   height: auto;
@@ -280,11 +171,8 @@
   background: transparent;
   appearance: none;
   -webkit-appearance: none;
-  cursor: grab;
+  cursor: ew-resize;
   touch-action: pan-y;
-}
-.line-track input[type='range']:active {
-  cursor: grabbing;
 }
 .line-track input[type='range']::-webkit-slider-runnable-track {
   height: 100%;
@@ -310,41 +198,50 @@
 .line-track input[type='range']:focus-visible {
   outline: none;
 }
-.line-track:has(input:focus-visible) .line-marker output {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
+.line-track:has(input:focus-visible) .line-marker::after {
+  box-shadow: 0 0 0 4px var(--bg), 0 0 0 6px var(--accent);
 }
-.line-foot {
+/* Under each segment: what it pays, and when. Only the one the handle is on is lit. */
+.line-zones {
+  display: flex;
+  gap: 4px;
+}
+.line-zones li {
+  flex-basis: 0;
+  min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
-  gap: 8px clamp(24px, 4vw, 56px);
-  align-items: start;
-  margin-top: 4px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
+  align-content: start;
+  gap: 6px;
+  padding-right: 12px;
+  color: var(--faint);
+  transition: color var(--t-med) var(--ease-ui);
 }
-.line-result {
-  font-size: clamp(16px, 1.5vw, 19px);
-  line-height: 1.4;
-  letter-spacing: -0.012em;
+.line-zones b {
+  font-family: var(--font-display);
+  font-size: clamp(18px, 2.6vw, 34px);
+  font-weight: 400;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+.line-zones span {
+  font-size: 13.5px;
+  line-height: 1.3;
+}
+.line-zones [data-on] {
   color: var(--ink);
 }
-.line-result b {
-  font-weight: 500;
-}
-.line-result span {
+.line-zones [data-on] span {
   color: var(--muted);
 }
-.line[data-zone='back'] .line-result b {
+.line-zones [data-kind='back'][data-on] b {
   color: var(--accent-text);
 }
-.line[data-zone='lose'] .line-result b {
+.line-zones [data-kind='lose'][data-on] b {
   color: var(--bad);
 }
-.line[data-zone='win'] .line-result b {
+.line-zones [data-kind='win'][data-on] b {
   color: var(--good);
 }
-
 /* ------------------------------------------------------------ sections */
 .band {
   position: relative;
@@ -416,20 +313,32 @@
   color: var(--soft);
 }
 
-/* The two orders behind the example. */
+/* The two orders behind the example, and the four numbers on a quote: both are plain lists on rules, with no box round them. */
+.landing .orders,
+.landing .quad {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
 .orders {
   display: grid;
   gap: 0;
-  padding: 0;
-  overflow: hidden;
+  border-top: 1px solid var(--line);
+}
+.landing .orders {
+  border-top: 1px solid var(--line);
 }
 .order-slips li {
   display: grid;
-  gap: 4px;
-  padding: 20px 24px;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 2px 0;
+  padding: 20px 0;
   border-bottom: 1px solid var(--line);
 }
 .order-n {
+  grid-row: 1 / span 2;
+  padding-top: 4px;
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--muted);
@@ -448,34 +357,29 @@
 .orders-odds {
   display: grid;
   gap: 14px;
-  padding: 20px 24px 22px;
+  padding: 22px 0 0;
 }
 .quad {
   display: grid;
   gap: 18px;
-  padding: 24px;
 }
 .quad .nums {
   gap: 0;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  overflow: hidden;
+  border-top: 1px solid var(--line);
 }
 .quad .nums > div {
-  padding: 16px 18px;
+  padding: 20px 0;
   border-bottom: 1px solid var(--line);
 }
-.quad .nums > div:nth-child(odd) {
-  border-right: 1px solid var(--line);
-}
-.quad .nums > div:nth-last-child(-n + 2) {
-  border-bottom: 0;
+.quad .nums > div:nth-child(even) {
+  padding-left: 24px;
+  border-left: 1px solid var(--line);
 }
 .quad .nums dd {
-  font-size: 30px;
+  font-size: clamp(30px, 3.4vw, 44px);
   font-weight: 400;
-  letter-spacing: -0.035em;
-  margin-top: 6px;
+  letter-spacing: -0.04em;
+  margin-top: 8px;
 }
 .proof-list {
   counter-reset: step;
@@ -610,9 +514,8 @@
   align-content: center;
   gap: 6px;
   width: 100%;
-  aspect-ratio: 240 / 112;
-  padding: 14px 14px 10px;
-  border: 1px solid var(--line);
+  height: auto;
+  padding: 18px 14px 10px;
   border-radius: 10px;
   background: var(--panel);
 }
@@ -770,7 +673,6 @@
   padding: clamp(32px, 5vw, 64px);
   border-radius: 20px;
   background: var(--band-dark-bg);
-  border: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--ink);
 }
 .closing-title {
@@ -789,7 +691,6 @@
   }
 }
 @media (max-width: 960px) {
-  .line-foot,
   .split {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -812,28 +713,14 @@
   }
 }
 @media (max-width: 560px) {
-  .stage {
-    border-radius: 16px;
-  }
-  .line-zones {
-    height: 92px;
-  }
-  .line-zones li {
-    padding: 10px 9px;
+  .line-zones b {
+    font-size: 17px;
   }
   .line-zones span {
-    font-size: 10.5px;
+    font-size: 12px;
   }
-  .line-zones b {
-    font-size: 14px;
-    line-height: 1.05;
-    white-space: normal;
-  }
-  .line-pick {
-    width: 100%;
-  }
-  .line-pick button {
-    flex: 1;
+  .line-zones li {
+    padding-right: 6px;
   }
   .showcase li {
     display: flex;
@@ -850,23 +737,13 @@
   }
 }
 
-/* Narrower than any current phone, such as a slim side pane: the line keeps its three zones and drops their small print. */
+/* Narrower than any current phone, such as a slim side pane: the line keeps its three segments and drops the small print. */
 @media (max-width: 360px) {
-  .stage {
-    padding: 8px;
-  }
-  .stage-panel {
-    padding: 14px 12px;
-  }
-  .line-zones li {
-    padding: 8px 6px;
-  }
   .line-zones b {
-    font-size: 13px;
+    font-size: 14px;
     letter-spacing: -0.02em;
   }
-  .line-zones span,
-  .line-note {
+  .line-zones span {
     display: none;
   }
   /* The words under a picture may take two lines rather than run into each other. */
@@ -883,7 +760,8 @@
 /* ------------------------------------------------------------ less motion */
 @media (prefers-reduced-motion: reduce) {
   .hero-title,
-  .hero-stage,
+  .hero-sub,
+  .hero-line,
   .hero-note {
     animation: none;
   }
@@ -896,13 +774,15 @@
     transition: none;
   }
   .line-zones li,
+  .line-segs i,
   .line-marker::after,
   .showcase-go i {
     transition: none;
   }
 }
 :root[data-still] .hero-title,
-:root[data-still] .hero-stage,
+:root[data-still] .hero-sub,
+:root[data-still] .hero-line,
 :root[data-still] .hero-note {
   animation: none;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import ProbBar from '../components/ProbBar';
 import ProductShowcase from '../components/ProductShowcase';
@@ -32,9 +32,7 @@ interface Zone {
 interface Example {
   id: 'parlay' | 'range';
   name: string;
-  question: ReactNode;
   zones: readonly Zone[];
-  cost: string;
 }
 
 /** The same two prices as two different bets. The figures are worked from one set of example odds, and labelled as an example. */
@@ -42,32 +40,20 @@ const EXAMPLES: readonly Example[] = [
   {
     id: 'parlay',
     name: 'Return Parlay',
-    question: (
-      <>
-        Given <em>{dollars(FIRST)}</em> or above, will Bitcoin reach <em>{dollars(SECOND)}</em>?
-      </>
-    ),
     zones: [
       { kind: 'back', from: LOW, to: FIRST, amount: 'Stake back', when: `Below ${dollars(FIRST)}`, say: 'you get your $10 back', why: 'The first half failed, so your stake comes back.' },
       { kind: 'lose', from: FIRST, to: SECOND, amount: '−$10.00', when: `${dollars(FIRST)} to ${dollars(SECOND)}`, say: 'you lose $10.00', why: 'The first half held and the second didn’t. This is the only way you lose.' },
       { kind: 'win', from: SECOND, to: HIGH, amount: '+$9.61', when: `${dollars(SECOND)} and up`, say: 'you win $9.61', why: 'Both halves happened, so the bet pays.' },
     ],
-    cost: 'You pay 51¢ per $1 of payout; the fair price is 45¢ and the rest is spread and fees.',
   },
   {
     id: 'range',
     name: 'Range',
-    question: (
-      <>
-        Will Bitcoin finish between <em>{dollars(FIRST)}</em> and <em>{dollars(SECOND)}</em>?
-      </>
-    ),
     zones: [
       { kind: 'lose', from: LOW, to: FIRST, amount: '−$3.42', when: `Below ${dollars(FIRST)}`, say: 'you lose $3.42', why: 'It finished under the range. $6.58 of your $10 still comes back.' },
       { kind: 'win', from: FIRST, to: SECOND, amount: '+$3.16', when: `${dollars(FIRST)} to ${dollars(SECOND)}`, say: 'you win $3.16', why: 'It finished inside the range, so the bet pays.' },
       { kind: 'lose', from: SECOND, to: HIGH, amount: '−$3.42', when: `${dollars(SECOND)} and up`, say: 'you lose $3.42', why: 'It finished over the range. $6.58 of your $10 still comes back.' },
     ],
-    cost: 'At least one of its two orders pays at settlement, so $6.58 of your $10 comes back either way. You pay $1.52 for a pair that is fairly worth $1.48.',
   },
 ];
 
@@ -127,7 +113,6 @@ function PriceLine() {
   return (
     <div className="line" data-zone={now.kind}>
       <div className="line-head">
-        <p className="line-q">{ex.question}</p>
         <div className="line-pick" role="radiogroup" aria-label="Which bet to draw">
           {EXAMPLES.map((e) => (
             <button
@@ -147,7 +132,29 @@ function PriceLine() {
         </div>
       </div>
 
-      <div className="line-track" ref={track} onPointerMove={follow}>
+      {/* The line itself: three thin segments and a handle. What each segment pays is written under it. */}
+      <div className="line-body" ref={track} onPointerMove={follow}>
+        <div className="line-track">
+          <div className="line-segs" aria-hidden="true">
+            {ex.zones.map((z, i) => (
+              <i key={`${ex.id}-${i}`} data-kind={z.kind} data-on={i === index ? '' : undefined} style={{ flexGrow: z.to - z.from }} />
+            ))}
+          </div>
+          <div className="line-marker" style={{ left: at(price) }} aria-hidden="true">
+            <output>{dollars(price)}</output>
+          </div>
+          <input
+            id="line-range"
+            type="range"
+            min={LOW}
+            max={HIGH}
+            step={50}
+            value={price}
+            onChange={(e) => take(Number(e.target.value))}
+            aria-label="Where Bitcoin finishes"
+            aria-valuetext={`${dollars(price)}: ${now.say}`}
+          />
+        </div>
         <ol className="line-zones" aria-hidden="true">
           {ex.zones.map((z, i) => (
             <li key={`${ex.id}-${i}`} data-kind={z.kind} data-on={i === index ? '' : undefined} style={{ flexGrow: z.to - z.from }}>
@@ -156,48 +163,13 @@ function PriceLine() {
             </li>
           ))}
         </ol>
-        <div className="line-marker" style={{ left: at(price) }} aria-hidden="true">
-          <output>{dollars(price)}</output>
-        </div>
-        <input
-          id="line-range"
-          type="range"
-          min={LOW}
-          max={HIGH}
-          step={50}
-          value={price}
-          onChange={(e) => take(Number(e.target.value))}
-          aria-label="Where Bitcoin finishes"
-          aria-valuetext={`${dollars(price)}: ${now.say}`}
-        />
       </div>
 
-      <div className="line-foot">
-        {/* Not a live region: the slider already speaks the price and the result as it moves, and the opening tour would say
-            it over and over. */}
-        <p className="line-result">
-          Bitcoin finishes at {dollars(price)}: <b>{now.say}</b>. <span>{now.why}</span>
-        </p>
-        <p className="fine">An example with a $10 stake. {ex.cost}</p>
-      </div>
-    </div>
-  );
-}
-
-/**
- * A stage: the dotted panel a piece of the product is shown on. The dots under the pointer light up, a little way out, so the
- * panel answers the hand without anything on it moving.
- */
-function Stage({ children, className }: { children: ReactNode; className?: string }) {
-  const light = (e: PointerEvent<HTMLDivElement>) => {
-    if (e.pointerType !== 'mouse') return;
-    const box = e.currentTarget.getBoundingClientRect();
-    e.currentTarget.style.setProperty('--mx', `${e.clientX - box.left}px`);
-    e.currentTarget.style.setProperty('--my', `${e.clientY - box.top}px`);
-  };
-  return (
-    <div className={['stage', className].filter(Boolean).join(' ')} onPointerMove={light}>
-      {children}
+      {/* The outcome is read off the line itself; the sentence is kept for screen readers. Not a live region: the slider
+          already speaks the price and the result as it moves. */}
+      <p className="sr-only">
+        Bitcoin finishes at {dollars(price)}: {now.say}. {now.why}
+      </p>
     </div>
   );
 }
@@ -286,14 +258,13 @@ export default function Landing() {
       <section className="hero">
         <div className="wrap">
           <h1 className="hero-title" style={{ ['--i' as string]: 0 }}>
-            Bet on the second half of your hunch. <span className="dim">If the first half doesn’t happen, you get your stake back.</span>
+            Bet the second half.
           </h1>
-          <div className="hero-stage" style={{ ['--i' as string]: 1 }}>
-            <Stage>
-              <div className="stage-panel">
-                <PriceLine />
-              </div>
-            </Stage>
+          <p className="hero-sub" style={{ ['--i' as string]: 0 }}>
+            If the first half doesn’t happen, you get your stake back.
+          </p>
+          <div className="hero-line" style={{ ['--i' as string]: 1 }}>
+            <PriceLine />
           </div>
           <p className="fine hero-note" style={{ ['--i' as string]: 2 }}>
             {venue?.about} Not affiliated with Gemini.
@@ -316,9 +287,7 @@ export default function Landing() {
             </ul>
           </Reveal>
           <Reveal delay={120}>
-            <Stage>
-              <Orders />
-            </Stage>
+            <Orders />
           </Reveal>
         </div>
       </section>
@@ -343,8 +312,7 @@ export default function Landing() {
             </p>
           </Reveal>
           <Reveal delay={120}>
-            <Stage>
-              <div className="card quad" role="group" aria-label="The four numbers on every quote">
+            <div className="card quad" role="group" aria-label="The four numbers on every quote">
                 <span className="ticket-kicker">The four numbers on every quote</span>
                 <dl className="nums">
                   <div>
@@ -366,7 +334,6 @@ export default function Landing() {
                 </dl>
                 <p className="fine">Example quote, the same bet as above.</p>
               </div>
-            </Stage>
           </Reveal>
         </div>
       </section>
@@ -435,9 +402,7 @@ export default function Landing() {
             </div>
           </Reveal>
           <Reveal delay={120}>
-            <Stage>
-              <HunchFigure />
-            </Stage>
+            <HunchFigure />
           </Reveal>
         </div>
       </section>
