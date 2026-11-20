@@ -8,6 +8,7 @@ import { hasPrices } from '../lib/ladders';
 import { execLive } from '../lib/liveClients';
 import { categoriesOf, closesIn, filterGroups, updatedLabel } from '../lib/marketFilter';
 import { closesLabel, groupByAsset, strikeSpan } from '../lib/markets';
+import { PRODUCTS } from '../lib/nav';
 import '../styles/markets.css';
 
 type LadderState = 'priced' | 'none' | 'order';
@@ -209,7 +210,7 @@ export default function Markets() {
                               </td>
                               <td role="cell" className="mk-act">
                                 {hasPrices(e) ? (
-                                  <Link className="mk-link" to={`/app?market=${encodeURIComponent(e.ticker)}`}>
+                                  <Link className="mk-link" to={`${PRODUCTS[0]!.to}?market=${encodeURIComponent(e.ticker)}`}>
                                     Build a bet <span aria-hidden="true">→</span>
                                     <span className="sr-only"> on {g.label}, {closesLabel(e.expiry, now)}</span>
                                   </Link>

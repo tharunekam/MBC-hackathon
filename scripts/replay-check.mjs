@@ -98,7 +98,7 @@ const seen = { orderIds: [], handle: '', betId: '', revealSignature: '' };
 /** The same clicks, used to make the recording and then to follow it. `live` is the server being recorded, or null in replay. */
 async function session(page, base, live) {
   const button = () => page.locator('.btn-primary.btn-wide');
-  await page.goto(`${base}/app`);
+  await page.goto(`${base}/parlay`);
   await page.waitForFunction(() => /^Place bet/.test(document.querySelector('.btn-primary.btn-wide')?.textContent ?? ''));
   await button().click();
   await page.waitForSelector('.receipt');
@@ -107,7 +107,7 @@ async function session(page, base, live) {
   need(/Order 1 filled/.test(receipt) && /Order 2 filled/.test(receipt), 'both orders are not shown as filled');
 
   await page.getByRole('link', { name: 'See my bets' }).click();
-  await page.waitForURL('**/app/bets');
+  await page.waitForURL('**/bets');
   await page.waitForSelector('text=Orders and proof');
   if (live) {
     // The market closes with both halves happening. On the day this is Gemini settling the ladder; here it is the test exchange.
@@ -179,7 +179,7 @@ await check('nothing is running behind the replay', async () => {
 });
 
 await check('the app says it is a replay, in the nav and in the footer, and does not claim to be live', async () => {
-  await page.goto(`${replay.base}/app`);
+  await page.goto(`${replay.base}/parlay`);
   await page.waitForFunction(() => /^Place bet/.test(document.querySelector('.btn-primary.btn-wide')?.textContent ?? ''));
   need((await page.locator('header .chip', { hasText: 'Replay' }).count()) >= 1, 'no "Replay" label in the nav');
   need(/A recording of a real session on Local test exchange \(not Gemini\)/.test(await page.locator('footer').innerText()), 'the footer does not say it is a recording');

@@ -129,7 +129,7 @@ await check('the landing page opens and leads to the builder', async () => {
   await page.goto(base);
   need((await page.title()).includes('Given'), 'wrong title');
   await page.getByRole('link', { name: 'Build a bet' }).first().click();
-  await page.waitForURL('**/app');
+  await page.waitForURL('**/parlay');
   await placeable();
   if (!process.argv.includes('--sabotage')) await page.waitForSelector('.live[data-state="live"]', { timeout: 8000 }); // both streams connected
 });
@@ -165,7 +165,7 @@ await check('after placing: the chart is locked to the bet, and the receipt says
 
 await check('My bets lists it', async () => {
   await page.getByRole('link', { name: 'See my bets' }).click();
-  await page.waitForURL('**/app/bets');
+  await page.waitForURL('**/bets');
   await page.waitForSelector('text=Orders and proof');
 });
 
@@ -238,7 +238,7 @@ await check('Proof page reconciles to the cent', async () => {
 await check('a market that is not open yet is refused with its reason, then opens with no reload', async () => {
   await dev('/dev/reset');
   for (const k of [61500, 62000, 62500, 63000, 63500, 64000, 64500, 65000]) await dev(`/dev/state?strike=${k}&state=post_only`);
-  await page.goto(`${base}/app`);
+  await page.goto(`${base}/parlay`);
   await page.waitForSelector('.btn-primary.btn-wide');
   await until('the button to explain a not-open market', async () => /not open/i.test(await button().innerText()), 10_000);
   need(await button().isDisabled(), 'the button should be off');
@@ -250,7 +250,7 @@ await check('a market that is not open yet is refused with its reason, then open
 // ---- 4. clicking under moving prices
 await check('under moving prices and slow fills, a click is never silent', async () => {
   await dev('/dev/churn?on=1&slowMs=700&everyMs=500');
-  await page.goto(`${base}/app`);
+  await page.goto(`${base}/parlay`);
   await page.waitForSelector('.btn-primary.btn-wide');
   const silent = [];
   let live = 0;
@@ -281,7 +281,7 @@ await check('under moving prices and slow fills, a click is never silent', async
 
 // ---- 5. the host restarts while a page is open
 await check('when the server restarts under an open page, the page recovers by itself', async () => {
-  await page.goto(`${base}/app`);
+  await page.goto(`${base}/parlay`);
   await placeable();
   if (!process.argv.includes('--sabotage')) await page.waitForSelector('.live[data-state="live"]', { timeout: 8000 });
   const mark = problems.length;
@@ -301,13 +301,13 @@ await check('when the server restarts under an open page, the page recovers by i
 await check('on a phone: no sideways scroll on any page, and the quote follows the chart', async () => {
   await dev('/dev/reset');
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const path of ['/', '/app', '/app/bets', '/leaderboard', '/proof']) {
+  for (const path of ['/', '/parlay', '/range', '/basket', '/bets', '/markets', '/leaderboard', '/proof']) {
     await page.goto(base + path);
     await sleep(700);
     const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     need(over <= 1, `${path} scrolls sideways by ${over}px`);
   }
-  await page.goto(`${base}/app`);
+  await page.goto(`${base}/parlay`);
   await placeable();
   const tops = await page.evaluate(() => ['.chart-card', '.quote-card', '.payoff'].map((s) => document.querySelector(s).getBoundingClientRect().top));
   need(tops[0] < tops[1] && tops[1] < tops[2], `order on a phone is ${tops.map(Math.round)}`);
@@ -339,11 +339,11 @@ await check('with dozens of ladders listed and most unpriced: the builder opens 
   });
   try {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(`${base}/app`);
+    await page.goto(`${base}/parlay`);
     await placeable(); // it opened on a ladder with an offer, not on the first of the thirty-odd listed
     const sideways = () => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     const tabs = () => page.locator('.seg [role="tab"]').allInnerTexts();
-    need((await sideways()) <= 1, `/app scrolls sideways by ${await sideways()}px`);
+    need((await sideways()) <= 1, `/parlay scrolls sideways by ${await sideways()}px`);
     const shown = await tabs();
     need(shown.length >= 1 && shown.length < 10, `${shown.length} tabs shown`);
     need(!shown.some((t) => /Commodity|\?/.test(t)), `an unpriced ladder or a question mark is in the tabs: ${shown.join(' | ')}`);
@@ -361,7 +361,7 @@ await check('with dozens of ladders listed and most unpriced: the builder opens 
     await more.click();
     // The thirty dead ladders all share one asset, so listing them adds one asset tab (and thirty close times under it).
     await until('all the ladders to be listed', async () => (await tabs()).length === shown.length + 1, 5000);
-    need((await sideways()) <= 1, `with every ladder listed, /app scrolls sideways by ${await sideways()}px`);
+    need((await sideways()) <= 1, `with every ladder listed, /parlay scrolls sideways by ${await sideways()}px`);
     need((await page.locator('.seg [aria-selected="true"]').innerText()) === chosen, 'listing the unpriced ladders changed the chosen one');
     need(await inView(), 'with every ladder listed, the chosen tab is not visible inside its strip');
     await more.click();

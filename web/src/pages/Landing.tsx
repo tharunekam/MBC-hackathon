@@ -2,7 +2,10 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import ProbBar from '../components/ProbBar';
 import Reveal from '../components/Reveal';
-import { PRODUCTS, STATUS_LABEL } from '../lib/products';
+import { PRODUCTS } from '../lib/nav';
+
+/** The product the landing page explains; the other two are listed with it further down. */
+const PARLAY = PRODUCTS[0]!;
 
 /** A fixed, labelled example: it explains the product without needing a live market. */
 function Example() {
@@ -109,7 +112,7 @@ function Ladder() {
     });
   }, []);
   return (
-    <svg className="ladder" viewBox="0 0 1200 700" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">
+    <svg className="ladder" viewBox="0 0 1200 700" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">
       <g className="ladder-lines">
         {lines.map((l, i) => (
           <path key={i} d={l.d} pathLength={1} data-key={l.key ? '' : undefined} style={{ opacity: l.o, animationDelay: `${l.delay}ms` }} />
@@ -133,7 +136,7 @@ export default function Landing() {
             If the first half doesn’t happen, <b>you get your money back</b>. Real orders on Gemini, every call fingerprinted on Solana.
           </p>
           <div className="row-actions">
-            <Link to="/app" className="btn btn-primary btn-lg">
+            <Link to={PARLAY.to} className="btn btn-primary btn-lg">
               Build a bet
             </Link>
             <a href="#story" className="btn btn-ghost btn-lg">
@@ -150,11 +153,11 @@ export default function Landing() {
       <section className="band" id="story">
         <div className="wrap split">
           <Reveal className="hero-copy">
-            <span className="eyebrow">Prediction markets, with a safety net</span>
+            <span className="eyebrow">{PARLAY.name}</span>
             <h2 className="h-section">Your stake comes back if the first half fails</h2>
             <p className="lede">A bet has two halves: something that has to hold first, then the thing you are really betting on. You only lose when the first half is right and the second half isn’t.</p>
             <div className="row-actions">
-              <Link to="/app" className="btn btn-primary">
+              <Link to={PARLAY.to} className="btn btn-primary">
                 Build a bet
               </Link>
             </div>
@@ -233,10 +236,10 @@ export default function Landing() {
         <div className="wrap split flip">
           <Reveal>
             <span className="eyebrow">The record</span>
-            <h2 className="h-section">Proof, not promises</h2>
+            <h2 className="h-section">Every call is on the record</h2>
             <p className="lede">Each call is fingerprinted on Solana the moment you bet, so nobody can claim afterwards that they saw it coming. You choose whether to reveal it.</p>
             <Link to="/proof" className="btn btn-accent-line">
-              See the proof page
+              Open Proof
             </Link>
           </Reveal>
           <Reveal delay={120}>
@@ -262,21 +265,19 @@ export default function Landing() {
         <div className="wrap">
           <Reveal className="suite-head">
             <span className="eyebrow">Products</span>
-            <h2 className="h-section">One idea, more shapes of bet</h2>
-            <p className="lede">Given is live today. The others use the same two-order mechanic on a different shape of bet, and each says how far along it is.</p>
+            <h2 className="h-section">Three ways to bet on a price</h2>
+            <p className="lede">Each one is priced from the exchange’s own ladders and placed as real orders in your account.</p>
           </Reveal>
           <Reveal delay={100}>
             <ul className="suite">
               {PRODUCTS.map((p) => (
                 <li key={p.id}>
-                  <Link to={p.to ?? `/products#pr-${p.id}`}>
-                    <span className="suite-top">
-                      <b>{p.name}</b>
-                      <span className="tag" data-status={p.status}>
-                        {STATUS_LABEL[p.status]}
-                      </span>
-                    </span>
+                  <Link to={p.to}>
+                    <b>{p.name}</b>
                     <span className="suite-line">{p.tagline}</span>
+                    <span className="suite-go">
+                      Open <span aria-hidden="true">→</span>
+                    </span>
                   </Link>
                 </li>
               ))}
@@ -290,7 +291,7 @@ export default function Landing() {
           <h2 className="closing-title">Bet on the half you believe in</h2>
           <p className="lede">Pick two prices, see exactly what it costs, and place it. If the first half fails, your stake comes back.</p>
           <div className="row-actions">
-            <Link to="/app" className="btn btn-primary btn-lg">
+            <Link to={PARLAY.to} className="btn btn-primary btn-lg">
               Build a bet
             </Link>
             <Link to="/leaderboard" className="btn btn-ghost btn-lg">

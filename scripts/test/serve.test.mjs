@@ -67,7 +67,7 @@ describe('the public side', () => {
     assert.equal(home.status, 200);
     assert.match(await home.text(), /<div id="root">/);
     assert.equal(home.headers.get('cache-control'), 'no-cache');
-    const deep = await fetch(`${base}/app/bets`);
+    const deep = await fetch(`${base}/bets`);
     assert.equal(deep.status, 200);
     assert.match(deep.headers.get('content-type') ?? '', /html/);
     const asset = await fetch(`${base}/assets/app-abc.js`, { headers: { 'accept-encoding': 'gzip' } });

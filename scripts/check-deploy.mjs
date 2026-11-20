@@ -51,7 +51,7 @@ await check('the page loads over a real connection', async () => {
   return r.headers.get('content-encoding') ? `compressed ${r.headers.get('content-encoding')}` : 'not compressed';
 });
 await check('a deep link works (the app shell, not a 404)', async () => {
-  const r = await get('/app/bets');
+  const r = await get('/bets');
   need(r.status === 200 && /<div id="root">/.test(await r.text()), `status ${r.status}`);
 });
 await check('the host health check answers', async () => {

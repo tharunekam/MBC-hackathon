@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useLiveStatus } from '../lib/hooks';
 import { chainLive, execLive } from '../lib/liveClients';
-import { PRODUCTS, STATUS_LABEL, TOOLS, type Product } from '../lib/products';
+import { MY_BETS, PRODUCTS, TOOLS } from '../lib/nav';
 import { useVenue } from '../lib/venue';
 import '../styles/header.css';
 
@@ -17,12 +17,6 @@ const Moon = () => (
     <path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5Z" />
   </svg>
 );
-const Chevron = () => (
-  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="m3 4.5 3 3 3-3" />
-  </svg>
-);
-
 function currentTheme(): 'light' | 'dark' {
   const t = document.documentElement.dataset.theme;
   if (t === 'light' || t === 'dark') return t;
@@ -48,171 +42,76 @@ function ThemeToggle() {
   );
 }
 
-/** Where a product's menu entry goes: its own screen when it has one, otherwise its place on the Products page. */
-const productTo = (p: Product) => p.to ?? `/products#pr-${p.id}`;
+const tabClass = ({ isActive }: { isActive: boolean }) => `nav-link${isActive ? ' is-on' : ''}`;
 
-function StatusTag({ status }: { status: Product['status'] }) {
+/** Below 1000px the tabs fold into one sheet: the products with what each one is, then everything else. */
+function MenuSheet() {
   return (
-    <span className="tag" data-status={status}>
-      {STATUS_LABEL[status]}
-    </span>
-  );
-}
-
-/** The Products menu: the live product first and larger, then everything built on the same idea, each with how far along it is. */
-function ProductsMenu({ active }: { active: boolean }) {
-  const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-  const timer = useRef<number>();
-  const { pathname, hash } = useLocation();
-
-  useEffect(() => setOpen(false), [pathname, hash]);
-  useEffect(() => {
-    if (!open) return;
-    const away = (e: PointerEvent) => {
-      if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
-    };
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
-    document.addEventListener('pointerdown', away);
-    document.addEventListener('keydown', esc);
-    return () => {
-      document.removeEventListener('pointerdown', away);
-      document.removeEventListener('keydown', esc);
-    };
-  }, [open]);
-
-  const enter = () => {
-    window.clearTimeout(timer.current);
-    if (window.matchMedia?.('(hover: hover)').matches) setOpen(true);
-  };
-  const leave = () => {
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setOpen(false), 140);
-  };
-
-  const [primary, ...rest] = PRODUCTS;
-  return (
-    <div
-      className="menu-wrap"
-      ref={box}
-      onMouseEnter={enter}
-      onMouseLeave={leave}
-      onBlur={(e) => {
-        if (!box.current?.contains(e.relatedTarget as Node | null)) setOpen(false);
-      }}
-    >
-      <button type="button" className={`nav-link${active ? ' is-on' : ''}`} aria-expanded={open} aria-controls="products-menu" onClick={() => setOpen((v) => (window.matchMedia?.('(hover: hover)').matches ? true : !v))}>
-        Products
-        <span className="chev" data-open={open} aria-hidden="true">
-          <Chevron />
-        </span>
-      </button>
-      {open && (
-        <div className="menu" id="products-menu">
-          <Link to={productTo(primary!)} className="menu-lead">
-            <span className="menu-top">
-              <b>{primary!.name}</b>
-              <StatusTag status={primary!.status} />
-            </span>
-            <span>{primary!.summary}</span>
-            <span className="menu-go">Build a bet</span>
-          </Link>
-          <div className="menu-label">Also on the way</div>
-          <ul className="menu-list">
-            {rest.map((p) => (
-              <li key={p.id}>
-                <Link to={productTo(p)}>
-                  <span className="menu-top">
-                    <b>{p.name}</b>
-                    <StatusTag status={p.status} />
-                  </span>
-                  <span>{p.tagline}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-          <Link to="/products" className="menu-foot">
-            All products and how each is built
-          </Link>
-        </div>
-      )}
+    <div className="sheet" id="site-menu">
+      <nav className="sheet-in" aria-label="Menu">
+        <h2 className="sheet-label">Products</h2>
+        <ul className="sheet-list">
+          {PRODUCTS.map((p) => (
+            <li key={p.id}>
+              <NavLink to={p.to}>
+                <b>{p.name}</b>
+                <span>{p.tagline}</span>
+              </NavLink>
+            </li>
+          ))}
+        </ul>
+        <h2 className="sheet-label">Explore</h2>
+        <ul className="sheet-list sheet-plain">
+          {[...TOOLS, MY_BETS].map((t) => (
+            <li key={t.id}>
+              <NavLink to={t.to}>{t.name}</NavLink>
+            </li>
+          ))}
+        </ul>
+      </nav>
     </div>
-  );
-}
-
-/** The phone menu: everything in one sheet, since the tab bar only has room for the places you go most. */
-function MobileMenu() {
-  const [open, setOpen] = useState(false);
-  const { pathname, hash } = useLocation();
-  useEffect(() => setOpen(false), [pathname, hash]);
-  useEffect(() => {
-    document.body.style.overflow = open ? 'hidden' : '';
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [open]);
-  return (
-    <>
-      <button type="button" className="menu-btn" aria-expanded={open} aria-controls="mobile-menu" onClick={() => setOpen((v) => !v)}>
-        {open ? 'Close' : 'Menu'}
-      </button>
-      {open && (
-        <div className="sheet" id="mobile-menu">
-          <div className="sheet-in">
-            <div className="menu-label">Products</div>
-            <ul className="sheet-list">
-              {PRODUCTS.map((p) => (
-                <li key={p.id}>
-                  <Link to={productTo(p)}>
-                    <span className="menu-top">
-                      <b>{p.name}</b>
-                      <StatusTag status={p.status} />
-                    </span>
-                    <span>{p.tagline}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-            <div className="menu-label">Explore</div>
-            <ul className="sheet-list sheet-plain">
-              {TOOLS.map((t) => (
-                <li key={t.id}>
-                  <Link to={t.to}>{t.name}</Link>
-                </li>
-              ))}
-              <li>
-                <Link to="/app/bets">My bets</Link>
-              </li>
-            </ul>
-          </div>
-        </div>
-      )}
-    </>
   );
 }
 
 export function Nav() {
   const venue = useVenue();
-  const { pathname } = useLocation();
+  const { pathname, hash } = useLocation();
   const home = pathname === '/';
   const [top, setTop] = useState(true);
+  const [menu, setMenu] = useState(false);
   useEffect(() => {
     const on = () => setTop(window.scrollY < 24);
     on();
     window.addEventListener('scroll', on, { passive: true });
     return () => window.removeEventListener('scroll', on);
   }, []);
-  const inProducts = pathname === '/products' || pathname === '/app';
+  useEffect(() => setMenu(false), [pathname, hash]);
+  useEffect(() => {
+    if (!menu) return;
+    document.body.style.overflow = 'hidden';
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setMenu(false);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.body.style.overflow = '';
+      document.removeEventListener('keydown', esc);
+    };
+  }, [menu]);
   return (
-    <header className="nav" data-home={home ? '' : undefined} data-over={home && top ? 'dark' : undefined}>
+    // With the menu open the bar is drawn solid, so the sheet never sits under a transparent bar.
+    <header className="nav" data-home={home ? '' : undefined} data-over={home && top && !menu ? 'dark' : undefined}>
       <div className="nav-in">
         <Link to="/" className="brand" aria-label="Given home">
           Given
         </Link>
         <nav className="nav-links" aria-label="Main">
-          <ProductsMenu active={inProducts} />
+          {PRODUCTS.map((p) => (
+            <NavLink key={p.id} to={p.to} className={tabClass}>
+              {p.name}
+            </NavLink>
+          ))}
+          <span className="nav-sep" aria-hidden="true" />
           {TOOLS.map((t) => (
-            <NavLink key={t.id} to={t.to} className={({ isActive }) => `nav-link${isActive ? ' is-on' : ''}`}>
+            <NavLink key={t.id} to={t.to} className={tabClass}>
               {t.name}
             </NavLink>
           ))}
@@ -222,17 +121,20 @@ export function Nav() {
           {!home && venue.chip && <span className="chip chip-quiet">{venue.chip}</span>}
           <ThemeToggle />
           {home ? (
-            <Link to="/app" className="btn btn-primary btn-sm">
+            <Link to={PRODUCTS[0]!.to} className="btn btn-primary btn-sm">
               Enter app
             </Link>
           ) : (
-            <NavLink to="/app/bets" className={({ isActive }) => `btn btn-ghost btn-sm bets-link${isActive ? ' is-on' : ''}`}>
-              My bets
+            <NavLink to={MY_BETS.to} className={({ isActive }) => `btn btn-ghost btn-sm bets-link${isActive ? ' is-on' : ''}`}>
+              {MY_BETS.name}
             </NavLink>
           )}
-          <MobileMenu />
+          <button type="button" className="menu-btn" aria-expanded={menu} aria-controls="site-menu" onClick={() => setMenu((v) => !v)}>
+            {menu ? 'Close' : 'Menu'}
+          </button>
         </div>
       </div>
+      {menu && <MenuSheet />}
     </header>
   );
 }
@@ -254,60 +156,56 @@ function LiveBadge() {
   );
 }
 
+const HOW = [
+  { hash: '#how', name: 'Two prices, three outcomes' },
+  { hash: '#cost', name: 'What it costs' },
+  { hash: '#proof', name: 'The record on Solana' },
+];
+
 export function Footer() {
-  const venue = useVenue();
   return (
     <footer className="foot">
       <div className="wrap">
         <div className="foot-top">
           <div className="foot-brand">
-            <div className="brand brand-foot">Given</div>
-            <p>Bets that give your money back if the first half of your hunch doesn’t happen.</p>
+            <div className="brand">Given</div>
+            <p>Bets on where a price finishes, placed as real orders in your own exchange account.</p>
           </div>
           <nav className="foot-cols" aria-label="Footer">
             <div>
               <h2>Products</h2>
               {PRODUCTS.map((p) => (
-                <Link key={p.id} to={productTo(p)}>
+                <Link key={p.id} to={p.to}>
                   {p.name}
-                  {p.status !== 'live' && <span className="foot-status">{STATUS_LABEL[p.status]}</span>}
                 </Link>
               ))}
             </div>
             <div>
               <h2>Explore</h2>
-              {TOOLS.map((t) => (
+              {[...TOOLS, MY_BETS].map((t) => (
                 <Link key={t.id} to={t.to}>
                   {t.name}
                 </Link>
               ))}
-              <Link to="/app/bets">My bets</Link>
-              <Link to="/products">All products</Link>
             </div>
             <div>
               <h2>How it works</h2>
-              <Link to={{ pathname: '/', hash: '#how' }}>Two orders, three outcomes</Link>
-              <Link to={{ pathname: '/', hash: '#cost' }}>What it costs</Link>
-              <Link to={{ pathname: '/', hash: '#proof' }}>The record on Solana</Link>
+              {HOW.map((h) => (
+                <Link key={h.hash} to={{ pathname: '/', hash: h.hash }}>
+                  {h.name}
+                </Link>
+              ))}
             </div>
           </nav>
         </div>
-        <p className="fine foot-legal">
-          Given uses Gemini’s prediction market API and is not affiliated with Gemini. {venue.footnote} Prediction markets involve risk and can lose the amount you stake.
-        </p>
+        <p className="foot-legal">Not affiliated with Gemini. Prediction markets carry risk, including the loss of your stake.</p>
       </div>
     </footer>
   );
 }
 
-/** The phone's bottom bar: the places you go most. Products and the rest are in the Menu. */
-const TABS = [
-  { to: '/app', label: 'Build', end: true },
-  { to: '/markets', label: 'Markets' },
-  { to: '/app/bets', label: 'My bets' },
-  { to: '/leaderboard', label: 'Ranks' },
-  { to: '/proof', label: 'Proof' },
-];
+/** The phone's bottom bar: the three products and the two places you return to. Leaderboard and Proof are in the Menu. */
+const TABS = [...PRODUCTS.map((p) => ({ to: p.to, label: p.short })), { to: TOOLS[0]!.to, label: TOOLS[0]!.name }, { to: MY_BETS.to, label: MY_BETS.name }];
 
 /** Layout for every route. Scrolls to the top on navigation. */
 export default function Shell() {
@@ -324,7 +222,7 @@ export default function Shell() {
       {pathname !== '/' && (
         <nav className="tabbar" aria-label="Primary">
           {TABS.map((l) => (
-            <NavLink key={l.to} to={l.to} end={l.end} className={({ isActive }) => (isActive ? 'is-on' : '')}>
+            <NavLink key={l.to} to={l.to} className={({ isActive }) => (isActive ? 'is-on' : '')}>
               {l.label}
             </NavLink>
           ))}

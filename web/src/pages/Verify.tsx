@@ -155,7 +155,7 @@ export default function Verify() {
       </article>
 
       <section className="card verify" aria-live="polite">
-        <span className="eyebrow">Do not take our word for it</span>
+        <span className="eyebrow">Independent check</span>
         <h2 className="h-card">Check it on Solana</h2>
         {real ? (
           <>
@@ -175,7 +175,7 @@ export default function Verify() {
             </button>
           </>
         ) : (
-          <p>This call lives on a test chain, so there is no Solana transaction to check. On devnet this button reads the two records from Solana and recomputes the fingerprint in your browser.</p>
+          <p>This call is on a test chain, so there is no Solana transaction to check. On devnet, your browser reads both records from Solana and recomputes the fingerprint itself.</p>
         )}
 
         {problem && (
@@ -218,7 +218,7 @@ export default function Verify() {
           </div>
         )}
         <p className="fine">
-          What this proves: the call was committed before the result. What it does not: the result itself, called it or missed, is reported by our signing key, with Gemini’s order IDs as the evidence.
+          This proves the call was committed before the result. The result itself, hit or miss, is reported by our signing key, with Gemini’s order IDs as the evidence.
         </p>
       </section>
     </div>
