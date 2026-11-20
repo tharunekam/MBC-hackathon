@@ -72,8 +72,9 @@ await check('real ladders load', async () => {
   return `${body.events.length} ladders, ${offerable} offerable pairs`;
 });
 await check('a quote comes back', async () => {
-  const ev = markets.events.find((e) => e.pairs.some((p) => p.quote.offerable)) ?? markets.events[0];
-  const p = ev.pairs.find((x) => x.quote.offerable) ?? ev.pairs[0];
+  const ev = markets.events.find((e) => e.pairs.some((p) => p.quote.offerable)) ?? markets.events.find((e) => e.pairs.length > 0);
+  const p = ev?.pairs.find((x) => x.quote.offerable) ?? ev?.pairs[0];
+  need(p, 'no ladder has a pair to quote right now (new hourly ladders open post-only: try again a few minutes past the hour)');
   const { status, body } = await json(`/api/quote?event=${ev.ticker}&condition=${p.condition.symbol}&target=${p.target.symbol}&stake=5`);
   need(status === 200, `status ${status}`);
   need(body.quote && 'offerable' in body.quote, 'no quote in the answer');
