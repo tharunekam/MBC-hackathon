@@ -1,0 +1,422 @@
+/**
+ * Crash consistency and durability. The chain and the local store are two systems; these tests cover every point at
+ * which one can be written and the other not, and the damaged-file cases. The rule they enforce: a salt is never lost,
+ * and nothing is ever written to Solana twice for the same call.
+ */
+import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, it } from 'node:test';
+import { ChainError, FakeChain } from '../src/chain.ts';
+import { ServiceError } from '../src/executor.ts';
+import { createLimiter } from '../src/limiter.ts';
+import { ChainService } from '../src/service.ts';
+import { Store, StoreError } from '../src/store.ts';
+import { FakeBets } from './helpers.ts';
+
+const tmp = () => mkdtempSync(join(tmpdir(), 'given-chain-hard-'));
+const quiet = { log: () => {}, sleep: async () => {} };
+
+/** A service on a file-backed store, so a "restart" can be simulated by building another one on the same file. */
+function boot(path: string, chain: FakeChain, bets: FakeBets) {
+  const store = new Store(path, () => 'secret', () => {});
+  return { store, service: new ChainService({ chain, store, bets, ...quiet, now: () => new Date('2026-11-18T01:30:00Z'), newId: (() => { let n = 0; return () => `call${++n}`; })() }) };
+}
+
+describe('a commit that lands on Solana but is not recorded', () => {
+  it('keeps the salt on disk BEFORE anything is sent', async () => {
+    const path = join(tmp(), 'calls.json');
+    const chain = new FakeChain();
+    const bets = new FakeBets();
+    bets.add();
+    chain.failNext = 'network down';
+    const { service } = boot(path, chain, bets);
+    await assert.rejects(service.commitCall('b1', 'primary'));
+    const saved = JSON.parse(readFileSync(path, 'utf8'));
+    assert.equal(saved.calls.length, 1);
+    assert.equal(saved.calls[0].state, 'pending');
+    assert.match(saved.calls[0].salt, /^[0-9a-f]{16,}$/);
+    assert.equal(chain.txs.length, 0, 'nothing was written');
+  });
+
+  it('a retry after a failure that wrote nothing sends the SAME hash', async () => {
+    const path = join(tmp(), 'calls.json');
+    const chain = new FakeChain();
+    const bets = new FakeBets();
+    bets.add();
+    const { service, store } = boot(path, chain, bets);
+    chain.failNext = 'rpc 500';
+    await assert.rejects(service.commitCall('b1', 'primary'));
+    const hash = store.data.calls[0]!.hash;
+    const call = await service.commitCall('b1', 'primary');
+    assert.equal(call.state, 'committed');
+    assert.equal(call.commitHash, hash, 'same salt and time, so the same hash');
+    assert.equal(chain.txs.length, 1);
+    assert.equal(store.data.calls.length, 1, 'still one call');
+  });
+
+  it('a timeout after the transaction landed is adopted on retry, and nothing is written twice', async () => {
+    const path = join(tmp(), 'calls.json');
+    const chain = new FakeChain();
+    const bets = new FakeBets();
+    bets.add();
+    const { service } = boot(path, chain, bets);
+    chain.landThenFailNext = 'Solana did not confirm within 60s';
+    await assert.rejects(service.commitCall('b1', 'primary'));
+    assert.equal(chain.txs.length, 1, 'the first attempt did land');
+    const call = await service.commitCall('b1', 'primary');
+    assert.equal(call.state, 'committed');
+    assert.equal(call.commitSignature, chain.txs[0]!.signature, 'adopted the record that already exists');
+    assert.equal(chain.txs.length, 1, 'no second commit');
+  });
+
+  it('a pending call is invisible to the API until it has landed', async () => {
+    const chain = new FakeChain();
+    const bets = new FakeBets();
+    bets.add();
+    const { service, store } = boot(join(tmp(), 'calls.json'), chain, bets);
+    chain.failNext = 'down';
+    await assert.rejects(service.commitCall('b1', 'primary'));
+    assert.equal(service.listCalls('primary').length, 0);
+    const id = store.data.calls[0]!.id;
+    await assert.rejects(service.verifyCall(id, 'primary'), (e: unknown) => e instanceof ServiceError && e.code === 'unknown_call');
+    await assert.rejects(service.revealCall(id, 'primary'), (e: unknown) => e instanceof ServiceError && e.code === 'commit_pending');
+  });
+
+  it('a process killed mid-send recovers on restart: the pending row is promoted from the chain, and the salt survives', async () => {
+    const path = join(tmp(), 'calls.json');
+    const chain = new FakeChain();
+    const bets = new FakeBets();
+    bets.add();
+    const first = boot(path, chain, bets);
+    chain.landThenFailNext = 'killed';
+    await assert.rejects(first.service.commitCall('b1', 'primary'));
+    const salt = first.store.data.calls[0]!.salt;
+
+    // "restart": a new service on the same file and the same chain, then the periodic backfill runs.
+    const second = boot(path, chain, bets);
+    assert.equal(second.store.data.calls[0]!.state, 'pending');
+    await second.service.backfill();
+    const row = second.store.data.calls[0]!;
+    assert.equal(row.state, 'committed');
+    assert.equal(row.commitSignature, chain.txs[0]!.signature);
+    assert.equal(row.salt, salt, 'the salt was never lost');
+
+    // and the call can still be revealed afterwards
+    bets.settle('b1', 'yes', 'yes');
+    assert.equal((await second.service.revealCall(row.id, 'primary')).state, 'revealed');
+  });
+});
+
+describe('a reveal that lands on Solana but is not recorded', () => {
+  async function committed() {
+    const path = join(tmp(), 'calls.json');
+    const chain = new FakeChain();
+    const bets = new FakeBets();
+    bets.add();
+    const first = boot(path, chain, bets);
+    const call = await first.service.commitCall('b1', 'primary');
+    bets.settle('b1', 'yes', 'yes');
+    return { path, chain, bets, first, call };
+  }
+
+  it('is adopted on retry instead of being sent (and refused) a second time', async () => {
+    const { chain, first, call } = await committed();
+    chain.landThenFailNext = 'reply lost';
+    await assert.rejects(first.service.revealCall(call.id, 'primary'));
+    assert.equal(chain.txs.length, 2, 'commit and the reveal that landed');
+    const again = await first.service.revealCall(call.id, 'primary');
+    assert.equal(again.state, 'revealed');
+    assert.equal(again.reveal!.signature, chain.txs[1]!.signature);
+    assert.equal(chain.txs.length, 2, 'no duplicate reveal');
+  });
+
+  it('survives a restart in between', async () => {
+    const { path, chain, bets, first, call } = await committed();
+    chain.landThenFailNext = 'killed';
+    await assert.rejects(first.service.revealCall(call.id, 'primary'));
+    const second = boot(path, chain, bets);
+    assert.equal(second.store.data.calls[0]!.revealing, true);
+    const again = await second.service.revealCall(call.id, 'primary');
+    assert.equal(again.state, 'revealed');
+    assert.equal(chain.txs.length, 2);
+    assert.equal(second.service.leaderboard().rows.length, 1);
+  });
+
+  it('a reveal that did NOT land is sent normally on retry', async () => {
+    const { chain, first, call } = await committed();
+    chain.failNext = 'rpc 500';
+    await assert.rejects(first.service.revealCall(call.id, 'primary'));
+    assert.equal(chain.txs.length, 1);
+    assert.equal((await first.service.revealCall(call.id, 'primary')).state, 'revealed');
+    assert.equal(chain.txs.length, 2);
+  });
+});
+
+describe('the store file', () => {
+  const populated = async (path: string) => {
+    const chain = new FakeChain();
+    const bets = new FakeBets();
+    bets.add();
+    const { service, store } = boot(path, chain, bets);
+    await service.commitCall('b1', 'primary');
+    return { store, chain, bets };
+  };
+
+  it('keeps the previous good copy as .bak', async () => {
+    const path = join(tmp(), 'calls.json');
+    await populated(path);
+    const bak = JSON.parse(readFileSync(`${path}.bak`, 'utf8'));
+    assert.ok(Array.isArray(bak.calls));
+  });
+
+  it('a damaged file falls back to the backup, loudly, and keeps the salts', async () => {
+    const path = join(tmp(), 'calls.json');
+    const { store } = await populated(path);
+    const salt = store.data.calls[0]!.salt;
+    store.save(); // make the .bak hold the committed state
+    writeFileSync(path, '{"handleSecret": "abc", "calls": [');
+    const warned: string[] = [];
+    const recovered = new Store(path, () => 'new', (l) => warned.push(l));
+    assert.equal(recovered.data.calls[0]!.salt, salt);
+    assert.match(warned.join('\n'), /damaged; restored the previous copy/);
+    // and the file on disk is whole again
+    assert.equal(JSON.parse(readFileSync(path, 'utf8')).calls[0].salt, salt);
+  });
+
+  it('REFUSES to start empty when the file and its backup are both unusable', async () => {
+    const path = join(tmp(), 'calls.json');
+    await populated(path);
+    writeFileSync(path, 'not json');
+    writeFileSync(`${path}.bak`, '{}');
+    assert.throws(() => new Store(path, () => 'new', () => {}), (e: unknown) => e instanceof StoreError && /lose every salt/.test((e as Error).message));
+    assert.equal(readFileSync(path, 'utf8'), 'not json', 'the damaged file is left for a human, not overwritten');
+  });
+
+  it('a file of the wrong shape is damaged, not empty', () => {
+    const path = join(tmp(), 'calls.json');
+    writeFileSync(path, JSON.stringify({ hello: 'world' }));
+    assert.throws(() => new Store(path, () => 'new', () => {}), StoreError);
+  });
+
+  it('never replaces a good backup with a bad file', async () => {
+    const path = join(tmp(), 'calls.json');
+    const { store } = await populated(path);
+    store.save();
+    const goodBak = readFileSync(`${path}.bak`, 'utf8');
+    writeFileSync(path, 'garbage');
+    store.save();
+    assert.equal(readFileSync(`${path}.bak`, 'utf8'), goodBak);
+  });
+
+  it('a first run creates the file with owner-only permissions', async () => {
+    const path = join(tmp(), 'calls.json');
+    await populated(path);
+    const { statSync } = await import('node:fs');
+    assert.equal(statSync(path).mode & 0o077, 0, 'no group or world access: it holds the salts');
+  });
+});
+
+describe('the rate limiter', () => {
+  it('limits a client, then lets it back in when the window passes', () => {
+    let t = 0;
+    const l = createLimiter({ max: 2, windowMs: 1000 }, () => t);
+    assert.deepEqual([l.limited('a'), l.limited('a'), l.limited('a')], [false, false, true]);
+    assert.equal(l.limited('b'), false, 'another client is unaffected');
+    t = 1001;
+    assert.equal(l.limited('a'), false);
+  });
+
+  it('does not grow without bound: idle clients are swept', () => {
+    let t = 0;
+    const l = createLimiter({ max: 5, windowMs: 1000 }, () => t);
+    for (let i = 0; i < 5000; i++) l.limited(`10.0.${i >> 8}.${i & 255}`);
+    assert.equal(l.size(), 5000);
+    t = 5000;
+    l.limited('someone-new');
+    assert.equal(l.size(), 1, 'every idle client was forgotten');
+  });
+
+  it('is off when no limit is configured', () => {
+    const l = createLimiter(undefined, () => 0);
+    for (let i = 0; i < 100; i++) assert.equal(l.limited('a'), false);
+    assert.equal(l.size(), 0);
+  });
+});
+
+describe('more than one trusted authority', () => {
+  it('a public reveal names the key that actually signed it, not always ours', async () => {
+    const OTHER = 'OtherAuthority1111111111111111111111111111111';
+    const chain = new FakeChain();
+    const bets = new FakeBets();
+    const store = new Store(null, () => 'secret', () => {});
+    const service = new ChainService({ chain, store, bets, authorities: [chain.authority, OTHER], ...quiet });
+    const f = { betId: 'b9', event: 'BTC2611190100', condition: 'GEMI-BTC2611190100-HI62500', target: 'GEMI-BTC2611190100-HI63500', entryPrice: 0.4375, fairPrice: 0.41, at: 1763433000 };
+    const { commitHash } = await import('../src/hash.ts');
+    const { encode } = await import('../src/memo.ts');
+    const salt = 'cd'.repeat(16);
+    const commit = chain.forge(encode({ g: 1, t: 'c', h: commitHash(f, salt), u: 'quiet-otter-42', at: f.at }), OTHER);
+    const reveal = chain.forge(encode({ g: 1, t: 'r', c: commit.signature, u: 'quiet-otter-42', b: f.betId, e: f.event, k: f.condition, x: f.target, p: f.entryPrice, f: f.fairPrice, at: f.at, s: salt, o: 1 }), OTHER);
+    assert.equal(await service.ingest(commit.signature, 'rpc'), 'new');
+    assert.equal(await service.ingest(reveal.signature, 'rpc'), 'new');
+    const pub = service.publicReveal(reveal.signature);
+    assert.equal(pub.authority, OTHER);
+    assert.notEqual(pub.authority, chain.authority);
+  });
+});
+
+describe('a double click or a retry storm', () => {
+  it('ten simultaneous commits of one bet write exactly one record', async () => {
+    const chain = new FakeChain();
+    const bets = new FakeBets();
+    bets.add();
+    const { service, store } = boot(join(tmp(), 'calls.json'), chain, bets);
+    const results = await Promise.all(Array.from({ length: 10 }, () => service.commitCall('b1', 'primary')));
+    assert.equal(chain.txs.length, 1);
+    assert.equal(store.data.calls.length, 1);
+    assert.equal(new Set(results.map((r) => r.id)).size, 1, 'everyone got the same call back');
+  });
+
+  it('ten simultaneous reveals write exactly one record', async () => {
+    const chain = new FakeChain();
+    const bets = new FakeBets();
+    bets.add();
+    const { service } = boot(join(tmp(), 'calls.json'), chain, bets);
+    const call = await service.commitCall('b1', 'primary');
+    bets.settle('b1', 'yes', 'yes');
+    const results = await Promise.all(Array.from({ length: 10 }, () => service.revealCall(call.id, 'primary')));
+    assert.equal(chain.txs.length, 2, 'one commit, one reveal');
+    assert.ok(results.every((r) => r.state === 'revealed'));
+  });
+
+  it('a failing attempt in the middle of a storm does not wedge the bet', async () => {
+    const chain = new FakeChain();
+    const bets = new FakeBets();
+    bets.add();
+    const { service } = boot(join(tmp(), 'calls.json'), chain, bets);
+    chain.failNext = 'rpc 500';
+    const settled = await Promise.allSettled(Array.from({ length: 5 }, () => service.commitCall('b1', 'primary')));
+    assert.ok(settled.some((r) => r.status === 'fulfilled'), 'a later attempt in the storm succeeds');
+    assert.equal(chain.txs.length, 1);
+    assert.equal(service.listCalls('primary').length, 1);
+  });
+});
+
+/**
+ * A chain that behaves like the real one with the program on: each call has one record, a second commit of the same
+ * hash and a second reveal of the same call are refused, and (when `lookup` is on) a call's own record can be read.
+ * `historyDown` makes the authority's transaction history unreadable, as a rate-limited public RPC does.
+ */
+class ProgramLikeChain extends FakeChain {
+  historyDown = false;
+  refusals = 0;
+  constructor(lookup: boolean) {
+    super();
+    if (lookup) this.recordsFor = async (hash: string) => this.touching(hash);
+  }
+  recordsFor?: (hash: string) => Promise<string[]>;
+
+  private memos() {
+    return this.txs.map((t) => ({ t, m: JSON.parse(t.memo) as { t: string; h?: string; c?: string } }));
+  }
+  /** Every transaction that mentions this call's record: its commit, its reveal, and anything a stranger sent. */
+  private touching(hash: string): string[] {
+    const commits = this.memos().filter((x) => x.m.t === 'c' && x.m.h === hash).map((x) => x.t.signature);
+    return this.memos().filter((x) => (x.m.t === 'c' && x.m.h === hash) || (x.m.t === 'r' && commits.includes(x.m.c ?? ''))).map((x) => x.t.signature);
+  }
+  override async sendMemo(text: string): Promise<{ signature: string; slot: number }> {
+    const m = JSON.parse(text) as { t: string; h?: string; c?: string };
+    const mine = this.memos().filter((x) => x.t.signer === this.authority);
+    const repeat = m.t === 'c' ? mine.some((x) => x.m.t === 'c' && x.m.h === m.h) : mine.some((x) => x.m.t === 'r' && x.m.c === m.c);
+    if (repeat) {
+      this.refusals++;
+      throw new ChainError('refused', 'Solana refused the transaction: custom program error');
+    }
+    return super.sendMemo(text);
+  }
+  override async recentSignatures(limit: number, before?: string): Promise<string[]> {
+    if (this.historyDown) throw new Error('429 Too Many Requests');
+    return super.recentSignatures(limit, before);
+  }
+}
+
+describe('with the program on, a call that landed is found by its own record', () => {
+  it('a commit that landed is adopted even when the authority\'s history cannot be read', async () => {
+    const chain = new ProgramLikeChain(true);
+    const bets = new FakeBets();
+    bets.add();
+    const { service } = boot(join(tmp(), 'calls.json'), chain, bets);
+    chain.landThenFailNext = 'Solana did not confirm within 60s';
+    await assert.rejects(service.commitCall('b1', 'primary'));
+    chain.historyDown = true;
+    const call = await service.commitCall('b1', 'primary');
+    assert.equal(call.state, 'committed');
+    assert.equal(call.commitSignature, chain.txs[0]!.signature);
+    assert.equal(chain.txs.length, 1, 'nothing was sent again');
+    assert.equal(chain.refusals, 0, 'and so nothing was refused');
+  });
+
+  it('without that lookup the same retry is refused by the program and the call stays pending: the case this closes', async () => {
+    const chain = new ProgramLikeChain(false);
+    const bets = new FakeBets();
+    bets.add();
+    const { service, store } = boot(join(tmp(), 'calls.json'), chain, bets);
+    chain.landThenFailNext = 'Solana did not confirm within 60s';
+    await assert.rejects(service.commitCall('b1', 'primary'));
+    chain.historyDown = true;
+    await assert.rejects(service.commitCall('b1', 'primary'));
+    assert.equal(chain.refusals, 1);
+    assert.equal(store.data.calls[0]!.state, 'pending');
+    // once history can be read again the old path still recovers it
+    chain.historyDown = false;
+    assert.equal((await service.commitCall('b1', 'primary')).state, 'committed');
+  });
+
+  it('a reveal that landed is adopted the same way', async () => {
+    const chain = new ProgramLikeChain(true);
+    const bets = new FakeBets();
+    bets.add();
+    const { service } = boot(join(tmp(), 'calls.json'), chain, bets);
+    const call = await service.commitCall('b1', 'primary');
+    bets.settle('b1', 'yes', 'yes');
+    chain.landThenFailNext = 'lost reply';
+    await assert.rejects(service.revealCall(call.id, 'primary'));
+    chain.historyDown = true;
+    const again = await service.revealCall(call.id, 'primary');
+    assert.equal(again.state, 'revealed');
+    assert.equal(again.reveal!.signature, chain.txs[1]!.signature);
+    assert.equal(chain.txs.length, 2, 'one commit, one reveal');
+    assert.equal(chain.refusals, 0);
+    assert.equal(service.leaderboard().rows.length, 1);
+  });
+
+  it('a stranger\'s transaction that mentions the record is read and ignored, not adopted', async () => {
+    const chain = new ProgramLikeChain(true);
+    const bets = new FakeBets();
+    bets.add();
+    const { service, store } = boot(join(tmp(), 'calls.json'), chain, bets);
+    chain.failNext = 'network down'; // our commit never lands
+    await assert.rejects(service.commitCall('b1', 'primary'));
+    const row = store.data.calls[0]!;
+    // Someone else writes a commit with our hash and handle. Only our authority's records count.
+    chain.forge(JSON.stringify({ g: 1, t: 'c', h: row.hash, u: row.handle, at: row.fields.at }), 'Stranger11111111111111111111111111111111111');
+    chain.historyDown = true;
+    const call = await service.commitCall('b1', 'primary');
+    assert.equal(call.state, 'committed');
+    assert.equal(chain.txs.length, 2, 'ours was sent, because theirs is not ours');
+    assert.equal(call.commitSignature, chain.txs[1]!.signature);
+  });
+
+  it('a call with no record yet is simply sent', async () => {
+    const chain = new ProgramLikeChain(true);
+    const bets = new FakeBets();
+    bets.add();
+    const { service } = boot(join(tmp(), 'calls.json'), chain, bets);
+    chain.failNext = 'rpc 500';
+    await assert.rejects(service.commitCall('b1', 'primary'));
+    chain.historyDown = true;
+    assert.equal((await service.commitCall('b1', 'primary')).state, 'committed');
+    assert.equal(chain.txs.length, 1);
+  });
+});

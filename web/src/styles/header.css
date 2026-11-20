@@ -1,0 +1,364 @@
+/* ------------------------------------------------------------ skip link */
+/* The first stop for a keyboard. It sits off the top of the page until it has focus, then drops in over the bar. */
+.skip {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 16px;
+  border-radius: var(--r-md);
+  background: var(--ink);
+  color: var(--bg);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+.skip:focus {
+  transform: none;
+}
+/* The page takes focus from the skip link without drawing a ring round the whole of itself, and lands clear of the bar. */
+#main {
+  scroll-margin-top: 60px;
+}
+#main:focus {
+  outline: none;
+}
+
+/* ------------------------------------------------------------ header */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  border-bottom: 1px solid var(--line);
+  transition: border-color 240ms var(--ease);
+}
+/* The blur lives on a layer behind the bar, not on the bar: a filter on the bar would trap the phone menu's fixed panel inside it. */
+.nav::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: opacity 240ms var(--ease);
+}
+.nav-in {
+  width: min(1200px, 100% - 48px);
+  height: 60px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 32px;
+}
+
+/* The name is set in a wide face, spaced out, and nothing else in the product uses it. */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  font-family: var(--font-mark);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+.nav-links {
+  display: flex;
+  align-items: stretch;
+  height: 60px;
+}
+.nav-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 60px;
+  padding: 0 12px;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 450;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color var(--t-fast) var(--ease-ui);
+}
+.nav-link:hover,
+.nav-link.is-on {
+  color: var(--ink);
+}
+/* Products to the left of the rule, tools to the right. */
+.nav-sep {
+  align-self: center;
+  width: 1px;
+  height: 16px;
+  margin: 0 8px;
+  background: var(--line-strong);
+}
+
+.nav-right {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-ctl);
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--soft);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-ui), border-color var(--t-fast) var(--ease-ui), color var(--t-fast) var(--ease-ui);
+}
+.icon-btn svg {
+  transition: transform var(--t-med) var(--ease);
+}
+.icon-btn:hover {
+  background: var(--surface);
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+.icon-btn:hover svg {
+  transform: rotate(18deg);
+}
+.icon-btn:active svg {
+  transform: rotate(18deg) scale(0.9);
+}
+.btn.btn-sm {
+  height: 36px;
+  padding: 0 16px;
+  font-size: 14px;
+}
+.bets-link.is-on {
+  border-color: var(--ink);
+}
+/* What the app is talking to: "Sandbox · practice money" on one line while there is room for it. */
+.venue {
+  gap: 6px;
+}
+/* Beside the live badge it is set off by a rule, or the two read as one phrase ("Live test exchange"). */
+@media (min-width: 721px) {
+  .nav-right .live + .venue {
+    margin-left: 4px;
+    padding-left: 12px;
+    border-left: 1px solid var(--line-strong);
+    border-radius: 0;
+  }
+}
+
+/* At the very top of a page the bar is part of the page: no rule and no blur until something scrolls under it. */
+.nav[data-top] {
+  border-bottom-color: transparent;
+}
+.nav[data-top]::before {
+  opacity: 0;
+}
+
+/* A small word label, such as the Given and Reach marks on the builder's ladder. */
+.tag {
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------ phone menu */
+.menu-btn {
+  display: none;
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-ctl);
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: inherit;
+  cursor: pointer;
+}
+/* With the sheet open, the bar above it is solid too, so the two read as one panel. */
+.nav:has(.sheet)::before {
+  background: var(--bg);
+}
+.sheet {
+  position: fixed;
+  inset: 60px 0 0 0;
+  z-index: 39;
+  overflow-y: auto;
+  padding: 8px 0 96px;
+  background: var(--bg);
+  color: var(--ink);
+  animation: sheet-in 200ms var(--ease) both;
+}
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+  }
+}
+.sheet-in {
+  width: min(600px, 100% - 32px);
+  margin: 0 auto;
+}
+.sheet-label {
+  padding: 24px 0 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.sheet-list {
+  border-top: 1px solid var(--line);
+}
+.sheet-list a {
+  display: grid;
+  gap: 4px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+  text-decoration: none;
+  color: inherit;
+}
+.sheet-list b {
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.sheet-list span {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.sheet-plain a {
+  font-size: 16px;
+  font-weight: 500;
+}
+.sheet-list a[aria-current='page'] b,
+.sheet-plain a[aria-current='page'] {
+  color: var(--accent-text);
+}
+
+/* ------------------------------------------------------------ page not found */
+/* It borrows the menu's list, so a lost visitor is offered the same places in the same words. */
+.lost code {
+  overflow-wrap: anywhere;
+  font-size: 0.92em;
+  color: var(--soft);
+}
+.lost .sheet-list a:hover b {
+  color: var(--accent-text);
+}
+.lost .row-actions {
+  margin-top: 32px;
+}
+
+/* Tighter tabs where the bar starts to fill. */
+@media (max-width: 1180px) {
+  .nav-in {
+    gap: 24px;
+  }
+  .nav-link {
+    padding: 0 10px;
+  }
+}
+/* The tabs fold into the menu at 1080px, not later: with the live badge and the venue label beside them, seven tabs do not
+   fit a narrower bar without touching. (Shell.tsx closes an open menu at the same width.) */
+@media (min-width: 1081px) {
+  .sheet {
+    display: none;
+  }
+}
+@media (max-width: 1080px) {
+  .nav-in {
+    grid-template-columns: 1fr auto;
+  }
+  .nav-links,
+  .nav-right .bets-link {
+    display: none;
+  }
+  .menu-btn {
+    display: inline-flex;
+    align-items: center;
+  }
+}
+/* Where the bar is short of room (the last 100px before the tabs fold away, and on a phone) the venue label's two halves
+   stack, so it keeps "practice money" and costs the bar about 100px. */
+@media (min-width: 1081px) and (max-width: 1180px), (max-width: 720px) {
+  .nav-right .venue {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0;
+    min-width: 0;
+    font-size: 10px;
+    line-height: 1.35;
+    text-align: right;
+  }
+  .nav-right .venue-dot {
+    display: none;
+  }
+}
+@media (max-width: 720px) {
+  .nav-in {
+    width: calc(100% - 32px);
+    gap: 16px;
+  }
+  .nav-right {
+    min-width: 0;
+  }
+  .nav-right .live {
+    display: none;
+  }
+  /* The landing page's bar already holds "Open the app" and the menu, and the page says the same thing under its first screen. */
+  .nav[data-home] .venue {
+    display: none;
+  }
+
+  /* A finger needs 44px. The bar stays 60px; the controls in it grow to fill more of it. */
+  .nav .brand {
+    min-height: 44px;
+  }
+  .icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+  .nav .btn.btn-sm,
+  .menu-btn {
+    height: 44px;
+  }
+  .foot .foot-cols > div {
+    gap: 0;
+  }
+  .foot .foot-cols h2 {
+    margin-bottom: 4px;
+  }
+  .foot .foot-cols a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+/* The narrowest phones have room for the label's first half only. The footer still carries the whole sentence. */
+@media (max-width: 350px) {
+  .nav-right .venue span + span {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet {
+    animation: none;
+  }
+}
+/* Where the bar cannot hold three controls, the way into the app is in the Menu. */
+@media (max-width: 420px) {
+  .nav-right > .btn-primary {
+    display: none;
+  }
+}

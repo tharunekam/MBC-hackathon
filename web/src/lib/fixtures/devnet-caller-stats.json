@@ -1,0 +1,83 @@
+{
+ "note": "Real getProgramAccounts answers (base64) from https://api.devnet.solana.com on 2026-11-19: every CallerStats account of given_receipts under three authority keys that have written through it. Public chain data. The account bytes are untouched; rentEpoch is u64::MAX, which a JSON number rounds.",
+ "program": "8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK",
+ "filters": "memcmp offset 0 = jPVhWXFTu4g (the CallerStats discriminator), memcmp offset 8 = the authority",
+ "answers": {
+  "2QfQ15Ha5VxvvwWqdsDdCyf6n8uxKfVDHh9GHZdFHeHz": [
+   {
+    "pubkey": "wghix51vSknetF5h6YL5kLyE97qgtDRphsMsCGmfRBK",
+    "account": {
+     "lamports": 1163320,
+     "data": [
+      "/WubxqM/zRUU63XvFRui4bfZXS88jSUVkBGoOd796vGVWtROIvkc7Q0AAABub3J0aC10ZXJuLTk4AQAAAAEAAACwAAkAAAAAAFk1/WoAAAAA/wAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "base64"
+     ],
+     "owner": "8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK",
+     "executable": false,
+     "rentEpoch": 18446744073709552000,
+     "space": 101
+    }
+   }
+  ],
+  "9GVno5tV2moikfXqZyZAuxw2pmqGZ4nmU9DKXhiDhM4X": [
+   {
+    "pubkey": "2uL4p3Hqf2XHyikUE5GWwRpFjdy5YdH5KJ5rfDb9fB29",
+    "account": {
+     "lamports": 1163320,
+     "data": [
+      "/WubxqM/zRV61cKP3WtlO+vYNbJ5skivkE/PABhY+sXfeX+ombrIPA8AAABzdGVhZHktZmluY2gtNTYEAAAAAgAAAIPnCwAAAAAAUVT9agAAAAD/AAAAAAAAAAAAAAAAAAAAAAA=",
+      "base64"
+     ],
+     "owner": "8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK",
+     "executable": false,
+     "rentEpoch": 18446744073709552000,
+     "space": 101
+    }
+   },
+   {
+    "pubkey": "8jxwx7bE7aWsEw81GtK3stxoZ6BRnyCLVmH7xLHV9vYz",
+    "account": {
+     "lamports": 1163320,
+     "data": [
+      "/WubxqM/zRV61cKP3WtlO+vYNbJ5skivkE/PABhY+sXfeX+ombrIPA0AAABub3J0aC10ZXJuLTk4AQAAAAEAAACwAAkAAAAAAPg3/WoAAAAA/wAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "base64"
+     ],
+     "owner": "8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK",
+     "executable": false,
+     "rentEpoch": 18446744073709552000,
+     "space": 101
+    }
+   }
+  ],
+  "5fE6B5sFJQURtKiJJepzqvHshJZR9SkKSMgeKB3oaGsN": [
+   {
+    "pubkey": "BpyYC9yxpqRvpDmidtK5hh1UNnBuHQRwwy9ZrbceMkmv",
+    "account": {
+     "lamports": 1163320,
+     "data": [
+      "/WubxqM/zRVFOZ5TdR6CLJ3wB2P1Bbg+MvQAR5Ys/enxtmXxGuriTQ4AAABicmlzay1oZXJvbi02OQIAAAACAAAAYAESAAAAAAADHv5qAAAAAP8AAAAAAAAAAAAAAAAAAAAAAAA=",
+      "base64"
+     ],
+     "owner": "8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK",
+     "executable": false,
+     "rentEpoch": 18446744073709552000,
+     "space": 101
+    }
+   },
+   {
+    "pubkey": "HRddcSv4dVWQeuCzWuG3M4kJ889oVvvrx1QUs6p2iaWs",
+    "account": {
+     "lamports": 1163320,
+     "data": [
+      "/WubxqM/zRVFOZ5TdR6CLJ3wB2P1Bbg+MvQAR5Ys/enxtmXxGuriTQ0AAABub3J0aC10ZXJuLTk4AQAAAAEAAACwAAkAAAAAAOcs/WoAAAAA/wAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "base64"
+     ],
+     "owner": "8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK",
+     "executable": false,
+     "rentEpoch": 18446744073709552000,
+     "space": 101
+    }
+   }
+  ]
+ }
+}

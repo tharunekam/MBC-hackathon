@@ -1,0 +1,147 @@
+/*
+ * The proof page's own pieces: the list of this visitor's calls and the links to what is public. Its cards and figures are
+ * in app.css. Also the phone sizes for the links on the two proof pages (/proof and /verify/:signature), whose own rules
+ * are in app.css and bets.css. Where a rule here overrides one of theirs it names more classes than theirs does, so it wins
+ * whichever file loads first.
+ */
+
+/* Two columns under the three steps: your own calls, and the public record they are part of. */
+.proof-grid .pf-check {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 16px 48px;
+  margin: 8px 0 16px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.pf-check > div {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+}
+.pf-check .pf-text {
+  max-width: 60ch;
+  font-size: 15px;
+  color: var(--soft);
+}
+.pf-check .pf-text a,
+.pf-check .fine a,
+.pf-calls .pf-open {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* One call a line: how it stands, what it is, and the thing to open. */
+.pf-check .pf-calls {
+  display: grid;
+  border-top: 1px solid var(--line);
+}
+.pf-calls li {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 15px;
+}
+.pf-calls .status {
+  justify-content: center;
+  padding: 0 8px;
+}
+.pf-calls .pf-what {
+  min-width: 0;
+  line-height: 1.45;
+}
+.pf-calls .pf-what .kind-tag {
+  margin-right: 8px;
+}
+.pf-calls .pf-what small {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+}
+.pf-calls .pf-open {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.pf-calls .mono-chip,
+.pf-links .mono-chip {
+  margin-top: 0;
+  white-space: nowrap;
+}
+.pf-check .pf-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 960px) {
+  .proof-grid .pf-check {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+}
+
+@media (max-width: 720px) {
+  /* A call stacks: how it stands beside what it is, then the thing to open on a line of its own. */
+  .pf-calls li {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 4px 12px;
+    padding: 12px 0 4px;
+  }
+  .pf-calls li > :last-child {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+  /* Fingers: every link on the proof pages is at least 44px tall. */
+  .pf-calls .pf-open,
+  .pf-calls .mono-chip,
+  .pf-links .mono-chip,
+  .verify .links .mono-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  .pf-calls .mono-chip,
+  .pf-links .mono-chip,
+  .verify .links .mono-chip {
+    padding: 0 12px;
+  }
+  .proof-grid .btn,
+  .proofcard .pc-actions .btn,
+  .pf-empty .btn {
+    min-height: 44px;
+  }
+  /* Two buttons side by side share the width, so neither is a sliver. */
+  .proofcard .pc-actions {
+    width: 100%;
+    gap: 12px;
+  }
+  .proofcard .pc-actions .btn {
+    flex: 1 1 0;
+  }
+}
+
+/* ------------------------------------------------------------ proof of a call */
+/* The result, then where the price finished, read as one block above the question. */
+.proofcard .pc-result {
+  display: grid;
+  gap: 8px;
+}
+.proofcard .pc-called {
+  font-size: 17px;
+  line-height: 1.4;
+  color: var(--soft);
+}
+/* The two ways out of a call that did not load. */
+.pf-empty .pc-actions {
+  margin-top: 8px;
+}
+.pf-empty .pc-actions .btn {
+  margin-top: 0;
+}

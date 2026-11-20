@@ -1,0 +1,510 @@
+/* ------------------------------------------------------------ leaderboard */
+
+/* Summary strip: the same ruled band as the Markets page, so the two read as one system. */
+.lb-sum {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 32px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.lb-sum > div {
+  display: grid;
+  align-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 20px 24px;
+  border-left: 1px solid var(--line);
+}
+.lb-sum > div:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+.lb-sum dt,
+.lb th,
+.lb-example figcaption {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.lb-sum dd {
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+/* With the number sealed beside the number revealed, the strip has four figures. */
+.lb-sum[data-n='4'] {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+/* A quiet note beside a figure: how many of the sealed calls were refunded. */
+.lb-sum dd small {
+  margin-left: 8px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* The board */
+.lb-wrap {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  overflow: hidden;
+}
+.lb {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+.lb th {
+  padding: 12px 16px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line-strong);
+}
+.lb td {
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+  vertical-align: middle;
+}
+.lb tbody tr:first-child td {
+  border-top: 0;
+}
+.lb .n {
+  text-align: right;
+  white-space: nowrap;
+}
+.lb td.n,
+.lb-rank,
+.lb-calls .lb-edge {
+  font-size: 14px;
+}
+.lb .lb-rank {
+  width: 72px;
+  color: var(--muted);
+}
+.lb-who {
+  font-weight: 500;
+}
+.lb td.lb-edge {
+  font-weight: 500;
+}
+.lb td.lb-when,
+.lb-calls .lb-when {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  color: var(--muted);
+}
+.lb tr.is-you td {
+  background: var(--accent-soft);
+}
+/*
+ * The mark on this visitor's own row. It is drawn here, from the cell's data-tag, so that the cell's text is the handle
+ * and nothing else: the browser checks read the handle from that cell. A screen reader reads it after the handle.
+ */
+.lb-who[data-tag]::after {
+  content: attr(data-tag);
+  display: inline-block;
+  margin-left: 10px;
+  padding: 3px 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--muted);
+  vertical-align: middle;
+}
+
+/* How many calls the player sealed: a line of its own, closed up under the number revealed and ending beneath it. */
+.lb tr.has-sub td {
+  padding-bottom: 2px;
+}
+.lb .lb-sub td {
+  padding-top: 0;
+  padding-bottom: 10px;
+  border-top: 0;
+}
+.lb td.lb-sealed {
+  text-align: right;
+  font-size: 12.5px;
+  line-height: 1.3;
+  color: var(--muted);
+}
+
+.lb-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  font-weight: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.lb-caret {
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform 160ms var(--ease);
+}
+.lb-toggle[aria-expanded='true'] .lb-caret {
+  transform: rotate(45deg);
+}
+.lb-toggle:hover .lb-caret {
+  border-color: var(--ink);
+}
+.lb-toggle:focus-visible {
+  outline-offset: 4px;
+  border-radius: var(--r-sm);
+}
+
+/* A player's recent calls, opened under their row and indented to the handle: result, what the call was, edge, when, proof. */
+.lb .lb-calls td {
+  padding: 0 16px 12px 88px;
+  border-top: 0;
+}
+.lb-calls li {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) 56px 80px auto;
+  grid-template-areas: 'result call edge when proof';
+  align-items: center;
+  gap: 16px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+.lb-calls .status {
+  grid-area: result;
+  justify-content: center;
+  height: 24px;
+  padding: 0 8px;
+}
+.lb-call {
+  grid-area: call;
+  line-height: 1.5;
+  color: var(--soft);
+}
+/* The product tag leads the sentence, so it starts the line however the sentence wraps. */
+.lb-calls .lb-call .kind-tag {
+  margin: 0 8px 0 0;
+}
+.lb-calls .lb-edge {
+  grid-area: edge;
+  text-align: right;
+}
+.lb-calls .lb-when {
+  grid-area: when;
+  text-align: right;
+  white-space: nowrap;
+}
+.lb-calls a {
+  grid-area: proof;
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+.lb-calls .fine {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+/* Under the board: what the Edge column counts, and where this visitor's handle is if it is not on the board yet. */
+.lb-notes {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+}
+.lb-notes b {
+  font-weight: 600;
+  color: var(--soft);
+}
+.lb-notes a {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.lb-skel-sum {
+  height: 96px;
+}
+.lb-skel-table {
+  height: 240px;
+}
+
+/* Empty: what the board is, and the three steps onto it. */
+.lb-empty {
+  display: grid;
+  gap: 16px;
+  padding: 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.lb-empty .h-card {
+  margin: 0;
+}
+.lb-empty p {
+  max-width: 60ch;
+  color: var(--soft);
+}
+.lb-empty ol {
+  display: grid;
+  gap: 8px;
+  counter-reset: step;
+}
+.lb-empty li {
+  position: relative;
+  padding-left: 32px;
+  color: var(--soft);
+  counter-increment: step;
+}
+.lb-empty li::before {
+  content: counter(step, decimal-leading-zero);
+  position: absolute;
+  left: 0;
+  top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.lb-empty a {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.lb-empty .btn {
+  justify-self: start;
+}
+
+/* The same board read from the program's accounts: ruled off from the server's table, its button level with its title. */
+.lb-chain {
+  margin-top: 48px;
+  padding-top: 32px;
+  border-top: 1px solid var(--line);
+}
+.lb-chain-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+}
+.lb-chain-head .h-card {
+  margin: 8px 0 12px;
+}
+.lb-chain-head p {
+  max-width: 60ch;
+  color: var(--soft);
+}
+.lb-chain-head .btn {
+  flex: none;
+}
+.lb-chain .lb-wrap,
+.lb-chain .note {
+  margin: 24px 0 0;
+}
+.lb-chain-match {
+  margin-top: 12px;
+  font-size: 14px;
+  color: var(--soft);
+}
+.lb-chain-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 24px;
+}
+.lb-chain-links .mono-chip {
+  margin-top: 0;
+}
+.lb-chain > .fine {
+  margin-top: 12px;
+}
+
+/* How edge works: the rule on the left, one worked call on the right. */
+.lb-explain {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 48px;
+  align-items: start;
+  margin-top: 64px;
+  padding-top: 32px;
+  border-top: 1px solid var(--line);
+}
+.lb-explain .h-card {
+  margin: 0 0 16px;
+}
+.lb-explain p {
+  max-width: 60ch;
+  color: var(--soft);
+}
+.lb-explain p + p {
+  margin-top: 12px;
+}
+.lb-explain p.fine {
+  margin-top: 16px;
+  color: var(--muted);
+}
+.lb-example {
+  margin: 0;
+}
+.lb-example figcaption {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line-strong);
+}
+.lb-example dl > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 15px;
+}
+.lb-example dt {
+  color: var(--soft);
+}
+.lb-example dd {
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.lb-example .lb-none {
+  font-family: var(--font-ui);
+  color: var(--muted);
+}
+.lb-example .fine {
+  margin-top: 16px;
+  color: var(--muted);
+}
+
+@media (max-width: 960px) {
+  .lb-explain {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 32px;
+  }
+}
+@media (max-width: 720px) {
+  .lb-sum > div {
+    padding: 16px 12px;
+  }
+  .lb-sum dd {
+    font-size: 24px;
+  }
+  /* Four figures do not fit side by side on a phone: two rows of two. */
+  .lb-sum[data-n='4'] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .lb-sum[data-n='4'] > div:nth-child(odd) {
+    padding-left: 0;
+    border-left: 0;
+  }
+  .lb-sum[data-n='4'] > div:nth-child(n + 3) {
+    border-top: 1px solid var(--line);
+  }
+  /* 6px between columns, not 8: the 12px that gives back is what keeps the longest handle on one line at 390 wide. */
+  .lb th,
+  .lb td {
+    padding: 12px 6px;
+  }
+  /* The same 12px inside both edges of the board. The last column is hidden at this width, so the edge column, the one
+     before it, is the one that meets the right-hand side. */
+  .lb th:first-child,
+  .lb td:first-child {
+    padding-left: 12px;
+  }
+  .lb th:nth-last-child(2),
+  .lb td:nth-last-child(2) {
+    padding-right: 12px;
+  }
+  .lb-opt {
+    display: none;
+  }
+  .lb .lb-rank {
+    width: 40px;
+  }
+  /* Fingers: the handle that opens a player's calls, and every link, is at least 44px tall. The handle's cell gives up
+     its own padding to the button, so a row is no taller for it; the other cells keep theirs, top and bottom alike, so
+     every figure stays level with the handle. A long handle may break at a hyphen sooner than push the edge off screen. */
+  .lb td.lb-who,
+  .lb tr.has-sub td.lb-who {
+    padding-top: 1px;
+    padding-bottom: 1px;
+  }
+  .lb-toggle {
+    min-width: 44px;
+    min-height: 44px;
+    white-space: normal;
+    text-align: left;
+  }
+  .lb tr.has-sub td {
+    padding-bottom: 12px;
+  }
+  /* The sealed line is drawn up into the room that leaves, so it still sits close under its number. */
+  .lb .lb-sub td {
+    padding-bottom: 6px;
+  }
+  .lb-sealed > span:first-child {
+    display: block;
+    margin-top: -8px;
+  }
+  /* Beside a handle there is no room for the mark, so it goes on the sealed line, under the handle. */
+  .lb tr.has-sub td.lb-who[data-tag] {
+    position: relative;
+  }
+  .lb tr.has-sub td.lb-who[data-tag]::after {
+    position: absolute;
+    top: 100%;
+    left: 6px;
+    margin: -10px 0 0;
+  }
+  .lb tr.has-sub td.lb-who-opens[data-tag]::after {
+    left: 20px;
+  }
+  .lb .lb-calls td {
+    padding: 0 12px 12px;
+  }
+  /* A call stacks: its result, edge and time, then what it was, then the way to its proof. */
+  .lb-calls li {
+    grid-template-columns: auto auto minmax(0, 1fr);
+    grid-template-areas:
+      'result edge when'
+      'call call call'
+      'proof proof proof';
+    gap: 8px 12px;
+    padding: 12px 0 0;
+  }
+  .lb-calls a {
+    display: inline-flex;
+    align-items: center;
+    justify-self: start;
+    min-height: 44px;
+  }
+  .lb-chain-links .mono-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 12px;
+  }
+  .lb-empty {
+    padding: 24px 16px;
+  }
+  .lb-chain-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lb-caret {
+    transition: none;
+  }
+}

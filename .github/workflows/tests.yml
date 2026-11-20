@@ -1,0 +1,42 @@
+# Runs on every push: type checks, the unit and integration tests of the executor, the chain service, the web app and
+# the hosted-demo edge, a production build, and the full rehearsal (the golden path through the real executor and chain
+# code, with Gemini and Solana stood in on the wire). Needs no keys and no SOL.
+#
+# Not run here: the browser end-to-end test (npm run e2e, needs Chrome) and the Solana program's own tests
+# (receipts-program: `anchor build && cargo test`, needs the Solana and Anchor toolchains).
+name: tests
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - name: Install
+        run: |
+          npm ci
+          npm --prefix executor ci
+          npm --prefix chain ci
+          npm --prefix web ci
+      - name: Type check
+        run: npm run typecheck
+      - name: Tests
+        run: npm test
+      - name: Production build
+        run: npm run build
+      - name: Rehearsal
+        run: npm run rehearse

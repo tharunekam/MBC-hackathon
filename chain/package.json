@@ -1,0 +1,29 @@
+{
+  "name": "given-chain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Commits and reveals Given calls on Solana and serves the leaderboard",
+  "engines": {
+    "node": ">=23.6"
+  },
+  "scripts": {
+    "start": "node src/server.ts",
+    "start:fake": "GIVEN_CHAIN=fake node src/server.ts",
+    "keygen": "node scripts/keygen.ts",
+    "status": "node scripts/status.ts",
+    "smoke": "node scripts/devnet-smoke.ts",
+    "drill": "node scripts/recovery-drill.ts",
+    "rehearse": "node scripts/rehearse.ts",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "inspect": "node scripts/inspect-tx.ts"
+  },
+  "dependencies": {
+    "@solana/web3.js": "1.99.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,0 +1,793 @@
+/* The landing page. One example bet runs through it: the first screen draws it on a price line you can drag, and the sections
+   below take it apart. Headings are two-tone: the first sentence says the thing, the grey one says what it means. */
+
+/* ------------------------------------------------------------ first screen */
+.hero {
+  padding: clamp(48px, 8vw, 120px) 0 clamp(64px, 8vw, 120px);
+  overflow-x: clip;
+}
+.hero-title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(40px, 7vw, 92px);
+  line-height: 1;
+  letter-spacing: -0.045em;
+}
+.hero-sub {
+  margin-top: clamp(14px, 1.6vw, 22px);
+  font-size: clamp(16px, 1.5vw, 19px);
+  line-height: 1.4;
+  color: var(--muted);
+}
+/* The first screen arrives in order, once. */
+.hero-title,
+.hero-sub,
+.hero-line,
+.hero-note {
+  animation: hero-in 800ms var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 90ms + 40ms);
+}
+@keyframes hero-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+/* What this copy of the app is really talking to, under the line. Room is held for it, so the first screen does not jump
+   when the answer arrives. */
+.hero-note {
+  max-width: 78ch;
+  min-height: 1.5em;
+  margin-top: 16px;
+  text-wrap: balance;
+}
+@media (max-width: 720px) {
+  .hero-note {
+    min-height: 3em;
+  }
+}
+/* ------------------------------------------------------------ the price line */
+/* The bet drawn on one thin line of prices, with nothing around it: no panel, no border. The line is cut at the bet's two
+   prices; the segment the handle is on takes its colour and the other two stay grey. What each one pays is written under it. */
+.hero-line {
+  margin-top: clamp(44px, 7vw, 96px);
+}
+.line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr); /* not 1fr: a long label must not be able to push the line wider than the page */
+  gap: clamp(28px, 4vw, 44px);
+}
+.line-head {
+  display: flex;
+}
+.ticket-kicker {
+  font-size: 13px;
+  color: var(--muted);
+}
+/* Which bet the line draws: two words, the chosen one underlined. */
+.line-pick {
+  display: inline-flex;
+  gap: 20px;
+}
+.line-pick button {
+  padding: 6px 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: none;
+  font: inherit;
+  font-size: 14.5px;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--t-fast) var(--ease-ui), border-color var(--t-fast) var(--ease-ui);
+}
+.line-pick button:hover {
+  color: var(--ink);
+}
+.line-pick button.is-on {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+.line-body {
+  display: grid;
+  gap: 18px;
+  cursor: ew-resize;
+}
+.line-track {
+  --grip: 44px;
+  position: relative;
+  padding-top: 30px; /* room for the price over the handle */
+}
+.line-segs {
+  display: flex;
+  gap: 4px;
+  height: 6px;
+}
+.line-segs i {
+  flex-basis: 0;
+  border-radius: 3px;
+  background: var(--line-strong);
+  transition: background var(--t-med) var(--ease-ui);
+}
+.line-segs [data-kind='back'][data-on] {
+  background: var(--accent);
+}
+.line-segs [data-kind='lose'][data-on] {
+  background: var(--bad);
+}
+.line-segs [data-kind='win'][data-on] {
+  background: var(--good);
+}
+/* The handle sits on the line with the finishing price over it. */
+.line-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  pointer-events: none;
+  transition: left 90ms linear;
+}
+.line-marker::after {
+  content: '';
+  position: absolute;
+  left: -9px;
+  bottom: -6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 0 4px var(--bg);
+  transition: transform var(--t-fast) var(--ease-ui);
+}
+.line-body:hover .line-marker::after {
+  transform: scale(1.15);
+}
+.line-body:active .line-marker::after {
+  transform: scale(0.9);
+}
+.line-marker output {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translateX(-50%);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  color: var(--ink);
+}
+/* The real control is a range input laid over the line. Its thumb is as wide as a fingertip and invisible, and the input
+   overhangs the line by half a thumb each side, so the thumb's centre runs exactly from one end of the line to the other. */
+.line-track input[type='range'] {
+  position: absolute;
+  top: 6px;
+  bottom: -19px;
+  left: calc(var(--grip) / -2);
+  width: calc(100% + var(--grip));
+  height: auto;
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: ew-resize;
+  touch-action: pan-y;
+}
+.line-track input[type='range']::-webkit-slider-runnable-track {
+  height: 100%;
+  background: transparent;
+}
+.line-track input[type='range']::-moz-range-track {
+  height: 100%;
+  background: transparent;
+}
+.line-track input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: var(--grip);
+  height: 100%;
+  background: transparent;
+  border: 0;
+}
+.line-track input[type='range']::-moz-range-thumb {
+  width: var(--grip);
+  height: 100%;
+  background: transparent;
+  border: 0;
+}
+.line-track input[type='range']:focus-visible {
+  outline: none;
+}
+.line-track:has(input:focus-visible) .line-marker::after {
+  box-shadow: 0 0 0 4px var(--bg), 0 0 0 6px var(--accent);
+}
+/* Under each segment: what it pays, and when. Only the one the handle is on is lit. */
+.line-zones {
+  display: flex;
+  gap: 4px;
+}
+.line-zones li {
+  flex-basis: 0;
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding-right: 12px;
+  color: var(--faint);
+  transition: color var(--t-med) var(--ease-ui);
+}
+.line-zones b {
+  font-family: var(--font-display);
+  font-size: clamp(18px, 2.6vw, 34px);
+  font-weight: 400;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+.line-zones span {
+  font-size: 13.5px;
+  line-height: 1.3;
+}
+.line-zones [data-on] {
+  color: var(--ink);
+}
+.line-zones [data-on] span {
+  color: var(--muted);
+}
+.line-zones [data-kind='back'][data-on] b {
+  color: var(--accent-text);
+}
+.line-zones [data-kind='lose'][data-on] b {
+  color: var(--bad);
+}
+.line-zones [data-kind='win'][data-on] b {
+  color: var(--good);
+}
+/* ------------------------------------------------------------ sections */
+.band {
+  position: relative;
+  padding: clamp(72px, 8vw, 120px) 0;
+  border-top: 1px solid var(--line);
+}
+.band {
+  scroll-margin-top: 60px; /* the bar above stays put, so a link to a section lands just under it */
+}
+.band .h-section {
+  font-size: clamp(25px, 2.7vw, 34px);
+  text-wrap: pretty;
+}
+/* Each idea is numbered, in the mono face, the way a spec numbers its parts. */
+.step-n {
+  display: block;
+  margin-bottom: 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+.band-note {
+  max-width: 56ch;
+  margin-top: 16px;
+}
+.band-note a {
+  color: var(--ink);
+  text-underline-offset: 3px;
+}
+/* In a section the grey half starts its own line. */
+.band .h-section .dim,
+.closing-title .dim {
+  display: block;
+}
+.showcase-head .h-section {
+  max-width: 34ch;
+}
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: clamp(36px, 5vw, 72px);
+  align-items: center;
+}
+@media (min-width: 961px) {
+  .split.flip {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  }
+  .split.flip > :first-child {
+    order: 2;
+  }
+}
+.band .lede {
+  margin-top: 4px;
+  font-size: 16px;
+}
+.band .row-actions {
+  margin-top: 28px;
+}
+/* A plain list on rules, the way a spec sheet reads. */
+.ticks {
+  display: grid;
+  margin-top: 24px;
+  border-top: 1px solid var(--line);
+}
+.ticks li {
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 15px;
+  color: var(--soft);
+}
+
+/* The two orders behind the example, and the four numbers on a quote: both are plain lists on rules, with no box round them. */
+.landing .orders,
+.landing .quad {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.orders {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid var(--line);
+}
+.landing .orders {
+  border-top: 1px solid var(--line);
+}
+.order-slips li {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 2px 0;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--line);
+}
+.order-n {
+  grid-row: 1 / span 2;
+  padding-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+.order-slips b {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+.order-slips p {
+  color: var(--muted);
+  font-size: 14.5px;
+}
+.orders-odds {
+  display: grid;
+  gap: 14px;
+  padding: 22px 0 0;
+}
+.quad {
+  display: grid;
+  gap: 18px;
+}
+.quad .nums {
+  gap: 0;
+  border-top: 1px solid var(--line);
+}
+.quad .nums > div {
+  padding: 20px 0;
+  border-bottom: 1px solid var(--line);
+}
+.quad .nums > div:nth-child(even) {
+  padding-left: 24px;
+  border-left: 1px solid var(--line);
+}
+.quad .nums dd {
+  font-size: clamp(30px, 3.4vw, 44px);
+  font-weight: 400;
+  letter-spacing: -0.04em;
+  margin-top: 8px;
+}
+.proof-list {
+  counter-reset: step;
+  display: grid;
+  border-top: 1px solid var(--line);
+}
+.proof-list li {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 2px 0;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--line);
+}
+.proof-list li::before {
+  content: '0' counter(step);
+  grid-row: 1 / span 2;
+  padding-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+.proof-list b {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 17px;
+  letter-spacing: -0.018em;
+}
+.proof-list span {
+  color: var(--muted);
+  font-size: 14.5px;
+}
+
+/* ------------------------------------------------------------ the four shapes */
+.showcase-head {
+  margin-bottom: 36px;
+}
+.showcase {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+/* Each card is one target: its name is the link, stretched over the card, so the link's name stays short for a screen
+   reader and the picture keeps its own description. */
+.showcase li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100%;
+  padding: 14px 14px 18px;
+  border-radius: 16px;
+  background: var(--stage);
+  transition: background var(--t-med) var(--ease-ui);
+}
+.showcase li:has(a:focus-visible) {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.showcase li > :not(.fig-box) {
+  padding-inline: 8px;
+}
+/* The name comes first for a screen reader and second to the eye, under its picture. */
+.showcase .fig-box {
+  order: -1;
+}
+.showcase-name {
+  margin-top: 10px;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+.showcase-name a {
+  color: inherit;
+  text-decoration: none;
+}
+.showcase-name a::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.showcase-name a:focus-visible {
+  outline: none;
+}
+.showcase-line {
+  flex: 1; /* the way in sits at the foot of every card, whatever the line above it takes */
+  font-size: 14.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+/* The way in is a small square with an arrow in it, which fills when the card is hovered. */
+.showcase-go {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.showcase-go i {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  font-style: normal;
+  transition: background var(--t-fast) var(--ease-ui), color var(--t-fast) var(--ease-ui), border-color var(--t-fast) var(--ease-ui),
+    transform var(--t-med) var(--ease);
+}
+@media (hover: hover) {
+  .showcase li:hover .showcase-go i {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+    transform: translateX(3px);
+  }
+}
+.showcase-note {
+  max-width: 76ch;
+  margin-top: 16px;
+}
+
+/* The four pictures, each on a small panel. Every panel keeps one proportion, so the names under them line up across a row. */
+.fig-box {
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  width: 100%;
+  height: auto;
+  padding: 18px 14px 10px;
+  border-radius: 10px;
+  background: var(--panel);
+}
+.fig {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.fig-zero {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+.fig path {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.fig-join {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+.fig-back {
+  stroke: var(--accent);
+}
+.fig-lose {
+  stroke: var(--bad);
+}
+.fig-win {
+  stroke: var(--good);
+}
+/* The words under each stretch of the line. They are type, not part of the drawing, so they stay one size as the card grows. */
+.fig-labels {
+  display: grid;
+  padding: 0 3.33%; /* the drawing starts and ends 8 units in from a 240-unit box */
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.4;
+  text-align: center;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.fig-labels [data-kind='back'] {
+  color: var(--accent-text);
+}
+.fig-labels [data-kind='lose'] {
+  color: var(--bad);
+}
+.fig-labels [data-kind='win'] {
+  color: var(--good);
+}
+.fig-basket {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 12px;
+}
+.fig-names {
+  display: grid;
+  grid-template-rows: repeat(3, 1fr);
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+/* The lines draw themselves in once, left to right, when the section comes into view. */
+.js [data-reveal] .fig path,
+.js [data-reveal] .hf-view {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 1.1s var(--ease) calc(250ms + var(--i, 0) * 160ms);
+}
+.js [data-reveal].in .fig path,
+.js [data-reveal].in .hf-view {
+  stroke-dashoffset: 0;
+}
+
+/* ------------------------------------------------------------ hunch */
+.hunch-demo {
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+}
+.hunch-fig {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+/* The same marks as the chart on the Hunch page: grey bars for the market, an amber stepped line for the view. */
+.hf-bar {
+  fill: color-mix(in srgb, var(--ink) 26%, transparent);
+}
+.hf-base {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+.hf-view {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.hf-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.hf-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--muted);
+}
+.hf-keys span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.hf-keys i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ink) 26%, transparent);
+}
+.hf-keys [data-kind='view'] i {
+  width: 18px;
+  height: 0;
+  border-radius: 0;
+  background: none;
+  border-top: 2.5px solid var(--accent);
+}
+
+/* ------------------------------------------------------------ the way in, at the end */
+.closing {
+  padding: 0 0 clamp(64px, 7vw, 96px);
+}
+/* The one dark panel on the page, in both themes. Inside it the tokens are the dark theme's. */
+.closing-in {
+  --ink: #fafafa;
+  --muted: #8b8b8d;
+  --line: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(255, 255, 255, 0.22);
+  display: grid;
+  justify-items: start;
+  gap: 32px;
+  padding: clamp(32px, 5vw, 64px);
+  border-radius: 20px;
+  background: var(--band-dark-bg);
+  color: var(--ink);
+}
+.closing-title {
+  max-width: 26ch;
+  font-family: var(--font-display);
+  font-size: clamp(28px, 4vw, 48px);
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: -0.036em;
+}
+
+/* ------------------------------------------------------------ smaller screens */
+@media (max-width: 1099px) {
+  .showcase {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 960px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .showcase {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .showcase li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 16px;
+    align-content: start;
+  }
+  .showcase li > .fig-box {
+    grid-row: 1 / span 3;
+    grid-column: 2;
+    align-self: center;
+  }
+  .showcase li > :not(.fig-box) {
+    grid-column: 1;
+  }
+}
+@media (max-width: 560px) {
+  .line-zones b {
+    font-size: 17px;
+  }
+  .line-zones span {
+    font-size: 12px;
+  }
+  .line-zones li {
+    padding-right: 6px;
+  }
+  .showcase li {
+    display: flex;
+  }
+  .showcase li > .fig-box {
+    grid-row: auto;
+    grid-column: 1;
+  }
+  .hunch-demo {
+    padding: 18px;
+  }
+  .quad .nums dd {
+    font-size: 25px;
+  }
+}
+
+/* Narrower than any current phone, such as a slim side pane: the line keeps its three segments and drops the small print. */
+@media (max-width: 360px) {
+  .line-zones b {
+    font-size: 14px;
+    letter-spacing: -0.02em;
+  }
+  .line-zones span {
+    display: none;
+  }
+  /* The words under a picture may take two lines rather than run into each other. */
+  .fig-labels {
+    font-size: 9.5px;
+    line-height: 1.25;
+    white-space: normal;
+  }
+  .line-track {
+    --grip: 24px;
+  }
+}
+
+/* ------------------------------------------------------------ less motion */
+@media (prefers-reduced-motion: reduce) {
+  .hero-title,
+  .hero-sub,
+  .hero-line,
+  .hero-note {
+    animation: none;
+  }
+  .line-marker {
+    transition: none;
+  }
+  .js [data-reveal] .fig path,
+  .js [data-reveal] .hf-view {
+    stroke-dashoffset: 0;
+    transition: none;
+  }
+  .line-zones li,
+  .line-segs i,
+  .line-marker::after,
+  .showcase-go i {
+    transition: none;
+  }
+}
+:root[data-still] .hero-title,
+:root[data-still] .hero-sub,
+:root[data-still] .hero-line,
+:root[data-still] .hero-note {
+  animation: none;
+}
+:root[data-still] [data-reveal] .fig path,
+:root[data-still] [data-reveal] .hf-view {
+  stroke-dashoffset: 0;
+  transition: none;
+}
