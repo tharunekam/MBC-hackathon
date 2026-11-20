@@ -22,6 +22,8 @@ export class FakeExchange implements Exchange {
   readonly positions = new Map<string, number>(); // key: symbol|outcome
   readonly sent: OrderRequest[] = [];
   private readonly event: GeminiEvent;
+  /** Further events listed beside the first (other assets), each with its own ladder. Empty unless addEvent is called. */
+  private readonly extra = new Map<string, GeminiEvent>();
   private nextOrderId = 1;
   /** When set, the next placeOrder for a matching tag throws after "sending". */
   failAfterSend: string | null = null;
@@ -73,6 +75,51 @@ export class FakeExchange implements Exchange {
 
   symbol(strike: number): string {
     return `GEMI-${this.event.ticker}-HI${strike}`;
+  }
+
+  /** Lists another event beside the first: another asset, with its own ladder. Orders, netting and cash work across all of them. */
+  addEvent(ticker: string, strikes: Array<{ strike: number; bid: number | null; ask: number | null; bidSize?: number; askSize?: number }>, meta: { title?: string; expiryDate?: string } = {}): void {
+    const contracts: GeminiContract[] = strikes.map((s) => {
+      const symbol = `GEMI-${ticker}-HI${s.strike}`;
+      this.books.set(symbol, { bid: s.bid, bidSize: s.bidSize ?? 1000, ask: s.ask, askSize: s.askSize ?? 1000 });
+      return { id: `1-${s.strike}`, label: `$${s.strike} or above`, ticker: `HI${s.strike}`, instrumentSymbol: symbol, status: 'active', marketState: 'open', strike: { type: 'above', value: String(s.strike) }, prices: {} };
+    });
+    this.extra.set(ticker, { id: String(this.extra.size + 2), title: meta.title ?? `Test price ladder ${ticker}`, ticker, category: 'Crypto', status: 'active', expiryDate: meta.expiryDate ?? '2026-11-18T00:00:00.000Z', contracts });
+  }
+
+  /** Opens an added event again for another round, as relist does for the first. */
+  relistExtra(ticker: string, strikes: Array<{ strike: number; bid: number | null; ask: number | null; bidSize?: number; askSize?: number }>, meta: { title?: string; expiryDate: string }): void {
+    const ev = this.extra.get(ticker);
+    if (!ev) return;
+    for (const s of strikes) {
+      const c = ev.contracts.find((x) => x.ticker === `HI${s.strike}`);
+      if (!c) continue;
+      c.status = 'active';
+      c.marketState = 'open';
+      c.resolutionSide = null;
+      c.settlementValue = null;
+      c.resolvedAt = null;
+      this.books.set(c.instrumentSymbol, { bid: s.bid, bidSize: s.bidSize ?? 1000, ask: s.ask, askSize: s.askSize ?? 1000 });
+    }
+    ev.status = 'active';
+    ev.expiryDate = meta.expiryDate;
+    if (meta.title) ev.title = meta.title;
+  }
+
+  /** Settles one contract of an added event, as resolve does for the first. */
+  resolveExtra(ticker: string, strike: number, side: 'yes' | 'no', finishedAt?: number): void {
+    const c = this.extra.get(ticker)?.contracts.find((x) => x.ticker === `HI${strike}`);
+    if (!c) return;
+    c.status = 'settled';
+    c.marketState = 'closed';
+    c.resolutionSide = side;
+    if (finishedAt !== undefined) c.settlementValue = String(finishedAt);
+    for (const outcome of ['yes', 'no'] as const) {
+      const key = `${c.instrumentSymbol}|${outcome}`;
+      const held = this.positions.get(key) ?? 0;
+      if (held > 0 && outcome === side) this.cashBalance = r(this.cashBalance + held);
+      this.positions.delete(key);
+    }
   }
 
   setBook(strike: number, book: Partial<Book>): void {
@@ -152,10 +199,11 @@ export class FakeExchange implements Exchange {
   }
 
   async getEvent(ticker: string): Promise<GeminiEvent> {
-    if (ticker !== this.event.ticker) throw new Error(`unknown event ${ticker}`);
+    const ev = ticker === this.event.ticker ? this.event : this.extra.get(ticker);
+    if (!ev) throw new Error(`unknown event ${ticker}`);
     return {
-      ...this.event,
-      contracts: this.event.contracts.map((c) => {
+      ...ev,
+      contracts: ev.contracts.map((c) => {
         const b = this.books.get(c.instrumentSymbol)!;
         return { ...c, prices: { bestBid: b.bid === null ? null : String(b.bid), bestAsk: b.ask === null ? null : String(b.ask) } };
       }),
@@ -257,6 +305,6 @@ export class FakeExchange implements Exchange {
 
   /** The event as the list endpoint would return it. */
   async listEvents(): Promise<GeminiEvent[]> {
-    return [await this.getEvent(this.event.ticker)];
+    return Promise.all([this.event.ticker, ...this.extra.keys()].map((t) => this.getEvent(t)));
   }
 }

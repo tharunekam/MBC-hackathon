@@ -47,8 +47,33 @@ function cdf(z: number): number {
 const nextHour = new Date();
 nextHour.setMinutes(0, 0, 0);
 nextHour.setHours(nextHour.getHours() + 1);
-const ticker = `BTC${nextHour.toISOString().slice(2, 13).replace(/[-T]/g, '')}00`;
+const stamp = nextHour.toISOString().slice(2, 13).replace(/[-T]/g, '');
+const ticker = `BTC${stamp}00`;
 const STRIKES = Array.from({ length: 8 }, (_, i) => 61500 + i * 500);
+
+/**
+ * Other assets listed beside Bitcoin, when FAKE_ASSETS names them (`npm run dev` does: FAKE_ASSETS=ETH,SOL). Each has its own ladder
+ * and its own finishing price, and closes and reopens with Bitcoin's round. Left unset, Bitcoin is the only market, which is what
+ * the tests and the browser checks expect.
+ */
+const OTHER = { ETH: { spot: 3180, step: 25, sigma: 0.014 }, SOL: { spot: 148, step: 1, sigma: 0.016 } } as const;
+type Code = keyof typeof OTHER;
+const EXTRA = (process.env.FAKE_ASSETS ?? '')
+  .split(',')
+  .map((c) => c.trim().toUpperCase())
+  .filter((c): c is Code => c in OTHER);
+const extraSpot = new Map<Code, number>(EXTRA.map((c) => [c, OTHER[c].spot]));
+const extraTicker = (c: Code) => `${c}${stamp}00`;
+function extraRungs(c: Code, spot: number) {
+  const { step, sigma } = OTHER[c];
+  const base = Math.round(spot / step) * step;
+  return Array.from({ length: 8 }, (_, i) => {
+    const strike = base + (i - 4) * step;
+    const mid = 1 - cdf(Math.log(strike / spot) / sigma);
+    return { strike, bid: Math.max(0.01, Math.round((mid - 0.01) * 100) / 100), ask: Math.min(0.99, Math.round((mid + 0.01) * 100) / 100), bidSize: 400, askSize: 400 };
+  });
+}
+const extraTitle = (c: Code, closes: Date) => titleFor(closes).replace('BTC', c);
 
 /**
  * Rounds: with FAKE_ROUND_MINUTES set (as `npm run dev` does) the ladder closes by itself that many minutes after it
@@ -80,7 +105,12 @@ function rungsAt(spot: number) {
 }
 
 function build() {
-  return new FakeExchange(ticker, rungsAt(round.spot), { title: titleFor(round.closesAt), expiryDate: round.closesAt.toISOString() });
+  const ex = new FakeExchange(ticker, rungsAt(round.spot), { title: titleFor(round.closesAt), expiryDate: round.closesAt.toISOString() });
+  for (const c of EXTRA) {
+    extraSpot.set(c, OTHER[c].spot);
+    ex.addEvent(extraTicker(c), extraRungs(c, OTHER[c].spot), { title: extraTitle(c, round.closesAt), expiryDate: round.closesAt.toISOString() });
+  }
+  return ex;
 }
 
 /** A finishing price drawn from the same bell curve the ladder's prices come from, so the odds on screen are honest ones. */
@@ -153,6 +183,12 @@ let api = handler();
 /** Settles every contract of the ladder against a price, as Gemini would at expiry. */
 function resolveAt(price: number): void {
   for (const strike of STRIKES) exchange.resolve(strike, price >= strike ? 'yes' : 'no', price);
+  for (const c of EXTRA) {
+    const spot = extraSpot.get(c)!;
+    const z = Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
+    const finish = Math.round(spot * Math.exp(OTHER[c].sigma * z) * 100) / 100;
+    for (const rung of extraRungs(c, spot)) exchange.resolveExtra(extraTicker(c), rung.strike, finish >= rung.strike ? 'yes' : 'no', finish);
+  }
   round.resolvedAt = Date.now();
   round.finish = price;
   hub.publish('markets');
@@ -165,6 +201,11 @@ function reopen(): void {
   round.resolvedAt = null;
   round.finish = null;
   exchange.relist(rungsAt(round.spot), { title: titleFor(round.closesAt), expiryDate: round.closesAt.toISOString() });
+  for (const c of EXTRA) {
+    const spot = Math.round((OTHER[c].spot * (1 + (Math.random() - 0.5) * 0.03)) / OTHER[c].step) * OTHER[c].step;
+    extraSpot.set(c, spot);
+    exchange.relistExtra(extraTicker(c), extraRungs(c, spot), { title: extraTitle(c, round.closesAt), expiryDate: round.closesAt.toISOString() });
+  }
   hub.publish('markets');
 }
 
