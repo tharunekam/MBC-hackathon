@@ -240,6 +240,11 @@ every step:
 Those prices are the sandbox's: its books are about 20 cents wide, so leaving a bet at once costs most of a small
 stake there. On a production-width book the same sale costs a few cents per dollar (`cashOutPer100` on every quote).
 
+**If the sale is interrupted.** What the bet cost is written to the ledger before the first sell leaves. A sell whose
+answer never arrives is looked up by its tag before it is treated as unsold, and after a crash `recover` fills in any
+sell left as "sent" and brings the bet's status and proceeds in line with what really sold. No sell is ever sent twice:
+each attempt numbers its tags from every cash-out order the bet has had.
+
 Not handled: selling a bet whose position Gemini has netted against another bet (it is refused), and selling part of
 a bet on purpose.
 

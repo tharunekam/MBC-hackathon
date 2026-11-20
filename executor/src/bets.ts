@@ -128,7 +128,7 @@ export async function sendLeg(deps: Deps, bet: BetRecord, role: LegRecord['role'
   return leg;
 }
 
-function applyResult(leg: LegRecord, result: OrderResult, feeCoef: number): void {
+export function applyResult(leg: LegRecord, result: OrderResult, feeCoef: number): void {
   leg.orderId = result.orderId;
   leg.quantityFilled = result.filledQuantity;
   leg.avgPrice = result.avgPrice;
@@ -180,6 +180,39 @@ export function refreshTotals(bet: BetRecord): void {
     { quantity: h.outcome.quantity, avgPrice: h.outcome.quantity > 0 ? h.outcome.spent / h.outcome.quantity : 0 },
     { quantity: h.hedge.quantity, avgPrice: h.hedge.quantity > 0 ? h.hedge.spent / h.hedge.quantity : 0 },
   );
+}
+
+/**
+ * Brings a bet's cash-out record in line with the sell orders it has actually had filled. `cashOutBet` writes the record
+ * (with what the bet cost) before its first order leaves, so this can rebuild the rest from the legs alone: after each
+ * sale, and after `recoverBets` has filled in a sale that was interrupted.
+ *
+ *   nothing sold yet     the record is dropped; the bet is as it was
+ *   everything sold      "cashed_out"
+ *   part sold            the bet stays live on what it still holds, and says so
+ */
+export function refreshCashOut(bet: BetRecord): void {
+  if (!bet.cashOut) return;
+  const sells = bet.legs.filter((l) => l.role === 'cashout' && l.quantityFilled > 0 && l.avgPrice !== null);
+  if (sells.length === 0) {
+    bet.cashOut = undefined;
+    return;
+  }
+  if (bet.status !== 'open' && bet.status !== 'unhedged' && bet.status !== 'cashed_out') return;
+  const proceeds = clean(sells.reduce((sum, l) => sum + l.quantityFilled * l.avgPrice! - (l.fee ?? 0), 0));
+  const h = holdings(bet);
+  const complete = clean(Math.max(0, h.outcome.quantity) + Math.max(0, h.hedge.quantity)) <= 1e-9;
+  bet.cashOut = { at: bet.cashOut.at, stake: bet.cashOut.stake, proceeds, pnl: clean(proceeds - bet.cashOut.stake), complete };
+  if (complete) {
+    bet.status = 'cashed_out';
+    bet.note = undefined;
+  } else {
+    bet.status = bet.payoffs?.hedged ? 'open' : 'unhedged';
+    bet.note =
+      h.outcome.quantity > 1e-9
+        ? 'Only part of this bet could be sold back. The rest is still in place and can be cashed out again.'
+        : 'The first half of this bet was sold. What is left pays the stake back if the condition fails, and can be sold again.';
+  }
 }
 
 // ------------------------------------------------------------------ parlays
@@ -490,6 +523,7 @@ export async function recoverBets(deps: Deps, user?: string): Promise<number> {
       fixed++;
     }
     refreshTotals(bet);
+    refreshCashOut(bet); // a sale that was interrupted: what it really sold is now known
     if (bet.status === 'placing') {
       const held = holdings(bet).outcome.quantity;
       bet.status = held <= 0 ? 'failed' : bet.payoffs?.hedged ? 'open' : 'unhedged';

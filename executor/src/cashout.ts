@@ -15,7 +15,8 @@
  * the sale was not checked against.
  */
 import type { Deps } from './bets.ts';
-import { holdings, legMap, refreshTotals, sendLeg } from './bets.ts';
+import { applyResult, holdings, legMap, refreshCashOut, refreshTotals, sendLeg } from './bets.ts';
+import type { OrderRequest } from './exchange.ts';
 import type { BetRecord, LegRecord, Ledger } from './ledger.ts';
 import { viewFor } from './mirror.ts';
 import { PRODUCTION_TAKER_FEE_COEF } from './offer.ts';
@@ -200,8 +201,6 @@ export interface CashOutRequest {
   slippageTicks?: number;
 }
 
-const sold = (leg: LegRecord): number => (leg.quantityFilled > 0 && leg.avgPrice !== null ? leg.quantityFilled * leg.avgPrice - (leg.fee ?? 0) : 0);
-
 /**
  * Sells a bet back as two real orders. Always leaves the ledger saying exactly what was sold.
  *
@@ -228,11 +227,13 @@ export async function cashOutBet(deps: Deps, bet: BetRecord, req: CashOutRequest
   // Each attempt gets its own tags: an order tag can never be reused on Gemini. Numbering from every cash-out order sent
   // so far (not from the attempts) keeps them distinct even when an attempt sent only one of its two orders.
   const attempt = bet.legs.filter((l) => l.role === 'cashout').length + 1;
-  const sentNow: LegRecord[] = [];
+  // What the bet cost goes on the record before the first order leaves (sendLeg saves the ledger), so a sale that is
+  // interrupted can be put right from the ledger alone: see refreshCashOut.
+  bet.cashOut = { at: now().toISOString(), stake: stakeBefore, proceeds: bet.cashOut?.proceeds ?? 0, pnl: clean((bet.cashOut?.proceeds ?? 0) - stakeBefore), complete: false };
 
   const [outcomeLeg, hedgeLeg] = quote.legs;
   if (outcomeLeg.quantity > 0) {
-    const leg = await sendLeg(deps, bet, 'cashout', {
+    const leg = await sellLeg(deps, bet, {
       symbol: outcomeLeg.symbol,
       side: 'sell',
       outcome: outcomeLeg.outcome,
@@ -241,9 +242,9 @@ export async function cashOutBet(deps: Deps, bet: BetRecord, req: CashOutRequest
       tif: 'IOC',
       clientOrderId: `gv-${bet.id}-cb${attempt}`,
     });
-    sentNow.push(leg);
     if (leg.status === 'error' || leg.quantityFilled <= 0) {
       refreshTotals(bet);
+      refreshCashOut(bet); // drops the record again unless an earlier attempt sold something
       deps.ledger.save();
       throw new CashOutRefused(
         'nothing_sold',
@@ -253,41 +254,40 @@ export async function cashOutBet(deps: Deps, bet: BetRecord, req: CashOutRequest
     }
   }
   if (hedgeLeg.quantity > 0) {
-    sentNow.push(
-      await sendLeg(deps, bet, 'cashout', {
-        symbol: hedgeLeg.symbol,
-        side: 'sell',
-        outcome: hedgeLeg.outcome,
-        limitPrice: Math.max(PRICE_TICK, clean(hedgeLeg.price! - slip)),
-        quantity: hedgeLeg.quantity,
-        tif: 'IOC',
-        clientOrderId: `gv-${bet.id}-ca${attempt}`,
-      }),
-    );
+    await sellLeg(deps, bet, {
+      symbol: hedgeLeg.symbol,
+      side: 'sell',
+      outcome: hedgeLeg.outcome,
+      limitPrice: Math.max(PRICE_TICK, clean(hedgeLeg.price! - slip)),
+      quantity: hedgeLeg.quantity,
+      tif: 'IOC',
+      clientOrderId: `gv-${bet.id}-ca${attempt}`,
+    });
   }
 
   refreshTotals(bet);
-  const h = holdings(bet);
-  const left = clean(Math.max(0, h.outcome.quantity) + Math.max(0, h.hedge.quantity));
-  const proceeds = clean((bet.cashOut?.proceeds ?? 0) + sentNow.reduce((sum, l) => sum + sold(l), 0));
-  const complete = left <= 1e-9;
-  bet.cashOut = {
-    at: now().toISOString(),
-    stake: stakeBefore,
-    proceeds,
-    pnl: clean(proceeds - stakeBefore),
-    complete,
-  };
-  if (complete) {
-    bet.status = 'cashed_out';
-    bet.note = undefined;
-  } else {
-    bet.status = bet.payoffs?.hedged ? 'open' : 'unhedged';
-    bet.note =
-      h.outcome.quantity > 1e-9
-        ? 'Only part of this bet could be sold back. The rest is still in place and can be cashed out again.'
-        : 'The first half of this bet was sold. What is left pays the stake back if the condition fails, and can be sold again.';
-  }
+  refreshCashOut(bet);
   deps.ledger.save();
   return bet;
+}
+
+/**
+ * Sends one sell. An order whose answer never arrived (the connection dropped after it was sent) may still have reached
+ * Gemini and filled, so before it is treated as unsold it is looked up by its tag. If that lookup fails too the leg
+ * stays marked as an error and `reconcile` will show the difference.
+ */
+async function sellLeg(deps: Deps, bet: BetRecord, req: OrderRequest): Promise<LegRecord> {
+  const leg = await sendLeg(deps, bet, 'cashout', req);
+  if (leg.status !== 'error') return leg;
+  try {
+    const found = await deps.exchange.findOrder(req.clientOrderId);
+    if (found) {
+      applyResult(leg, found, deps.feeCoef ?? 0);
+      leg.note = `${leg.note ?? 'No answer came back'}; the order was then found on the exchange by its tag.`;
+      deps.ledger.save();
+    }
+  } catch {
+    /* still unknown */
+  }
+  return leg;
 }
