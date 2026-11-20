@@ -1,6 +1,6 @@
 /**
  * The new bets over the REAL Gemini client code (signing, WebSocket session, order placement) against the local stand-in:
- * a falling parlay and a range, each placed through `GeminiExchange`, so the orders that reach "Gemini" are checked on the
+ * a falling parlay, a range and a breakout, each placed through `GeminiExchange`, so the orders that reach "Gemini" are checked on the
  * wire: the right contract, the right side (YES or NO), the right price, and the tags the ledger records.
  */
 import assert from 'node:assert/strict';
@@ -12,6 +12,7 @@ import { placeConditionalBet } from '../src/bets.ts';
 import type { Config } from '../src/config.ts';
 import { GeminiExchange } from '../src/exchange.ts';
 import { Ledger } from '../src/ledger.ts';
+import { placeBreakoutBet } from '../src/breakout-bet.ts';
 import { placeRangeBet } from '../src/range-bet.ts';
 import { FakeExchange } from './fake.ts';
 import { startFakeGemini } from './fake-gemini.ts';
@@ -99,6 +100,25 @@ describe('the new bets over the real exchange client', () => {
     assert.deepEqual(received.map((o) => [o.symbol, o.outcome, o.side]).sort(), [
       [SYM_LOW, 'yes', 'buy'],
       [SYM_HIGH, 'no', 'buy'],
+    ]);
+  });
+
+  it('a breakout buys a YES on the higher strike and a NO on the lower, the same size', async () => {
+    const { deps } = setup();
+    const bet = await placeBreakoutBet(deps, { user: 'primary', eventTicker: 'WIREP', lowSymbol: SYM_LOW, highSymbol: SYM_HIGH, stake: 12.4, slippageTicks: 0 });
+    assert.equal(bet.status, 'open');
+    assert.equal(bet.id, 'bo-w1');
+    const [first, second] = bet.legs;
+    assert.deepEqual([first!.symbol, first!.outcome, first!.side], [SYM_HIGH, 'yes', 'buy']);
+    assert.deepEqual([second!.symbol, second!.outcome, second!.side], [SYM_LOW, 'no', 'buy']);
+    assert.equal(first!.quantityFilled, 20);
+    assert.equal(second!.quantityFilled, 20);
+    assert.ok(Math.abs(first!.avgPrice! - 0.42) < 1e-9);
+    assert.ok(Math.abs(second!.avgPrice! - 0.2) < 1e-9); // a NO on the lower strike costs 1 minus its YES bid
+    const received = gem.orders.filter((o) => o.clientOrderId?.startsWith('gv-bo-w1-'));
+    assert.deepEqual(received.map((o) => [o.symbol, o.outcome, o.side]).sort(), [
+      [SYM_LOW, 'no', 'buy'],
+      [SYM_HIGH, 'yes', 'buy'],
     ]);
   });
 });

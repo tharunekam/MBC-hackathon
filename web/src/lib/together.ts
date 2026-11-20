@@ -61,7 +61,11 @@ export interface Together {
   allWin: Span | null;
   noneLose: Span | null;
   anyWin: Span | null;
-  /** Pairs of legs on one ladder whose winning prices do not overlap. Read from the strikes alone, so it needs no prices. */
+  /**
+   * Pairs of legs on one ladder whose winning prices do not overlap. Read from the strikes alone, so it needs no prices. With a
+   * breakout among three or more legs, the legs can also fail to share a winning price without any pair doing so: see
+   * `neverAllWin`. The figures above are worked from the bars either way, so they are right in both cases.
+   */
   impossible: { legs: [number, number]; ticker: string }[];
   /**
    * Legs left out, by their place in the basket: not chosen yet, on a ladder with fewer than two priced rungs, or built on a
@@ -76,34 +80,86 @@ const clean = (x: number) => Math.round(x * 1e8) / 1e8;
 /** Ends closer than this are the same figure; the bars are only kept to 8 places. */
 const SAME = 1e-9;
 
-/** A leg's shape from its kind and its two levels, in the order the basket holds them: condition then target, or floor then ceiling. */
+/** A leg's shape from its kind and its two levels, in the order the basket holds them: condition then target, or lower level then higher. */
 export function shapeOf(kind: Shape['kind'], a: number, b: number): Shape {
-  return kind === 'range' ? { kind, low: a, high: b } : { kind, condition: a, target: b };
+  return kind === 'range' || kind === 'breakout' ? { kind, low: a, high: b } : { kind, condition: a, target: b };
 }
 
-/** The finishing prices a leg wins at, as one stretch of the price line: from `from` (included) up to `to` (not included). */
-function winStretch(shape: Shape): { from: number; to: number } {
-  if (shape.kind === 'up') return { from: shape.target, to: Infinity };
-  if (shape.kind === 'down') return { from: -Infinity, to: shape.target };
-  return { from: shape.low, to: shape.high };
+/** A stretch of the price line: from `from` (included) up to `to` (not included). */
+interface Stretch {
+  from: number;
+  to: number;
 }
 
 /**
- * Whether one finishing price can win both bets, for two bets on the same ladder. Each bet wins on a single stretch of prices,
- * so they can both win only where the stretches overlap. (Stretches on a line that overlap two by two all share a price, so
- * checking pairs is enough for any number of legs.)
+ * The finishing prices a leg wins at. A parlay or a range wins on one stretch of the price line. A breakout wins on two: below
+ * its lower level, and at or above its higher one.
  */
-export function canBothWin(a: Shape, b: Shape): boolean {
-  const x = winStretch(a);
-  const y = winStretch(b);
-  return Math.max(x.from, y.from) < Math.min(x.to, y.to);
+function winStretches(shape: Shape): Stretch[] {
+  if (shape.kind === 'up') return [{ from: shape.target, to: Infinity }];
+  if (shape.kind === 'down') return [{ from: -Infinity, to: shape.target }];
+  if (shape.kind === 'range') return [{ from: shape.low, to: shape.high }];
+  return [
+    { from: -Infinity, to: shape.low },
+    { from: shape.high, to: Infinity },
+  ];
 }
 
-/** Where a leg wins, in words that follow "needs Bitcoin …": "at $63,500 or above", "below $62,500", "between $62,500 and $63,500". */
+/** The prices two sets of stretches have in common. */
+function shared(xs: Stretch[], ys: Stretch[]): Stretch[] {
+  const out: Stretch[] = [];
+  for (const x of xs) {
+    for (const y of ys) {
+      const from = Math.max(x.from, y.from);
+      const to = Math.min(x.to, y.to);
+      if (from < to) out.push({ from, to });
+    }
+  }
+  return out;
+}
+
+/** Whether one finishing price can win every one of these bets, for bets on the same ladder. Read from the strikes alone. */
+export function canAllWin(shapes: Shape[]): boolean {
+  let left: Stretch[] = [{ from: -Infinity, to: Infinity }];
+  for (const s of shapes) left = shared(left, winStretches(s));
+  return left.length > 0;
+}
+
+/** Whether one finishing price can win both bets, for two bets on the same ladder: only where their winning prices overlap. */
+export function canBothWin(a: Shape, b: Shape): boolean {
+  return canAllWin([a, b]);
+}
+
+/**
+ * Three or more legs on one ladder that can win two by two and still never all win. Bets that each win on a single stretch of
+ * prices cannot do this (stretches that overlap in pairs all share a price), but a breakout wins on two separate stretches, so
+ * it can pair with a leg on each side of its band while those two legs need different sides. Legs are given in basket order,
+ * with null for one that has no levels yet; a ladder that already has a pair that cannot both win is left to that pair.
+ */
+export function neverAllWin(legs: (JointLeg | null)[]): { legs: number[]; ticker: string }[] {
+  const byTicker = new Map<string, number[]>();
+  legs.forEach((leg, i) => {
+    if (!leg) return;
+    const on = byTicker.get(leg.ticker);
+    if (on) on.push(i);
+    else byTicker.set(leg.ticker, [i]);
+  });
+  const out: { legs: number[]; ticker: string }[] = [];
+  for (const [ticker, on] of byTicker) {
+    if (on.length < 3) continue;
+    const shapes = on.map((i) => legs[i]!.shape);
+    const pairsCan = shapes.every((a, x) => shapes.every((b, y) => y <= x || canBothWin(a, b)));
+    if (pairsCan && !canAllWin(shapes)) out.push({ legs: on, ticker });
+  }
+  return out;
+}
+
+/** Where a leg wins, in words that follow "needs Bitcoin …": "at $63,500 or above", "below $62,500", "between $62,500 and $63,500", "outside $62,500 to $63,500". */
 export function winsAt(shape: Shape): string {
   if (shape.kind === 'up') return `at ${money(shape.target)} or above`;
   if (shape.kind === 'down') return `below ${money(shape.target)}`;
-  return `between ${money(shape.low)} and ${money(shape.high)}`;
+  if (shape.kind === 'range') return `between ${money(shape.low)} and ${money(shape.high)}`;
+  return `outside ${money(shape.low)} to ${money(shape.high)}`;
 }
 
 /**
@@ -112,7 +168,7 @@ export function winsAt(shape: Shape): string {
  * left out instead of being given a figure that looks exact and is not.
  */
 function readable(shape: Shape, d: Distribution): boolean {
-  const strikes = shape.kind === 'range' ? [shape.low, shape.high] : [shape.condition, shape.target];
+  const strikes = 'low' in shape ? [shape.low, shape.high] : [shape.condition, shape.target];
   return strikes.every((k) => d.levels.some((l) => l.strike === k));
 }
 

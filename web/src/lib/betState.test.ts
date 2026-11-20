@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { OfferQuote, QuoteResponse, RangeQuote, RangeQuoteResponse, RangeStakePlan, RefusalCode, Rung, StakePlan } from '../api/types';
-import { buttonState, firstReason, localRefusal, rangeButtonState, type BetInputs, type RangeInputs } from './betState';
-import { estimate, rangeEstimate } from './pricing';
+import type { BreakoutQuote, BreakoutQuoteResponse, BreakoutStakePlan, OfferQuote, QuoteResponse, RangeQuote, RangeQuoteResponse, RangeStakePlan, RefusalCode, Rung, StakePlan } from '../api/types';
+import { breakoutButtonState, buttonState, firstReason, localRefusal, rangeButtonState, type BetInputs, type BreakoutInputs, type RangeInputs } from './betState';
+import { breakoutEstimate, estimate, rangeEstimate } from './pricing';
 
 const rung = (strike: number, bid: number | null, ask: number | null, open = true): Rung => ({
   symbol: `S${strike}`,
@@ -117,13 +117,59 @@ describe('the place bet button', () => {
     expect(buttonState(base({ readOnly: true }))).toMatchObject({ canPlace: false, blockedBy: 'readonly' });
     expect(buttonState(base({ stake: 0.5 }))).toMatchObject({ canPlace: false, blockedBy: 'stake', label: 'Stake at least $1' });
   });
+
+  it('asks for a stake when the box is empty or zero, even with a good answer for the last amount typed', () => {
+    for (const stake of [0, Number.NaN]) {
+      const s = buttonState(base({ stake }));
+      expect(s).toMatchObject({ canPlace: false, blockedBy: 'stake', label: 'Enter a stake' });
+      expect(s.label).not.toMatch(/Place bet/);
+    }
+  });
+
+  it('says what the cap is once the executor has said so, in the words a basket uses, and never blames the connection', () => {
+    const s = buttonState(base({ stake: 150, cap: 100, answer: null, answerError: true }));
+    expect(s).toMatchObject({ canPlace: false, blockedBy: 'stake', label: 'Stake $100 at most' });
+    // The page says the cap under the stake box; the button's own notice stays out of the way.
+    expect(s.notice).toBeNull();
+    expect(`${s.label}`).not.toMatch(/unavailable|connection/i);
+    // At the cap itself the bet goes through.
+    expect(buttonState(base({ stake: 100, cap: 100, answer: answer({}, plan({ requested: 100, cost: 100 })) }))).toMatchObject({ canPlace: true, label: 'Place bet · $100.00' });
+  });
+
+  it('passes on the executor’s own words when it refused the stake and gave no amount to read', () => {
+    const s = buttonState(base({ stake: 150, answer: null, stakeRefused: 'Bets are capped on this demo.' }));
+    expect(s).toMatchObject({ canPlace: false, blockedBy: 'stake', label: 'Stake is too large' });
+    expect(s.notice?.text).toBe('Bets are capped on this demo.');
+    expect(s.notice?.text).not.toMatch(/connection/);
+  });
+});
+
+describe('a ladder that cannot take a bet says so before anything else', () => {
+  const closed = { phase: 'closed' as const, label: 'This market has closed', text: 'This market closed at 9:35 PM and takes no more bets. The next one appears here by itself when it opens.' };
+
+  it('whatever the stake, the answer or the prices say', () => {
+    for (const over of [{}, { stake: 0 }, { answer: null }, { answer: null, answerError: true }, { answer: refused('markup_too_high') }, { condition: undefined }] as Partial<BetInputs>[]) {
+      const s = buttonState(base({ ...over, market: closed }));
+      expect(s).toMatchObject({ canPlace: false, blockedBy: 'market_closed', label: 'This market has closed' });
+      expect(s.notice).toEqual({ tone: 'info', text: closed.text });
+    }
+  });
+
+  it('but an order on its way, and bets switched off, are said first', () => {
+    expect(buttonState(base({ phase: 'placing', market: closed })).blockedBy).toBe('placing');
+    expect(buttonState(base({ readOnly: true, market: closed })).blockedBy).toBe('readonly');
+  });
+
+  it('and the page recovers as soon as the note is gone', () => {
+    expect(buttonState(base({ market: null })).canPlace).toBe(true);
+  });
 });
 
 describe('each refusal says what to do, and only suggests moving the target when that helps', () => {
   const cases: Array<[RefusalCode, RegExp, RegExp]> = [
     ['no_price', /higher target/i, /further above/],
     ['price_too_high', /higher target/i, /further above/],
-    ['markup_too_high', /another pair/i, /too far apart/],
+    ['markup_too_high', /other levels/i, /too far apart/],
     ['market_closed', /not open/i, /not open for trading/],
     ['ladder_out_of_order', /out of step/i, /out of order/],
     ['one_sided_book', /no market/i, /Nobody is buying or selling/],
@@ -194,7 +240,20 @@ describe('"not open" says what kind of not open', () => {
       const s = buttonState(base({ answer: refused('market_closed'), target: closed(state) }));
       expect(s.label).toMatch(/has closed/i);
       expect(s.notice?.text).not.toMatch(/few minutes/);
+      // It used to say "Pick the next ladder above" when there was no other ladder to pick.
+      expect(s.notice?.text).not.toMatch(/above|next ladder/i);
     }
+  });
+  it('never calls the two levels a condition, a leg, a part or a pair', () => {
+    const all: RefusalCode[] = ['market_closed', 'ladder_out_of_order', 'one_sided_book', 'no_price', 'price_too_high', 'markup_too_high'];
+    for (const code of all) {
+      for (const direction of ['up', 'down'] as const) {
+        const s = buttonState(base({ direction, answer: refused(code) }));
+        expect(`${s.label} ${s.notice?.text}`).not.toMatch(/condition|\bleg\b|\bpart\b|\bpair\b/i);
+      }
+    }
+    expect(buttonState(base({ direction: 'down', answer: refused('price_too_high') })).notice?.text).toMatch(/further below the first level/);
+    expect(buttonState(base({ answer: refused('price_too_high') })).notice?.text).toMatch(/further above the first level/);
   });
   it('an unknown state makes no promise about reopening', () => {
     const s = buttonState(base({ answer: null, target: closed('mystery') }));
@@ -293,9 +352,17 @@ describe('the place bet button for a range', () => {
     expect(rangeButtonState(rbase({ stake: Number.NaN })).blockedBy).toBe('stake');
   });
 
+  it('asks for a stake when there is none, names the cap when the stake is over it, and says a closed market is closed', () => {
+    expect(rangeButtonState(rbase({ stake: 0 }))).toMatchObject({ canPlace: false, blockedBy: 'stake', label: 'Enter a stake', notice: null });
+    expect(rangeButtonState(rbase({ stake: 150, cap: 100, answer: null, answerError: true }))).toMatchObject({ canPlace: false, blockedBy: 'stake', label: 'Stake $100 at most' });
+    const market = { phase: 'closed' as const, label: 'This market has closed', text: 'This market closed at 9 PM and takes no more bets. Pick another market above.' };
+    expect(rangeButtonState(rbase({ market }))).toMatchObject({ canPlace: false, blockedBy: 'market_closed', label: 'This market has closed', notice: { tone: 'info', text: market.text } });
+  });
+
   const cases: Array<[RefusalCode, RegExp, RegExp]> = [
     ['no_price', /further apart/i, /no sensible price/],
-    ['price_too_high', /further apart/i, /cost too much/],
+    // A range costs more the further apart its levels are, so the way out of a price that is too high is a narrower range.
+    ['price_too_high', /narrower/i, /cost too much/],
     ['markup_too_high', /other levels/i, /too far apart for a fair deal/],
     ['ladder_out_of_order', /out of step/i, /out of order/],
     ['one_sided_book', /no market/i, /Nobody is buying or selling/],
@@ -390,5 +457,151 @@ describe('the place bet button for a range', () => {
 
   it('an executor refusal overrules a hopeful estimate', () => {
     expect(rangeButtonState(rbase({ answer: rangeRefused('price_too_high') })).canPlace).toBe(false);
+  });
+});
+
+// ------------------------------------------------------------------ breakout
+
+describe('the place bet button for a breakout', () => {
+  const LO = rung(62000, 0.74, 0.76);
+  const HI = rung(64000, 0.3, 0.32);
+
+  const quote = (over: Partial<BreakoutQuote> = {}): BreakoutQuote => ({
+    verdict: 'ok',
+    reasons: [],
+    warnings: [],
+    offerable: true,
+    overridden: false,
+    chanceOutside: 0.56,
+    fairPrice: 0.56,
+    pricePaid: 0.58,
+    allInPrice: 0.61,
+    markup: 0.05,
+    markupPct: 0.09,
+    cashOutPer100: 93,
+    cashOutPer100AtProductionFees: 88,
+    feeCoefCharged: 0,
+    ...over,
+  });
+
+  const plan = (over: Partial<BreakoutStakePlan> = {}): BreakoutStakePlan => ({
+    requested: 10,
+    reduced: false,
+    contracts: 17.24,
+    cost: 10,
+    ifOutside: 7.24,
+    ifInRange: -10,
+    feesAtProductionRates: 0.5,
+    cashOutNow: 9.3,
+    ...over,
+  });
+
+  const answer = (q: Partial<BreakoutQuote> = {}, p: BreakoutStakePlan | null = plan()): BreakoutQuoteResponse => ({
+    venue: 'test',
+    asOf: '2026-11-19T00:00:00Z',
+    product: 'breakout',
+    event: { ticker: 'E', title: 'E', expiry: null },
+    low: { symbol: LO.symbol, label: LO.label, strike: LO.strike, bid: LO.bid, ask: LO.ask },
+    high: { symbol: HI.symbol, label: HI.label, strike: HI.strike, bid: HI.bid, ask: HI.ask },
+    quote: quote(q),
+    stake: p,
+    depth: { outcomeAvailable: 100, conditionAvailable: 100, maxStake: 60 },
+  });
+
+  const estOf = (lo: Rung, hi: Rung) => breakoutEstimate({ bid: lo.bid, ask: lo.ask }, { bid: hi.bid, ask: hi.ask }, 0);
+
+  const bbase = (over: Partial<BreakoutInputs> = {}): BreakoutInputs => ({
+    phase: 'idle',
+    readOnly: false,
+    stake: 10,
+    low: LO,
+    high: HI,
+    answer: answer(),
+    answerError: false,
+    est: estOf(LO, HI),
+    ...over,
+  });
+
+  const refused = (code: RefusalCode, message = 'x') => answer({ offerable: false, verdict: 'refuse', reasons: [{ code, message }] }, null);
+
+  it('is live for the executor answer to these levels and this stake, and shows the real cost', () => {
+    expect(breakoutButtonState(bbase())).toMatchObject({ canPlace: true, label: 'Place bet · $10.00', notice: null, blockedBy: null });
+    expect(breakoutButtonState(bbase({ answer: answer({}, plan({ cost: 4.5, reduced: true })) }))).toMatchObject({ canPlace: true, label: 'Place bet · $4.50' });
+  });
+
+  it('is off while placing, when bets are off, while a level is missing, and under the minimum stake', () => {
+    expect(breakoutButtonState(bbase({ phase: 'placing' }))).toMatchObject({ canPlace: false, label: 'Placing both orders', blockedBy: 'placing' });
+    expect(breakoutButtonState(bbase({ readOnly: true }))).toMatchObject({ canPlace: false, blockedBy: 'readonly' });
+    expect(breakoutButtonState(bbase({ high: undefined }))).toMatchObject({ canPlace: false, blockedBy: 'loading' });
+    expect(breakoutButtonState(bbase({ stake: 0.5 }))).toMatchObject({ canPlace: false, blockedBy: 'stake', label: 'Stake at least $1' });
+  });
+
+  // A breakout costs more the closer its levels are, so both of its price refusals ask for levels further apart.
+  const cases: Array<[RefusalCode, RegExp, RegExp]> = [
+    ['no_price', /further apart/i, /no sensible price for finishing outside/],
+    ['price_too_high', /further apart/i, /close to certain/],
+    ['markup_too_high', /other levels/i, /too far apart for a fair deal/],
+    ['ladder_out_of_order', /out of step/i, /out of order/],
+    ['one_sided_book', /no market/i, /Nobody is buying or selling/],
+  ];
+  for (const [code, label, text] of cases) {
+    it(`an executor refusal (${code}) names its cause and the way out`, () => {
+      const s = breakoutButtonState(bbase({ answer: refused(code) }));
+      expect(s.canPlace).toBe(false);
+      expect(s.blockedBy).toBe(code);
+      expect(s.label).toMatch(label);
+      expect(s.notice?.tone).toBe('bad');
+      expect(s.notice?.text).toMatch(text);
+      expect(`${s.label} ${s.notice?.text}`).not.toMatch(/target|condition|closer|narrower|floor|ceiling/i);
+    });
+  }
+
+  it('market_closed says what kind of not open, from the levels themselves', () => {
+    const postOnly = { ...HI, open: false, state: 'active/post_only' };
+    const s = breakoutButtonState(bbase({ high: postOnly, answer: refused('market_closed') }));
+    expect(s).toMatchObject({ canPlace: false, blockedBy: 'market_closed' });
+    expect(s.notice?.text).toMatch(/few minutes/);
+  });
+
+  it('a refusal with no known code, and a failed quote request, both speak of a breakout', () => {
+    const s = breakoutButtonState(bbase({ answer: answer({ offerable: false, verdict: 'refuse', reasons: [] }, null) }));
+    expect(s).toMatchObject({ canPlace: false, label: 'Not on offer' });
+    expect(s.notice?.text).toMatch(/breakout/);
+    const t = breakoutButtonState(bbase({ answer: null, answerError: true }));
+    expect(t).toMatchObject({ canPlace: false, blockedBy: 'unreachable', label: 'Prices unavailable' });
+    expect(t.notice?.text).toMatch(/breakout/);
+  });
+
+  it('never shows a zero price: a breakout the book cannot fill is refused as thin', () => {
+    for (const p of [plan({ cost: 0, contracts: 0 }), plan({ cost: 0.62, contracts: 1, reduced: true })]) {
+      const s = breakoutButtonState(bbase({ answer: answer({}, p) }));
+      expect(s).toMatchObject({ canPlace: false, blockedBy: 'thin', label: 'Not enough on the market' });
+      expect(s.label).not.toMatch(/\$0\.00/);
+    }
+  });
+
+  it('is not live on an estimate alone, and refuses early only on what the local numbers settle', () => {
+    expect(breakoutButtonState(bbase({ answer: null }))).toMatchObject({ canPlace: false, blockedBy: 'checking', label: 'Checking the price', notice: null });
+
+    const shut = { ...HI, open: false, state: 'active/post_only' };
+    expect(breakoutButtonState(bbase({ answer: null, high: shut })).blockedBy).toBe('market_closed');
+    expect(breakoutButtonState(bbase({ answer: null, low: { ...LO, bid: null }, est: null })).blockedBy).toBe('one_sided_book');
+
+    // Two levels so close that the pair costs a dollar: no price, and the way out is levels further apart.
+    const near = rung(62500, 0.7, 0.74);
+    const none = breakoutButtonState(bbase({ answer: null, high: near, est: estOf(LO, near) }));
+    expect(none.blockedBy).toBe('no_price');
+    expect(none.label).toMatch(/further apart/i);
+
+    // Both levels far below the price: finishing outside is all but sure.
+    const lo = rung(60000, 0.97, 0.99);
+    const hi = rung(60500, 0.93, 0.95);
+    const sure = estOf(lo, hi);
+    expect(sure?.code).toBe('price_too_high');
+    expect(breakoutButtonState(bbase({ answer: null, low: lo, high: hi, est: sure })).blockedBy).toBe('price_too_high');
+  });
+
+  it('an executor refusal overrules a hopeful estimate', () => {
+    expect(breakoutButtonState(bbase({ answer: refused('markup_too_high') })).canPlace).toBe(false);
   });
 });

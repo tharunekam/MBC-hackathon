@@ -63,6 +63,17 @@ describe('the picture of a call', () => {
     expect(missed).not.toContain('Fell short');
   });
 
+  it('a breakout says its own question, on two lines at most, and outside is the hit', () => {
+    const svg = shareCardSvg(card({ question: 'Will BTC finish outside $61,500 to $62,500?', result: 'Finished outside' }));
+    expect(svg).toContain('Will BTC finish outside $61,500 to $62,500?');
+    expect(svg).toContain('Finished outside');
+    expect(svg).not.toContain('…');
+    const missed = shareCardSvg(card({ won: false, question: 'Will Ethereum finish outside $1,780 to $1,820?', result: 'Finished inside', edge: '−0.37', edgeGood: false }));
+    expect(missed).toContain('Missed');
+    expect(missed).toContain('Finished inside');
+    expect(missed).not.toContain('Fell short');
+  });
+
   it('a call on the test chain is labelled as one', () => {
     expect(shareCardSvg(card({ network: 'Test chain' }))).toContain('Test chain');
     expect(shareCardSvg(card({ network: 'Test chain' }))).not.toContain('Solana devnet');

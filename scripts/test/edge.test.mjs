@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
-import { cacheControl, clientAddress, resolveStatic, route } from '../lib/edge.mjs';
+import { cacheControl, clientAddress, resolveStatic, route, shellWithPublicImage } from '../lib/edge.mjs';
 
 describe('which paths reach a backend', () => {
   it('lets the web app call what it needs, with the right method', () => {
@@ -95,5 +95,18 @@ describe('serving the built app', () => {
     assert.equal(cacheControl('/x/dist/index.html', true), 'no-cache');
     assert.equal(cacheControl('/x/dist/index.html', false), 'no-cache');
     assert.doesNotMatch(cacheControl('/x/dist/favicon.svg', false), /immutable/);
+  });
+
+  it('puts the public address in front of the link-preview picture, and leaves the page alone when it has none to add', () => {
+    const page = '<head><meta property="og:image" content="/og.png" /><link rel="icon" href="/favicon.svg" /></head>';
+    assert.equal(
+      shellWithPublicImage(page, 'https://given.example.com/'),
+      '<head><meta property="og:image" content="https://given.example.com/og.png" /><link rel="icon" href="/favicon.svg" /></head>',
+    );
+    assert.equal(shellWithPublicImage(page, ''), null); // no public address configured
+    assert.equal(shellWithPublicImage(page, 'given.example.com'), null); // not a full address: better a bare path than a broken one
+    assert.equal(shellWithPublicImage('<head></head>', 'https://given.example.com'), null); // nothing to change
+    // a picture that already has a full address is not touched
+    assert.equal(shellWithPublicImage('<meta property="og:image" content="https://cdn.example/og.png" />', 'https://given.example.com'), null);
   });
 });

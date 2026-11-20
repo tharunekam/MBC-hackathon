@@ -27,7 +27,7 @@ import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, statSyn
 import { createServer } from 'node:http';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { clientAddress, proxy, resolveStatic, route, serveStatic } from './lib/edge.mjs';
+import { clientAddress, proxy, resolveStatic, route, serveStatic, shellWithPublicImage } from './lib/edge.mjs';
 import { Replayer, SNAPSHOT, STREAMS, entry, header, parseRecording, recordable } from './lib/replay.mjs';
 import { hostedModeSettings } from './lib/hosted-mode.mjs';
 import { loadProjectEnv } from './lib/project-env.mjs';
@@ -55,6 +55,8 @@ const fail = (msg) => {
 // ------------------------------------------------------------------------------------------------ settings
 
 if (!existsSync(resolve(DIST, 'index.html'))) fail(`there is no built web app at ${DIST}. Run: npm run build`);
+// The page as it is served: with the public address in front of its link-preview picture when one is configured.
+const shell = shellWithPublicImage(readFileSync(resolve(DIST, 'index.html'), 'utf8'), PUBLIC_URL);
 if (!PUBLIC_URL && HOST !== '127.0.0.1') fail('GIVEN_PUBLIC_URL is not set. It is the address people open (for example https://given.example.com), and the one browser origin the backends accept; without it every bet from the page would be refused.');
 if (PUBLIC_URL && !/^https?:\/\/[^/]+$/.test(PUBLIC_URL)) fail('GIVEN_PUBLIC_URL must be an origin with no path.');
 
@@ -154,6 +156,9 @@ const services = [
       ...(mode !== 'fake' ? { GIVEN_SANDBOX_WAIVE_MARKUP: env.GIVEN_SANDBOX_WAIVE_MARKUP ?? '1' } : {}),
       // /health then says seeded: true and the app labels its prices.
       ...(seeding ? { GIVEN_SEEDED: '1' } : {}),
+      // A hosted test exchange can run in rounds that close and settle by themselves, so a visitor's bet reaches a result.
+      // Only when asked for: the browser checks drive the same exchange and settle it themselves.
+      ...(mode === 'fake' && env.FAKE_ROUND_MINUTES ? { FAKE_ROUND_MINUTES: env.FAKE_ROUND_MINUTES } : {}),
     },
   },
   {
@@ -340,6 +345,7 @@ edge = createServer((req, res) => {
     return void res.end('Method not allowed.');
   }
   const found = resolveStatic(DIST, path);
+  if (found && shell !== null && found.file.endsWith('index.html')) found.body = shell;
   if (!found) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
     return void res.end('Not found.');

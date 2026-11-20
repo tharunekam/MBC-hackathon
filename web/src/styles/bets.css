@@ -578,6 +578,25 @@ a.bl-id {
     flex-direction: column;
     align-items: flex-start;
   }
+  /* Fingers: everything that can be pressed in a row is at least 44px tall. */
+  .bl-bar .switch button,
+  .bl-btn {
+    height: 44px;
+  }
+  .bl-btn {
+    padding: 0 16px;
+  }
+  .bl-expand {
+    height: 44px;
+    /* Taller to press, without pushing the rows of the bet further apart. */
+    margin: -8px 0;
+  }
+  .bl-links a,
+  .bl-proof a.bl-id {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
   .bl-orders li {
     grid-template-columns: minmax(0, 1fr);
   }

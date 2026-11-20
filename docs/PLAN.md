@@ -117,6 +117,49 @@ or changes how one is placed, so none needs a sandbox run before it can be shown
   matching the 2026-11-18 run.
 `npm run e2e` has two more checks for the histogram and Hunch (23 in all).
 
+**Breakout and cash-out, Thursday 2026-11-19 late.** Cash-out (`feat/cash-out`, run on the real sandbox) is merged into
+this branch. **Breakout** is the range's opposite: YES on the higher level and NO on the lower, equal size, winning if the
+price finishes outside them either way (`executor/src/breakout.ts`, `breakout-bet.ts`; decision 27). It reuses the range's
+order path on the other two sides of the same books, and cash-out, the unwind, crash recovery, the reconcile, the Solana
+record and the leaderboard handle it with no case of their own. Tested on the in-memory exchange (21 tests), through the
+real Gemini client on the wire stand-in, and in `npm run rehearse` (36 checks: quoted, placed, committed, settled as a win,
+revealed, verified, ledger tied out). **It has not been placed on the real sandbox: the first keyed run must place one and
+then `node src/cli.ts reconcile`** (`node src/cli.ts breakout <event> <low> <high> <stake>`).
+
+**A record that cannot be built by leaving things out, Thursday 2026-11-19 late.** Two holes in "a track record that
+cannot be faked", both closed with no change to the hash or the program:
+- **Revealing only winners.** Revealing is the player's choice, so a board of revealed calls alone could be gamed by
+  keeping the losing ones sealed. Each row now carries `sealed`, every call that handle has committed on chain (the
+  handle is in the commit, so anyone can count them), and `refunded`, the ones that were void (decision 29).
+- **Cashing out lost the call.** A bet sold back never settles, so its call could never be revealed, and with sealed
+  counts on the board that would have looked like hiding it. The executor now records how a sold bet's call turned out
+  once its market has a clean result (`called`), and the chain service reveals and scores it like any other (decision
+  26, changed). `npm run rehearse` sells a bet, shows its call refused while the market is open, then revealed and
+  scored after it settles (40 checks).
+- A settled bet also records **where the ladder finished** (`settlement.finishedAt`), from the reference price Gemini
+  reports on a settled contract, for showing a person; no payout depends on it.
+
+**An independent audit and what it changed, Thursday 2026-11-19 night.** A fresh pair of eyes walked every page at desktop
+and phone width and read the code behind what looked wrong; 22 findings, fixed the same night. The ones that mattered:
+- **A "$10.00" parlay cost $10.04.** The refund order is sized to cover the stake even if it fills two cents past the best
+  price, and the quote had been counting it at the best price. The quote now plans the bet as it is placed, and a bet
+  never costs more than its stake (`executor/src/offer.ts`, `contractsForStake`).
+- **A cash-out that sold only part of its first leg sold all of the refund leg**, leaving contracts with nothing behind
+  them. Only the matching share is sold now (`matchingShare` in `cashout.ts`).
+- **`npm run dev` dead-ended**: a bet on the local test exchange never settled unless someone knew to call
+  `/dev/resolve`. The practice ladder now runs in rounds that close, settle and reopen by themselves (five minutes;
+  `FAKE_ROUND_MINUTES`).
+- **The app said "real orders on Gemini" on a stand-in.** The nav now always says what it is talking to ("Test exchange",
+  "Sandbox · practice money", ...) and pages say where orders ran.
+- **Numbers that did not add up on one screen** (38% + 2% + 61%), chart handles whose percentage contradicted their
+  label, a stake box that ignored an empty value and misreported the cap, four names for the two halves of a parlay, two
+  time zones on one card, a stale landing page, touch targets under 44px. All fixed; the vocabulary is now "first level"
+  and "target".
+- Also new from that pass: what a basket pays at each finishing price, the expected-move line and column, per-page
+  titles, a link-preview image, an app manifest, a not-found page.
+Totals after it: 987 tests (executor 258, chain 126, web 551, scripts 52); `npm run e2e` 25 checks; `npm run rehearse`
+40 (41 with injected failures); `npm run e2e:replay` 7.
+
 **Verified by running** (599 tests across the four packages; the golden path and the three products were also driven in a
 real browser against the real executor handler and chain service): bet builder on the probability ladder, quote, place,
 receipt, My bets, settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is and is not verified:

@@ -1,13 +1,19 @@
 import { bucketLabel, likeliest, zoneOf, type Bucket, type Distribution, type Shape } from '../lib/distribution';
-import { money, pct } from '../lib/format';
+import { money } from '../lib/format';
 import { useWidth } from '../lib/hooks';
 import { spacedLabels } from '../lib/ladders';
+import { wholePercents } from '../lib/shares';
 import '../styles/dist.css';
 
 interface Props {
   dist: Distribution;
   /** A bet on this ladder. Each bar is then coloured by what the bet does if the price finishes there. */
   shape?: Shape;
+  /**
+   * The whole percent to print on each bar, when the card around the chart has shared them out to match its own figures
+   * (lib/chances.ts). Without it the bars are rounded together here. Either way they add to exactly 100.
+   */
+  percents?: number[];
   /** A person's own view over the same bars, drawn as a line across them. */
   view?: Bucket[];
   /** What the bars are, for a screen reader. */
@@ -20,10 +26,13 @@ interface Props {
  * The bars are equally wide whatever the gap between rungs, because the two end bars have no far edge to measure ("below the
  * lowest rung", "the highest rung or more"). The prices under the chart sit on the edges between bars, where they belong.
  */
-export default function DistChart({ dist, shape, view, label }: Props) {
+export default function DistChart({ dist, shape, percents, view, label }: Props) {
   const [wrapRef, width] = useWidth<HTMLDivElement>();
   const bars = dist.buckets;
   const n = bars.length;
+  // Rounded as a set: nine bars rounded one by one added to 102% on screen.
+  const shown = percents && percents.length === n ? percents : wholePercents(bars.map((b) => b.chance));
+  const mineShown = view && view.length === n ? wholePercents(view.map((b) => b.chance)) : null;
   const height = width < 520 ? 190 : 216;
   const pad = { left: 38, right: 10, top: 22, bottom: 30 };
   const plotW = Math.max(10, width - pad.left - pad.right);
@@ -45,7 +54,7 @@ export default function DistChart({ dist, shape, view, label }: Props) {
   const steps = view && view.length === n ? view.map((b, i) => `${i === 0 ? 'M' : 'L'}${xOf(i).toFixed(1)},${yOf(b.chance).toFixed(1)}H${xOf(i + 1).toFixed(1)}`).join('') : '';
 
   const most = likeliest(bars);
-  const spoken = label ?? `The market's chance of finishing in each price band.${most ? ` Most likely: ${bucketLabel(most)}, ${pct(most.chance)}.` : ''}`;
+  const spoken = label ?? `The market's chance of finishing in each price band.${most ? ` Most likely: ${bucketLabel(most)}, ${shown[bars.indexOf(most)]}%.` : ''}`;
 
   return (
     <div className="dc" ref={wrapRef} role="img" aria-label={spoken}>
@@ -62,15 +71,15 @@ export default function DistChart({ dist, shape, view, label }: Props) {
 
           {bars.map((b, i) => {
             const y = yOf(b.chance);
-            const mine = view?.[i];
             return (
               <g key={i} className="dc-slot" data-zone={shape ? zoneOf(shape, b) : undefined}>
-                <title>{`${bucketLabel(b)}: ${pct(b.chance)}${mine ? `, your view ${pct(mine.chance)}` : ''}`}</title>
+                <title>{`${bucketLabel(b)}: ${shown[i]}%${mineShown ? `, your view ${mineShown[i]}%` : ''}`}</title>
                 <rect className="dc-hit" x={xOf(i)} y={pad.top} width={slot} height={plotH} />
                 <rect className="dc-bar" x={xOf(i) + gap / 2} y={y} width={Math.max(1, slot - gap)} height={Math.max(1, pad.top + plotH - y)} rx={2} />
-                {showValues && b.chance >= 0.005 && (
+                {/* A bar too small for a whole point carries no figure: "0%" over a bar would be wrong, and the rest still add to 100. */}
+                {showValues && shown[i]! > 0 && (
                   <text className="dc-value" x={xOf(i) + slot / 2} y={y - 6} textAnchor="middle">
-                    {pct(b.chance)}
+                    {shown[i]}%
                   </text>
                 )}
               </g>

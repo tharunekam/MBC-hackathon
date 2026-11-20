@@ -9,7 +9,8 @@
  *   2. Refuse, before any order, when the sale cannot be done whole: a market that is not taking orders, no bid, less
  *      resting at the best price than the bet holds, or a position Gemini has already netted against another bet.
  *   3. Sell the outcome leg first, then the hedge. If the first sells and the second does not, what is left is the leg
- *      that pays the stake back when the condition fails, which is the safer half to be left holding.
+ *      that pays the stake back when the condition fails, which is the safer half to be left holding. If the first sells
+ *      only in part, only the matching share of the second is sold, so what is left is still a whole, smaller bet.
  *
  * The same numbers serve `GET /cashout` (the quote) and `POST /cashout` (the sale), so a page can never show a figure
  * the sale was not checked against.
@@ -21,7 +22,7 @@ import type { BetRecord, LegRecord, Ledger } from './ledger.ts';
 import { viewFor } from './mirror.ts';
 import { PRODUCTION_TAKER_FEE_COEF } from './offer.ts';
 import { toRung } from './pairs.ts';
-import { PRICE_TICK, clean, takerFee } from './pricing.ts';
+import { PRICE_TICK, clean, feeRate, floorToStep, takerFee } from './pricing.ts';
 
 export type CashOutCode =
   /** The bet is not one that can be sold: it is settled, failed, already cashed out, or holds nothing. */
@@ -232,6 +233,7 @@ export async function cashOutBet(deps: Deps, bet: BetRecord, req: CashOutRequest
   bet.cashOut = { at: now().toISOString(), stake: stakeBefore, proceeds: bet.cashOut?.proceeds ?? 0, pnl: clean((bet.cashOut?.proceeds ?? 0) - stakeBefore), complete: false };
 
   const [outcomeLeg, hedgeLeg] = quote.legs;
+  let hedgeToSell = hedgeLeg.quantity;
   if (outcomeLeg.quantity > 0) {
     const leg = await sellLeg(deps, bet, {
       symbol: outcomeLeg.symbol,
@@ -252,14 +254,20 @@ export async function cashOutBet(deps: Deps, bet: BetRecord, req: CashOutRequest
         quote,
       );
     }
+    // Only part of the first order sold: the book thinned in the moment since it was read. Selling the whole of the other
+    // leg now would leave contracts with nothing behind them (for a parlay, a bet that loses everything if its first half
+    // fails), so only the matching share is sold and what is left is still a whole, smaller bet.
+    if (leg.quantityFilled + 1e-9 < outcomeLeg.quantity) {
+      hedgeToSell = matchingShare(bet, outcomeLeg.quantity, leg.quantityFilled, hedgeLeg.quantity, Math.max(PRICE_TICK, clean(hedgeLeg.price! - slip)), deps.feeCoef ?? 0);
+    }
   }
-  if (hedgeLeg.quantity > 0) {
+  if (hedgeToSell > 0) {
     await sellLeg(deps, bet, {
       symbol: hedgeLeg.symbol,
       side: 'sell',
       outcome: hedgeLeg.outcome,
       limitPrice: Math.max(PRICE_TICK, clean(hedgeLeg.price! - slip)),
-      quantity: hedgeLeg.quantity,
+      quantity: hedgeToSell,
       tif: 'IOC',
       clientOrderId: `gv-${bet.id}-ca${attempt}`,
     });
@@ -269,6 +277,24 @@ export async function cashOutBet(deps: Deps, bet: BetRecord, req: CashOutRequest
   refreshCashOut(bet);
   deps.ledger.save();
   return bet;
+}
+
+/**
+ * How much of the second leg to sell when only `sold` of the first leg's `held` contracts went.
+ *
+ *   range, breakout   the two legs are the same size, so the same number of contracts: they stay matched
+ *   parlay            the same share of the refund leg, and never so much that the refund would stop covering what the
+ *                     rest of the bet has cost. Selling at the bid gives some of the stake up, so the share that keeps
+ *                     the refund whole is a little under the plain proportion; `atPrice` is the worst price the sell
+ *                     may fill at, so the answer holds wherever inside its limit it fills.
+ */
+function matchingShare(bet: BetRecord, held: number, sold: number, hedgeHeld: number, atPrice: number, feeCoef: number): number {
+  if (bet.product === 'range' || bet.product === 'breakout') return Math.min(hedgeHeld, floorToStep(sold));
+  const proportional = floorToStep(hedgeHeld * (sold / held));
+  const h = holdings(bet); // read after the first sell, so `spent` is already net of what that brought in
+  const perContract = atPrice - feeRate(atPrice, feeCoef); // what selling one refund contract brings in, at worst
+  const keepsRefundWhole = perContract < 1 ? floorToStep((h.hedge.quantity - h.outcome.spent - h.hedge.spent) / (1 - perContract)) : proportional;
+  return Math.max(0, Math.min(proportional, keepsRefundWhole));
 }
 
 /**

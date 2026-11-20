@@ -114,6 +114,19 @@ export function resolveStatic(root, urlPath) {
 /** Hashed build assets never change; the shell must always be re-checked so a new deploy is seen at once. */
 export const cacheControl = (file, spa) => (spa || file.endsWith('index.html') ? 'no-cache' : /[\\/]assets[\\/]/.test(file) ? 'public, max-age=31536000, immutable' : 'public, max-age=300');
 
+/**
+ * The app's page with the public address put in front of its link-preview picture. Sites that draw a preview of a pasted
+ * link (chat apps, Devpost) want a full address for the picture and ignore a bare path. Null when there is nothing to
+ * change, and the file is then served as it is.
+ */
+export function shellWithPublicImage(html, publicUrl) {
+  if (!publicUrl || !/^https?:\/\//.test(publicUrl)) return null;
+  const base = publicUrl.replace(/\/+$/, '');
+  const out = html.replace(/(<meta\s+property="og:image"\s+content=")(\/[^"]*)(")/, (_m, a, path, b) => `${a}${base}${path}${b}`);
+  return out === html ? null : out;
+}
+
+/** `found.body`, when set, is sent in place of the file's own bytes (the page with its public address filled in). */
 export function serveStatic(req, res, found) {
   const ext = extname(found.file);
   const headers = {
@@ -126,9 +139,15 @@ export function serveStatic(req, res, found) {
   if (gzip) {
     headers['Content-Encoding'] = 'gzip';
     headers.Vary = 'Accept-Encoding';
-  } else headers['Content-Length'] = String(statSync(found.file).size);
+  } else headers['Content-Length'] = String(found.body !== undefined ? Buffer.byteLength(found.body) : statSync(found.file).size);
   res.writeHead(200, headers);
   if (req.method === 'HEAD') return void res.end();
+  if (found.body !== undefined) {
+    if (!gzip) return void res.end(found.body);
+    const zip = createGzip();
+    zip.pipe(res);
+    return void zip.end(found.body);
+  }
   const stream = createReadStream(found.file);
   stream.on('error', () => res.destroy());
   if (gzip) stream.pipe(createGzip()).pipe(res);

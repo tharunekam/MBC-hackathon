@@ -5,11 +5,12 @@ import type { GeminiContract, GeminiEvent } from './gemini/types.ts';
 import { flipOutcome, realStrike, viewFor } from './mirror.ts';
 import type { Direction } from './mirror.ts';
 import { betIdFor } from './bet-id.ts';
-import { capToDepth, planForQuantity } from './offer.ts';
+import { DEFAULT_SLIP, capToDepth, contractsForStake, planForQuantity } from './offer.ts';
 import type { OfferQuote } from './offer.ts';
 import { findPair, toRung } from './pairs.ts';
 import type { LinkedPair } from './pairs.ts';
 import { conditionalPrice } from './pricing.ts';
+import type { BreakoutQuote } from './breakout.ts';
 import type { RangeQuote } from './range.ts';
 import { PRICE_TICK, clean, feeRate, floorToStep, hedgeQuantity, payoffs, settlementPayout, takerFee } from './pricing.ts';
 
@@ -54,8 +55,8 @@ export interface Deps {
  */
 export class BetRefused extends Error {
   readonly code: 'offer_refused' | 'market_closed' | 'no_depth' | 'insufficient_depth' | 'price_above_limit' | 'stake_too_small';
-  readonly quote?: OfferQuote | RangeQuote;
-  constructor(code: BetRefused['code'], message: string, quote?: OfferQuote | RangeQuote) {
+  readonly quote?: OfferQuote | RangeQuote | BreakoutQuote;
+  constructor(code: BetRefused['code'], message: string, quote?: OfferQuote | RangeQuote | BreakoutQuote) {
     super(message);
     this.name = 'BetRefused';
     this.code = code;
@@ -79,6 +80,10 @@ export const withinLimit = (price: number | null, max: number): boolean => price
  *   parlay, going up      outcome: YES on the target (higher strike)   hedge: NO on the condition (lower strike)
  *   parlay, going down    outcome: NO on the target (lower strike)     hedge: YES on the condition (higher strike)
  *   range                 outcome: YES on the lower strike             hedge: NO on the higher strike
+ *   breakout              outcome: YES on the higher strike            hedge: NO on the lower strike
+ *
+ * A breakout's two orders are the ones a rising parlay sends (YES on its "target", NO on its "condition"), in equal size
+ * instead of refund size, so it needs no case of its own here.
  */
 export function legMap(bet: Pick<BetRecord, 'product' | 'direction' | 'condition' | 'target'>): {
   outcome: { symbol: string; side: 'yes' | 'no' };
@@ -176,6 +181,22 @@ export function refreshTotals(bet: BetRecord): void {
     };
     return;
   }
+  if (bet.product === 'breakout') {
+    // One leg pays a dollar a contract when the price ends outside, whichever side; the smaller leg is what is certain.
+    const both = Math.min(h.outcome.quantity, h.hedge.quantity);
+    const ifOutside = clean(both - bet.cost);
+    const ifInRange = clean(-bet.cost);
+    bet.payoffs = {
+      stake: bet.cost,
+      ifBothHit: ifOutside,
+      ifConditionOnly: ifInRange,
+      ifInRange,
+      ifOutside,
+      conditionalPrice: both > 0 ? clean(bet.cost / both) : null,
+      hedged: both > 0 && Math.abs(h.outcome.quantity - h.hedge.quantity) < 1e-9,
+    };
+    return;
+  }
   bet.payoffs = payoffs(
     { quantity: h.outcome.quantity, avgPrice: h.outcome.quantity > 0 ? h.outcome.spent / h.outcome.quantity : 0 },
     { quantity: h.hedge.quantity, avgPrice: h.hedge.quantity > 0 ? h.hedge.spent / h.hedge.quantity : 0 },
@@ -239,7 +260,7 @@ export interface ConditionalPlan {
  */
 export async function planConditionalBet(deps: Deps, req: BetRequest): Promise<ConditionalPlan> {
   const direction = req.direction ?? 'up';
-  const slip = (req.slippageTicks ?? 2) * PRICE_TICK;
+  const slip = req.slippageTicks === undefined ? DEFAULT_SLIP : req.slippageTicks * PRICE_TICK;
   if (!(req.stake > 0)) throw new Error('Stake must be a positive dollar amount.');
   if (req.maxPrice !== undefined && !(req.maxPrice > 0 && req.maxPrice < 1)) {
     throw new Error('maxPrice must be between 0 and 1.');
@@ -293,7 +314,8 @@ export async function planConditionalBet(deps: Deps, req: BetRequest): Promise<C
     );
   }
 
-  const wanted = floorToStep(req.stake / quote);
+  // Sized as the two orders will really be sent, so the bet never costs more than the stake that was asked for.
+  const wanted = contractsForStake(req.stake, pair.b.ask, pair.a.bid, feeCoef, slip);
   if (wanted < 0.01) throw new BetRefused('stake_too_small', `A $${req.stake} stake is too small at a price of ${quote.toFixed(3)}.`, pair.offer);
 
   // Depth guard: an immediate-or-cancel order only fills what rests at the best
@@ -301,7 +323,7 @@ export async function planConditionalBet(deps: Deps, req: BetRequest): Promise<C
   // counts if it sits at the quoted price or better.
   const outcomeAvailable = depthB.ask !== null && depthB.ask <= pair.b.ask + 1e-9 ? (depthB.askSize ?? 0) : 0;
   const conditionAvailable = depthA.bid !== null && depthA.bid >= pair.a.bid - 1e-9 ? (depthA.bidSize ?? 0) : 0;
-  const quantity = capToDepth(wanted, pair.b.ask, pair.a.bid, feeCoef, outcomeAvailable, conditionAvailable);
+  const quantity = capToDepth(wanted, pair.b.ask, pair.a.bid, feeCoef, outcomeAvailable, conditionAvailable, slip);
   if (quantity < 0.01) {
     throw new BetRefused(
       'insufficient_depth',
@@ -312,7 +334,7 @@ export async function planConditionalBet(deps: Deps, req: BetRequest): Promise<C
   }
   let stakeReduced: BetRecord['stakeReduced'];
   if (quantity < wanted - 1e-9) {
-    const reducedTo = Math.round(planForQuantity(quantity, pair.b.ask, pair.a.bid, feeCoef).cost * 100) / 100;
+    const reducedTo = Math.round(planForQuantity(quantity, pair.b.ask, pair.a.bid, feeCoef, slip).cost * 100) / 100;
     stakeReduced = {
       requested: req.stake,
       reducedTo,
@@ -554,10 +576,13 @@ export interface SettleResult {
   settled: BetRecord[];
   /** Bets newly flagged because Gemini settled them without a clean yes/no. */
   needsReview: BetRecord[];
+  /** Bets sold back earlier whose market has now given a clean result: how the call turned out is recorded, nothing is paid. */
+  called: BetRecord[];
 }
 
 /** True when a bet's result may be used for scoring: settled with a clean yes/no on both contracts. */
-export const isScorable = (bet: BetRecord): boolean => bet.status === 'settled' && bet.settlement !== undefined;
+/** A bet whose call has a clean result: settled, or sold back and its market has since resolved (`called`). */
+export const isScorable = (bet: BetRecord): boolean => (bet.status === 'settled' && bet.settlement !== undefined) || (bet.status === 'cashed_out' && bet.called !== undefined);
 
 /** Why a payout could not be recorded by hand. */
 export class ReviewError extends Error {
@@ -606,6 +631,7 @@ export function recordReviewedPayout(ledger: Ledger, betId: string, payout: numb
  *             always means the first half failed and the stake came back
  *   range     the condition is the lower strike and the target the higher; the bet is never refunded, and "target: yes"
  *             means the price finished inside the range
+ *   breakout  the same two strikes; never refunded either, and "target: yes" means the price finished OUTSIDE them
  */
 function resolveBet(bet: BetRecord, conditionReal: 'yes' | 'no', targetReal: 'yes' | 'no'): { conditionResolved: 'yes' | 'no'; targetResolved: 'yes' | 'no'; payout: number } {
   const h = holdings(bet);
@@ -619,10 +645,31 @@ function resolveBet(bet: BetRecord, conditionReal: 'yes' | 'no', targetReal: 'ye
       payout: settlementPayout(outcome, hedgeLeg, targetReal, conditionReal),
     };
   }
+  if (bet.product === 'breakout') {
+    // The YES on the higher strike pays if that strike resolved yes; the NO on the lower strike pays if that one resolved no.
+    const outside = conditionReal === 'no' || targetReal === 'yes';
+    return {
+      conditionResolved: 'yes',
+      targetResolved: outside ? 'yes' : 'no',
+      payout: settlementPayout(outcome, hedgeLeg, conditionReal, targetReal),
+    };
+  }
   const down = bet.direction === 'down';
   const a = down ? flipOutcome(conditionReal) : conditionReal;
   const b = down ? flipOutcome(targetReal) : targetReal;
   return { conditionResolved: a, targetResolved: b, payout: settlementPayout(outcome, hedgeLeg, a, b) };
+}
+
+/**
+ * Where the ladder finished, from the reference price Gemini reports on a settled contract. Every contract of one ladder
+ * settles against the same price, so the first that carries a usable number will do. Null when neither does.
+ */
+function finishPrice(...reported: (string | null | undefined)[]): number | null {
+  for (const text of reported) {
+    const n = text === null || text === undefined || text === '' ? NaN : Number(text);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
 }
 
 /**
@@ -639,11 +686,12 @@ function resolveBet(bet: BetRecord, conditionReal: 'yes' | 'no', targetReal: 'ye
  */
 export async function settleBets(deps: Deps): Promise<SettleResult> {
   const now = deps.now ?? (() => new Date());
-  const result: SettleResult = { settled: [], needsReview: [] };
+  const result: SettleResult = { settled: [], needsReview: [], called: [] };
   const events = new Map<string, Awaited<ReturnType<Exchange['getEvent']>>>();
 
   for (const bet of deps.ledger.data.bets) {
-    if (bet.status !== 'open' && bet.status !== 'unhedged' && bet.status !== 'needs_review') continue;
+    const soldBack = bet.status === 'cashed_out' && !bet.called;
+    if (!soldBack && bet.status !== 'open' && bet.status !== 'unhedged' && bet.status !== 'needs_review') continue;
     if (!events.has(bet.eventTicker)) events.set(bet.eventTicker, await deps.exchange.getEvent(bet.eventTicker));
     const event = events.get(bet.eventTicker)!;
     const aContract = event.contracts.find((c) => c.instrumentSymbol === bet.condition.symbol);
@@ -651,14 +699,28 @@ export async function settleBets(deps: Deps): Promise<SettleResult> {
     const aSide = aContract?.resolutionSide;
     const bSide = bContract?.resolutionSide;
 
+    if (soldBack) {
+      // Nothing is held, so nothing is paid and the bet stays "cashed_out". Only how the call turned out is written
+      // down, and only from a clean result: an unclear one leaves the call unscored, as it would for a bet still held.
+      if (isClean(aSide) && isClean(bSide)) {
+        const resolved = resolveBet(bet, aSide, bSide);
+        const finishedAt = finishPrice(aContract?.settlementValue, bContract?.settlementValue);
+        bet.called = { conditionResolved: resolved.conditionResolved, targetResolved: resolved.targetResolved, at: now().toISOString(), ...(finishedAt !== null ? { finishedAt } : {}) };
+        result.called.push(bet);
+      }
+      continue;
+    }
+
     if (isClean(aSide) && isClean(bSide)) {
       const resolved = resolveBet(bet, aSide, bSide);
+      const finishedAt = finishPrice(aContract?.settlementValue, bContract?.settlementValue);
       bet.settlement = {
         conditionResolved: resolved.conditionResolved,
         targetResolved: resolved.targetResolved,
         payout: resolved.payout,
         pnl: clean(resolved.payout - bet.cost),
         settledAt: now().toISOString(),
+        ...(finishedAt !== null ? { finishedAt } : {}),
       };
       if (bet.status === 'needs_review') {
         bet.note = 'Gemini reported a clean result after this bet had been flagged for review.';
@@ -686,8 +748,8 @@ export async function settleBets(deps: Deps): Promise<SettleResult> {
     if (Number.isFinite(expiry) && now().getTime() - expiry < REVIEW_GRACE_MS) continue;
 
     const unclear = [
-      isClean(aSide) ? null : `${bet.product === 'range' ? 'lower strike' : 'condition'} reported "${aSide ?? 'nothing'}"`,
-      isClean(bSide) ? null : `${bet.product === 'range' ? 'higher strike' : 'outcome'} reported "${bSide ?? 'nothing'}"`,
+      isClean(aSide) ? null : `${bet.product === 'range' || bet.product === 'breakout' ? 'lower strike' : 'condition'} reported "${aSide ?? 'nothing'}"`,
+      isClean(bSide) ? null : `${bet.product === 'range' || bet.product === 'breakout' ? 'higher strike' : 'outcome'} reported "${bSide ?? 'nothing'}"`,
     ].filter((x) => x !== null);
     bet.review = {
       reason: `Gemini settled this event without a clean yes/no result (${unclear.join(', ')}). The payout is not known to Given; check the account.`,
@@ -699,6 +761,6 @@ export async function settleBets(deps: Deps): Promise<SettleResult> {
     bet.status = 'needs_review';
     result.needsReview.push(bet);
   }
-  if (result.settled.length > 0 || result.needsReview.length > 0) deps.ledger.save();
+  if (result.settled.length > 0 || result.needsReview.length > 0 || result.called.length > 0) deps.ledger.save();
   return result;
 }

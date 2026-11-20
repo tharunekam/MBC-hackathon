@@ -134,6 +134,93 @@ export function statsFromAnswer(answer: unknown, program: string, authority: str
   return out;
 }
 
+// ------------------------------------------------------------------ the calls themselves: how many each player sealed
+
+/**
+ * sha256("account:CallRecord"), first 8 bytes. The program keeps one of these per call from the moment it is sealed, with
+ * the handle that made it and whether it has been revealed, and nothing else about it until then.
+ *
+ *   offset  bytes  field
+ *   0       8      discriminator
+ *   8       32     authority
+ *   40      32     hash of the call
+ *   72      4      length of the handle, u32
+ *   76      n      handle, UTF-8, n <= 32
+ *   76+n    8      at, i64 (the time the service gave the call)
+ *   84+n    8      committed_at, i64 (the chain's clock when it was sealed)
+ *   92+n    1      state: 0 sealed, 1 revealed
+ *   93+n    ...    revealed_at, outcome, fair_price, edge, bump (not read here)
+ */
+export const CALL_DISCRIMINATOR = Uint8Array.of(148, 38, 165, 144, 4, 159, 90, 121);
+
+const CALL_HEAD = 8 + 32 + 32 + 4;
+const CALL_TAIL = 8 + 8 + 1 + 8 + 1 + 4 + 8 + 1;
+
+/** One call as the program holds it before anything is revealed: who made it, under which key, and whether it has been revealed. */
+export interface SealedCall {
+  authority: string;
+  handle: string;
+  revealed: boolean;
+  /** Unix seconds, from Solana's clock when the call was sealed. */
+  committedAt: number;
+}
+
+/** Reads one call account's bytes. Null for anything that is not a whole `CallRecord`. */
+export function decodeCallRecord(data: Uint8Array): SealedCall | null {
+  if (data.length < CALL_HEAD + CALL_TAIL) return null;
+  if (!CALL_DISCRIMINATOR.every((b, i) => data[i] === b)) return null;
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  const n = view.getUint32(72, true);
+  if (n > MAX_HANDLE_BYTES || data.length < CALL_HEAD + n + CALL_TAIL) return null;
+  let handle: string;
+  try {
+    handle = new TextDecoder('utf-8', { fatal: true }).decode(data.subarray(CALL_HEAD, CALL_HEAD + n));
+  } catch {
+    return null;
+  }
+  const at = CALL_HEAD + n;
+  const state = data[at + 16];
+  if (state !== 0 && state !== 1) return null;
+  return { authority: base58(data.subarray(8, 40)), handle, revealed: state === 1, committedAt: Number(view.getBigInt64(at + 8, true)) };
+}
+
+/** For `getProgramAccounts`: every call one authority has sealed, revealed or not. */
+export const callFilters = (authority: string) => [
+  { memcmp: { offset: 0, bytes: base58(CALL_DISCRIMINATOR) } },
+  { memcmp: { offset: 8, bytes: authority } },
+];
+
+/** The call accounts in one `getProgramAccounts` answer, checked again here as the score accounts are. */
+export function callsFromAnswer(answer: unknown, program: string, authority: string): SealedCall[] {
+  if (!Array.isArray(answer)) throw new Error('The Solana node sent an answer this page cannot read.');
+  const out: SealedCall[] = [];
+  for (const item of answer as Array<{ account?: { owner?: unknown; data?: unknown } } | null>) {
+    const account = item?.account;
+    if (!account || account.owner !== program) continue;
+    const data: unknown[] = Array.isArray(account.data) ? account.data : [];
+    if (typeof data[0] !== 'string' || data[1] !== 'base64') continue;
+    const bytes = bytesOfBase64(data[0]);
+    const call = bytes && decodeCallRecord(bytes);
+    if (call && call.authority === authority) out.push(call);
+  }
+  return out;
+}
+
+/**
+ * How many calls each handle has sealed, and how many of those it has revealed. This is the count that stops a record being
+ * built by revealing only the calls that came off: the program holds every call from the moment it is made.
+ */
+export function sealedByHandle(calls: SealedCall[]): Map<string, { sealed: number; revealed: number }> {
+  const by = new Map<string, { sealed: number; revealed: number }>();
+  for (const c of calls) {
+    const cur = by.get(c.handle) ?? { sealed: 0, revealed: 0 };
+    cur.sealed += 1;
+    if (c.revealed) cur.revealed += 1;
+    by.set(c.handle, cur);
+  }
+  return by;
+}
+
 /** A row of the program's board. The same figures as the server's row, without the individual calls. */
 export interface ProgramRow {
   handle: string;
@@ -144,6 +231,8 @@ export interface ProgramRow {
   edge: number;
   /** ISO time of the player's latest reveal. */
   lastRevealedAt: string;
+  /** Every call this handle has sealed through the program, revealed or not. Absent when the call accounts could not be read. */
+  sealed?: number;
 }
 
 /**
@@ -177,7 +266,20 @@ export async function readProgramBoard(rpc: Rpc, program: string, authorities: s
     const answer = await rpc('getProgramAccounts', [program, { encoding: 'base64', commitment: 'confirmed', filters: statsFilters(authority) }]);
     stats.push(...statsFromAnswer(answer, program, authority));
   }
-  return boardRows(stats, minCalls);
+  const rows = boardRows(stats, minCalls);
+  // Then the calls themselves, for how many each player sealed. The scores above stand on their own, so if this second
+  // read is turned away (public nodes ration it) the board is still shown, only without the sealed counts.
+  try {
+    const calls: SealedCall[] = [];
+    for (const authority of new Set(authorities)) {
+      const answer = await rpc('getProgramAccounts', [program, { encoding: 'base64', commitment: 'confirmed', filters: callFilters(authority) }]);
+      calls.push(...callsFromAnswer(answer, program, authority));
+    }
+    const sealed = sealedByHandle(calls);
+    return rows.map((r) => ({ ...r, sealed: Math.max(r.calls, sealed.get(r.handle)?.sealed ?? 0) }));
+  } catch {
+    return rows;
+  }
 }
 
 export interface BoardComparison {

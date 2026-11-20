@@ -58,8 +58,10 @@ export default function MarketPicker({ events, event, onPick, unpriced, showUnpr
         <div className="expiry-row">
           <div className="expiry" role="tablist" aria-label="Closes">
             {(group?.events ?? []).map((e) => (
+              // The label sits in a span so the button around it can be a full 44px touch target on a phone while the chip
+              // that is drawn stays small.
               <button key={e.ticker} role="tab" aria-selected={e.ticker === event?.ticker} className={e.ticker === event?.ticker ? 'is-on' : ''} onClick={() => onPick(e)}>
-                {closesLabel(e.expiry, now)}
+                <span>{closesLabel(e.expiry, now)}</span>
               </button>
             ))}
           </div>

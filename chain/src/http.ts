@@ -191,8 +191,15 @@ export function createHandler(deps: HttpDeps): (req: IncomingMessage, res: Serve
           if (typeof body.betId !== 'string' || body.betId === '') throw new ServiceError(400, 'missing_field', '"betId" is required.');
           return send(201, await deps.service.commitCall(body.betId, deps.user));
         }
-        if (req.method === 'GET' && path === '/calls') return send(200, { calls: deps.service.listCalls(deps.user) });
-        if (req.method === 'GET' && path === '/leaderboard') return send(200, deps.service.leaderboard());
+        if (req.method === 'GET' && path === '/calls') {
+          deps.service.noteRefundsSoon();
+          return send(200, { calls: deps.service.listCalls(deps.user) });
+        }
+        if (req.method === 'GET' && path === '/leaderboard') {
+          // Reading the board is what makes refunds worth knowing about, so it is also what looks for them (in the background).
+          deps.service.noteRefundsSoon();
+          return send(200, deps.service.leaderboard());
+        }
 
         const pub = /^\/reveals\/([1-9A-HJ-NP-Za-km-z]{64,90})$/.exec(path);
         if (pub && req.method === 'GET') return send(200, deps.service.publicReveal(pub[1]!));

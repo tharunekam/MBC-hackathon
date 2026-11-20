@@ -20,11 +20,12 @@ the pitch. Items marked **FILL** need something that does not exist yet.*
 ## The five written answers (draft)
 
 **What did you build?**
-Given is a consumer app for bets on Gemini prediction markets, with three products. A **Return Parlay**: you pick a
-condition and a target on a live price ladder; if the target is reached you win, if the condition fails you get your stake
-back, if it holds but the target is missed you lose the stake (and it works going down as well as up). A **Range**: win if
-a price finishes between two levels. A **Basket**: several of these bets on different assets, placed together. Each bet is
-two real orders in the user's own Gemini account. **Hunch** turns it round: say where you think a price finishes and how
+Given is a consumer app for defined-outcome bets on Gemini prediction markets: every result is on screen before you bet.
+A **Return Parlay**: you pick a condition and a target on a live price ladder; if the target is reached you win, if the
+condition fails you get your stake back, if it holds but the target is missed you lose the stake (and it works going down
+as well as up). A **Range**: win if a price finishes between two levels. A **Breakout**, its opposite: win if it finishes
+outside them, whichever way. A **Basket**: several of these bets on different assets, placed together. Each bet is two
+real orders in the user's own Gemini account, and an open bet can be sold back before the market settles. **Hunch** turns it round: say where you think a price finishes and how
 sure you are, and the app lists the bets on offer that pay best if you are right, each one a tap from its builder. Every
 call is recorded on Solana, committed before the result and revealed after, so a player can prove they made it first. A
 leaderboard ranks skill against the market's own odds.
@@ -70,11 +71,11 @@ further the price goes); and conditional contracts listed by Gemini directly, fo
 | 0:45 | "How this bet pays" card | "Win, stake back, or lose. The odds are the market's own." |
 | 1:00 | Place bet; receipt with two Gemini order IDs | "That is two real orders in my Gemini account." |
 | 1:20 | Solana step | "The call is fingerprinted on Solana before the result. The fingerprint shows nothing." |
-| 1:25 | Range and Basket tabs | "Same idea, other shapes: win if it finishes between two levels, or put several bets on different assets in one step." |
+| 1:25 | Range tab: flip "Stays inside" to "Breaks out"; then Basket | "Same idea, other shapes. Think it stays put? Win if it finishes between two levels. Think it moves but not which way? Flip it: win if it finishes outside them. Or put several bets on different assets in one step." |
 | 1:30 | Hunch: drag the centre up; the list fills; tap Open | "Or start from your view. This is where the market thinks it finishes. I think higher. These are the bets that pay if I'm right, and what each costs." |
-| 1:35 | My bets: a win, a refund, a loss | "A win, a refund, and a loss. We keep the loss." |
+| 1:35 | My bets: a win, a refund, a loss; Cash out on an open one | "A win, a refund, and a loss. We keep the loss. And an open bet can be sold back: that is two more orders, at the price shown or not at all." |
 | 1:55 | Reveal → proof page → Verify on Solana | "My browser reads both records from Solana and recomputes the fingerprint. Nothing here asks our server." |
-| 2:20 | Proof page: reconcile to the cent; Flow to Gemini | "Our books match Gemini's, and this is the order flow we send them." |
+| 2:20 | Proof page: reconcile to the cent; "Orders sent" | "Our books match the exchange's to the cent, and this is what this account's bets have sent to the order book." |
 | 2:40 | Leaderboard, then "Read from Solana" under it | "Ranked by edge over the market, fed by a QuickNode Stream. And this copy my browser just read from the program's own accounts: same players, same scores, our server not asked." |
 
 Record on real devnet and the Gemini sandbox, not the local test exchange. **FILL** (blocked on Gemini keys; the wallet is funded and the
@@ -107,6 +108,9 @@ recorded fallback.
   not asked Gemini and production needs their review. We never imply a partnership. Say this plainly.
 - **Who can see my trades?** Nobody. The commit is a hash. A call becomes public only if the player reveals it, under an
   anonymous handle, never an account.
+- **Can't a player just reveal their winners?** They can keep a call sealed, but not hide that they made it: every call is
+  committed under their handle before the result, so the board shows calls sealed beside calls revealed, and anyone can
+  count the commits on chain. Refunded calls are shown separately, because they can never be revealed.
 - **Why should the leaderboard be trusted?** Every row is a verified commit-reveal pair, signed by our key, re-read from
   Solana. The one thing it takes on trust is the result, which our key attests with Gemini's order IDs as evidence.
 - **Why Solana, and what does the program do?** Cheap, fast records the app can pay for so users never touch a wallet.
@@ -114,6 +118,19 @@ recorded fallback.
   does not match its commit or repeats one, and keeps each handle's score. It does not prove the result: our key attests
   that, with Gemini's order IDs as evidence.
 - **How is this different from a parlay?** A parlay loses everything when its first leg fails. Given returns the stake.
+- **Are these structured products?** No, and do not call them that. A structured product is something an issuer packages
+  and stands behind. Given issues, pools and holds nothing: each bet is two plain orders in the user's own Gemini account.
+  What it adds is the shape, shown in full before the orders are sent. The idea underneath is that a ladder has a contract
+  at every level, like an options chain, so a payoff that changes only at those levels can be built exactly.
+- **Is it a way to bet on volatility?** In plain terms, yes: Range is a bet that a price stays put and Breakout is a bet
+  that it moves, with no view on direction. Say "stays put" and "big move", not "volatility". We found no venue listing
+  "finishes outside these two levels" as one contract (searched 2026-11-19; do not say "first").
+- **Doesn't Kalshi already show a distribution?** Yes, on some range markets, and we do not claim to be first. Ours is read
+  from a ladder of "at or above" contracts, for the hour ahead, and it is the starting point for Hunch: your view set
+  against the market's, and the bets that pay for the difference.
+- **Could Gemini do this natively?** Its combo documentation describes a 2 to 6 leg AND contract, of which a range would be
+  one (YES on the lower level AND NO on the higher) and a breakout its NO side. Combo creation was rejected in the sandbox
+  when we tried (decision 6), so Given builds them from two orders. That is the demand evidence, not a workaround.
 - **What happens in production?** Real fees, Gemini's OAuth review, and the value rule applies to real books (median spread
   about 4¢). None of that has been run.
 

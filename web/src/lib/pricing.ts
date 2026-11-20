@@ -173,7 +173,8 @@ export function rangeEstimate(low: Book, high: Book, venueFeeCoef: number): Rang
   if (prod >= MAX_ALL_IN_PRICE) {
     verdict = 'refuse';
     code = 'price_too_high';
-    refusal = 'The range costs too much for what it can win. Pick levels further apart.';
+    // A range costs more the further apart its levels are, so the way out of a price this high is a narrower one.
+    refusal = 'The range costs too much for what it can win. Pick a narrower one.';
   } else if (markup > REFUSE_MARKUP_DOLLARS || markupPct > REFUSE_MARKUP_FRACTION) {
     verdict = 'refuse';
     code = 'markup_too_high';
@@ -202,6 +203,93 @@ export function rangeOutcomesFor(stake: number, unitCost: number): RangeOutcomes
   const contracts = Math.floor((stake / unitCost) * 100) / 100;
   const cost = clean(contracts * unitCost);
   return { contracts, cost, backAlways: contracts, ifInRange: clean(2 * contracts - cost), ifOutside: clean(contracts - cost) };
+}
+
+// ------------------------------------------------------------------ breakout bets
+
+/**
+ * A breakout is the range turned inside out: YES on the HIGHER strike and NO on the LOWER one, the same number of contracts of
+ * each. At or above the higher strike the YES pays a dollar, below the lower one the NO does, and in between neither pays.
+ * Only one of the two can ever pay, so a pair costs less than a dollar, and what it costs IS the price of $1 for finishing
+ * outside the two levels, whichever way. A port of `executor/src/breakout.ts`, for the instant estimate while a handle is
+ * dragged: the executor's own answer replaces it.
+ */
+
+/** Cash for one contract of each leg: NO on the lower strike at 1 minus its bid and YES on the higher at its ask, fees included. */
+export function breakoutUnitCost(bidLow: number, askHigh: number, coef: number): number {
+  const noLow = clean(1 - bidLow);
+  return clean(noLow + feeRate(noLow, coef) + askHigh + feeRate(askHigh, coef));
+}
+
+/** What a breakout costs for each $1 of "outside the two levels" payout: the pair's own cost. Null when it is not a price. */
+export function breakoutPrice(bidLow: number, askHigh: number, coef: number): number | null {
+  if (!(askHigh > 0) || !(bidLow > 0) || bidLow >= 1) return null;
+  const price = breakoutUnitCost(bidLow, askHigh, coef);
+  return price > 0 && price < 1 ? price : null;
+}
+
+export interface BreakoutEstimate {
+  verdict: 'ok' | 'warn' | 'refuse';
+  refusal: string | null;
+  code: 'price_too_high' | 'markup_too_high' | null;
+  /** Chance of finishing below the lower strike, or at or above the higher one. */
+  chanceOutside: number;
+  fairPrice: number;
+  /** Price per $1 of "outside" payout at the venue's real fee rate. */
+  pricePaid: number;
+  /** The same at Gemini's production fee rate. The rule is applied to this. */
+  allIn: number;
+  markup: number;
+  markupPct: number;
+  /** Cash for one contract of each leg at the venue's fee rate. For a breakout this is the price itself. */
+  unitCost: number;
+  cashOutPer100: number;
+}
+
+export function breakoutEstimate(low: Book, high: Book, venueFeeCoef: number): BreakoutEstimate | null {
+  if (low.bid === null || low.ask === null || high.bid === null || high.ask === null) return null;
+  const inside = clean((low.bid + low.ask) / 2 - (high.bid + high.ask) / 2);
+  const chance = clean(1 - inside);
+  const paid = breakoutPrice(low.bid, high.ask, venueFeeCoef);
+  const prod = breakoutPrice(low.bid, high.ask, PRODUCTION_FEE_COEF);
+  // No chance of landing between the levels makes "outside" a certainty, not a bet; no chance outside leaves nothing to win.
+  if (!(inside > 0) || !(chance > 0) || paid === null || prod === null) return null;
+  const markup = clean(prod - chance);
+  const markupPct = clean(markup / chance);
+  let verdict: BreakoutEstimate['verdict'] = 'ok';
+  let refusal: string | null = null;
+  let code: BreakoutEstimate['code'] = null;
+  if (prod >= MAX_ALL_IN_PRICE) {
+    verdict = 'refuse';
+    code = 'price_too_high';
+    refusal = 'Finishing outside these two levels is close to certain, so it costs too much for what it can win. Pick levels further apart.';
+  } else if (markup > REFUSE_MARKUP_DOLLARS || markupPct > REFUSE_MARKUP_FRACTION) {
+    verdict = 'refuse';
+    code = 'markup_too_high';
+    refusal = 'The spread on these two prices is too wide to be a fair deal.';
+  } else if (markup >= WARN_MARKUP_DOLLARS || markupPct >= WARN_MARKUP_FRACTION) {
+    verdict = 'warn';
+  }
+  // Selling straight back: the NO on the lower strike at its NO bid (1 minus the ask) and the YES on the higher at its bid.
+  const contracts = 100 / paid;
+  const noBid = 1 - low.ask;
+  const cashOut = Math.round(clean(contracts * (noBid - feeRate(noBid, venueFeeCoef)) + contracts * (high.bid - feeRate(high.bid, venueFeeCoef))) * 100) / 100;
+  return { verdict, refusal, code, chanceOutside: chance, fairPrice: chance, pricePaid: paid, allIn: prod, markup, markupPct, unitCost: paid, cashOutPer100: cashOut };
+}
+
+export interface BreakoutOutcomes {
+  /** Contracts of each leg, which is also the dollars paid if it finishes outside. */
+  contracts: number;
+  cost: number;
+  ifOutside: number;
+  ifInRange: number;
+}
+
+/** What a stake buys of a breakout at a cost per contract: one dollar a contract outside the two levels, nothing between them. */
+export function breakoutOutcomesFor(stake: number, unitCost: number): BreakoutOutcomes {
+  const contracts = Math.floor((stake / unitCost) * 100) / 100;
+  const cost = clean(contracts * unitCost);
+  return { contracts, cost, ifOutside: clean(contracts - cost), ifInRange: clean(-cost) };
 }
 
 /** A book as a falling bet sees it: the same contract from the NO side. A rising bet's book is its own. */

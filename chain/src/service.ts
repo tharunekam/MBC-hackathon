@@ -291,19 +291,23 @@ export class ChainService {
       if (await this.adoptReveal(row, row.revealing === true)) return this.view(row);
 
       const bet = await this.bets.getBet(row.betId);
-      // A bet that was sold back never settles. Its call stays a sealed hash: nothing is published and nothing is scored.
-      if (bet && !bet.settlement && bet.status === 'cashed_out') {
-        throw new ServiceError(409, 'cashed_out', 'This bet was sold back before its market settled, so its call stays sealed and is not scored.');
+      // A bet that was sold back never settles, but its call was still right or wrong and selling early does not change
+      // which. The executor records how it turned out once the market has a clean result (`called`), and from then the
+      // call is revealed and scored like any other: against the fair price it was made at. Until then it stays sealed.
+      const result = bet?.settlement ?? (bet?.status === 'cashed_out' ? bet.called : undefined);
+      if (bet && !result && bet.status === 'cashed_out') {
+        throw new ServiceError(409, 'cashed_out', 'This bet was sold back before its market settled. Its call can be revealed once the market has settled.');
       }
-      if (!bet?.settlement) throw new ServiceError(409, 'not_settled', 'This bet has not settled yet, so there is nothing to reveal.');
-      if (bet.settlement.conditionResolved === 'no') {
+      if (!result) throw new ServiceError(409, 'not_settled', 'This bet has not settled yet, so there is nothing to reveal.');
+      if (result.conditionResolved === 'no') {
         row.state = 'void';
         this.store.save();
         this.changed('calls');
-        throw new ServiceError(409, 'void_call', 'The first half failed, so your stake came back and this call does not count.');
+        // A bet still held got its stake back here; one that was sold back had already been paid what it sold for.
+        throw new ServiceError(409, 'void_call', bet?.settlement ? 'The first half failed, so your stake came back and this call does not count.' : 'The first half failed, so this call does not count.');
       }
 
-      const outcome: 0 | 1 = bet.settlement.targetResolved === 'yes' ? 1 : 0;
+      const outcome: 0 | 1 = result.targetResolved === 'yes' ? 1 : 0;
       const f = row.fields;
       row.revealing = true; // sent-or-not is unknown from here until we hear back; the next attempt checks the chain first
       this.store.save();
@@ -456,6 +460,56 @@ export class ChainService {
     return { scanned: all.length, added };
   }
 
+  /**
+   * Marks sealed calls whose first half has since failed as refunded, without anyone having to try to reveal them.
+   *
+   * A refunded call can never be revealed, and the page never offers to reveal one, so before this such a call sat
+   * "committed" for good. Harmless while the board showed revealed calls only; but each row now also says how many calls a
+   * player sealed, and a refund nobody had marked would count against them as a call kept back. The executor is asked
+   * about each call still sealed; a clean result whose first half failed makes it void. Nothing is written to the chain.
+   */
+  async noteRefunds(): Promise<number> {
+    let found = 0;
+    for (const row of this.store.data.calls) {
+      if (row.state !== 'committed' || row.revealing) continue;
+      let bet: ExecutorBet | null;
+      try {
+        bet = await this.bets.getBet(row.betId);
+      } catch {
+        return found; // the executor is not answering: try again on the next pass
+      }
+      const result = bet?.settlement ?? (bet?.status === 'cashed_out' ? bet.called : undefined);
+      if (result?.conditionResolved !== 'no') continue;
+      // Under the bet's lock, and checked again: a reveal may have started while the executor was being asked.
+      await this.locked(`bet:${row.betId}`, async () => {
+        if (row.state !== 'committed' || row.revealing) return;
+        row.state = 'void';
+        found++;
+      });
+    }
+    if (found > 0) {
+      this.store.save();
+      this.changed('calls');
+      this.changed('leaderboard');
+    }
+    return found;
+  }
+
+  private refundsCheckedAt = 0;
+  private refundsRunning = false;
+  /** `noteRefunds`, at most once every `everyMs` and never twice at once. Safe to call on every read of the board. */
+  noteRefundsSoon(everyMs = 20_000): void {
+    const at = this.now().getTime();
+    if (this.refundsRunning || at - this.refundsCheckedAt < everyMs) return;
+    this.refundsRunning = true;
+    this.refundsCheckedAt = at;
+    void this.noteRefunds()
+      .catch((err: unknown) => this.log(`[chain] could not check for refunded calls: ${err instanceof Error ? err.message : String(err)}`))
+      .finally(() => {
+        this.refundsRunning = false;
+      });
+  }
+
   // ------------------------------------------------------------------ reads
 
   listCalls(user: string): CallView[] {
@@ -495,7 +549,7 @@ export class ChainService {
   }
 
   leaderboard() {
-    const by = new Map<string, { calls: number; wins: number; edge: number; last: number; recent: { signature: string; betId: string; revealedAt: number; outcome: 0 | 1; edge: number }[] }>();
+    const by = new Map<string, { calls: number; wins: number; edge: number; last: number; recent: { signature: string; betId: string; event: string; condition: string; target: string; revealedAt: number; outcome: 0 | 1; edge: number }[] }>();
     for (const r of Object.values(this.store.data.reveals)) {
       if (!r.verified) continue;
       const cur = by.get(r.handle) ?? { calls: 0, wins: 0, edge: 0, last: 0, recent: [] };
@@ -503,14 +557,25 @@ export class ChainService {
       cur.wins += r.outcome;
       cur.edge += r.edge;
       cur.last = Math.max(cur.last, r.revealedAt);
-      cur.recent.push({ signature: r.signature, betId: r.betId, revealedAt: r.revealedAt, outcome: r.outcome, edge: r.edge });
+      cur.recent.push({ signature: r.signature, betId: r.betId, event: r.event, condition: r.condition, target: r.target, revealedAt: r.revealedAt, outcome: r.outcome, edge: r.edge });
       by.set(r.handle, cur);
     }
+    // How many calls each handle has sealed on chain, revealed or not. A commit carries its handle, so this count is
+    // public: anyone reading the chain can make it. It is what stops a record being built by revealing only the calls
+    // that came off, because the ones kept sealed show as a gap beside the ones revealed.
+    const sealed = new Map<string, number>();
+    for (const c of Object.values(this.store.data.commits)) sealed.set(c.handle, (sealed.get(c.handle) ?? 0) + 1);
+    // Sealed calls this service knows can never be revealed: the first half failed, the stake came back, nothing to score.
+    // Only known for calls made through this service; a verifier rebuilding from the chain alone cannot tell them apart.
+    const refunded = new Map<string, number>();
+    for (const c of this.store.data.calls) if (c.state === 'void') refunded.set(c.handle, (refunded.get(c.handle) ?? 0) + 1);
     const rows = [...by.entries()]
       .filter(([, v]) => v.calls >= this.minCalls)
       .map(([handle, v]) => ({
         handle,
         calls: v.calls,
+        sealed: Math.max(v.calls, sealed.get(handle) ?? 0),
+        refunded: refunded.get(handle) ?? 0,
         edge: Math.round(v.edge * 10_000) / 10_000,
         hitRate: v.wins / v.calls,
         lastRevealedAt: new Date(v.last * 1000).toISOString(),
@@ -518,7 +583,8 @@ export class ChainService {
         recent: v.recent
           .sort((a, b) => b.revealedAt - a.revealedAt)
           .slice(0, 5)
-          .map((c) => ({ signature: c.signature, betId: c.betId, revealedAt: new Date(c.revealedAt * 1000).toISOString(), outcome: c.outcome, edge: Math.round(c.edge * 10_000) / 10_000 })),
+          // The event and the two contracts are what the reveal itself published, so a row can say what the call was.
+          .map((c) => ({ signature: c.signature, betId: c.betId, event: c.event, condition: c.condition, target: c.target, revealedAt: new Date(c.revealedAt * 1000).toISOString(), outcome: c.outcome, edge: Math.round(c.edge * 10_000) / 10_000 })),
       }))
       .sort((a, b) => b.edge - a.edge || b.calls - a.calls || a.handle.localeCompare(b.handle))
       .map((r, i) => ({ rank: i + 1, ...r }));

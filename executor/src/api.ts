@@ -7,8 +7,9 @@
  *   GET  /markets[?event=TICKER][&include=refused]
  *   GET  /quote?event=&condition=&target=&stake=[&direction=down][&user=]      a parlay
  *   GET  /quote?product=range&event=&low=&high=&stake=[&user=]                 a range
+ *   GET  /quote?product=breakout&event=&low=&high=&stake=[&user=]              a breakout (the range's opposite)
  *   POST /bets            {user, event, condition, target, stake, direction?, maxPrice?, slippageTicks?, onHedgeFail?}
- *   POST /bets            {product: "range", user, event, low, high, stake, maxPrice?, slippageTicks?}
+ *   POST /bets            {product: "range" | "breakout", user, event, low, high, stake, maxPrice?, slippageTicks?}
  *   POST /baskets         {user, name?, legs: [{product, event, condition, target | low, high, stake, direction?}]}
  *   GET  /bets[?user=]
  *   GET  /cashout?bet=ID                                     what selling an open bet back would bring in now
@@ -34,7 +35,9 @@ import {
   REFUSE_MARKUP_FRACTION,
   WARN_MARKUP_DOLLARS,
   WARN_MARKUP_FRACTION,
+  DEFAULT_SLIP,
   capToDepth,
+  contractsForStake,
   ladderInversions,
   planForQuantity,
 } from './offer.ts';
@@ -43,6 +46,9 @@ import type { Direction } from './mirror.ts';
 import { findPair, ladder, linkedPairs, realRung } from './pairs.ts';
 import type { LinkedPair, Rung } from './pairs.ts';
 import type { RangePair } from './range.ts';
+import type { BreakoutPair } from './breakout.ts';
+import { capBreakoutToDepth, findBreakout, planBreakout, breakoutContractsFor } from './breakout.ts';
+import { placeBreakoutBet } from './breakout-bet.ts';
 import { floorToStep } from './pricing.ts';
 import { capRangeToDepth, findRange, planRange, rangeContractsFor } from './range.ts';
 import { placeRangeBet } from './range-bet.ts';
@@ -322,6 +328,8 @@ export function createApi(deps: ApiDeps): ApiHandler {
       seeded: deps.seeded === true,
       users: deps.users.map((user) => ({ user, connected: deps.isConnected ? deps.isConnected(user) : null })),
       feeCoefCharged: deps.feeCoef,
+      // The most one bet may stake here (the hosted demo sets one), so a page can say so before it is refused.
+      maxStake: deps.maxStake ?? null,
       streams: deps.live ? deps.live.count() : null,
       offerRule: offerRule(),
       time: now().toISOString(),
@@ -372,10 +380,10 @@ export function createApi(deps: ApiDeps): ApiHandler {
   }
 
   /** Which product and which way a request is for. */
-  const productOf = (v: unknown): 'parlay' | 'range' => {
+  const productOf = (v: unknown): 'parlay' | 'range' | 'breakout' => {
     if (v === undefined || v === null || v === '' || v === 'parlay') return 'parlay';
-    if (v === 'range') return 'range';
-    throw new HttpError(400, 'invalid_product', '"product" must be "parlay" or "range".');
+    if (v === 'range' || v === 'breakout') return v;
+    throw new HttpError(400, 'invalid_product', '"product" must be "parlay", "range" or "breakout".');
   };
   const directionOf = (v: unknown): Direction => {
     if (v === undefined || v === null || v === '') return 'up';
@@ -390,7 +398,9 @@ export function createApi(deps: ApiDeps): ApiHandler {
   };
 
   async function quoteNow(q: URLSearchParams) {
-    if (productOf(q.get('product')) === 'range') return quoteRange(q);
+    const product = productOf(q.get('product'));
+    if (product === 'range') return quoteRange(q);
+    if (product === 'breakout') return quoteBreakout(q);
     const eventTicker = text(q.get('event'), 'event');
     const conditionSymbol = text(q.get('condition'), 'condition');
     const targetSymbol = text(q.get('target'), 'target');
@@ -417,7 +427,8 @@ export function createApi(deps: ApiDeps): ApiHandler {
 
     const price = pair.conditionalPrice;
     if (stake !== null && price !== null && pair.a.bid !== null && pair.b.ask !== null) {
-      const wanted = floorToStep(stake / price);
+      // A quote is for the bet as it will be placed: the web app sends no slippage of its own, so the default applies.
+      const wanted = contractsForStake(stake, pair.b.ask, pair.a.bid, deps.feeCoef, DEFAULT_SLIP);
       let quantity = wanted;
       // Depth is read through a user's exchange session; without one the quote still answers, just without a size limit.
       const user = quoteUser(q);
@@ -427,18 +438,18 @@ export function createApi(deps: ApiDeps): ApiHandler {
           const [depthA, depthB] = await Promise.all([exchange.topOfBook(pair.a.symbol), exchange.topOfBook(pair.b.symbol)]);
           const outcomeAvailable = depthB.ask !== null && depthB.ask <= pair.b.ask + 1e-9 ? (depthB.askSize ?? 0) : 0;
           const conditionAvailable = depthA.bid !== null && depthA.bid >= pair.a.bid - 1e-9 ? (depthA.bidSize ?? 0) : 0;
-          const most = capToDepth(Number.MAX_SAFE_INTEGER, pair.b.ask, pair.a.bid, deps.feeCoef, outcomeAvailable, conditionAvailable);
+          const most = capToDepth(Number.MAX_SAFE_INTEGER, pair.b.ask, pair.a.bid, deps.feeCoef, outcomeAvailable, conditionAvailable, DEFAULT_SLIP);
           quantity = Math.min(wanted, most);
           body.depth = {
             outcomeAvailable,
             conditionAvailable,
-            maxStake: Math.round(planForQuantity(most, pair.b.ask, pair.a.bid, deps.feeCoef).cost * 100) / 100,
+            maxStake: Math.round(planForQuantity(most, pair.b.ask, pair.a.bid, deps.feeCoef, DEFAULT_SLIP).cost * 100) / 100,
           };
         } catch (err) {
           body.depth = { unavailable: err instanceof Error ? err.message : String(err) };
         }
       }
-      const plan = planForQuantity(quantity, pair.b.ask, pair.a.bid, deps.feeCoef);
+      const plan = planForQuantity(quantity, pair.b.ask, pair.a.bid, deps.feeCoef, DEFAULT_SLIP);
       body.stake = {
         requested: stake,
         reduced: quantity < wanted - 1e-9,
@@ -509,6 +520,65 @@ export function createApi(deps: ApiDeps): ApiHandler {
     return body;
   }
 
+  /** The range's quote for the other two sides of the same two books: YES on the higher strike and NO on the lower. */
+  async function quoteBreakout(q: URLSearchParams) {
+    const eventTicker = text(q.get('event'), 'event');
+    const lowSymbol = text(q.get('low'), 'low');
+    const highSymbol = text(q.get('high'), 'high');
+    const stake = q.get('stake') === null ? null : stakeOf(q.get('stake'));
+    const event = await getEvent(eventTicker);
+    let pair: BreakoutPair;
+    try {
+      pair = findBreakout(event, lowSymbol, highSymbol, deps.feeCoef, deps.waiveMarkup);
+    } catch (err) {
+      throw new HttpError(400, 'not_a_range', (err as Error).message);
+    }
+
+    const body: Record<string, unknown> = {
+      venue,
+      asOf: now().toISOString(),
+      product: 'breakout',
+      event: { ticker: event.ticker, title: event.title, expiry: event.expiryDate ?? null },
+      low: legView(pair.low),
+      high: legView(pair.high),
+      quote: pair.offer,
+      stake: null,
+      depth: null,
+    };
+
+    if (stake !== null && pair.price !== null && pair.low.bid !== null && pair.high.ask !== null) {
+      const wanted = breakoutContractsFor(stake, pair.low.bid, pair.high.ask, deps.feeCoef);
+      let contracts = wanted;
+      const user = quoteUser(q);
+      if (user !== undefined) {
+        try {
+          const exchange = deps.exchangeFor(user);
+          const [depthLow, depthHigh] = await Promise.all([exchange.topOfBook(pair.low.symbol), exchange.topOfBook(pair.high.symbol)]);
+          const highAvailable = depthHigh.ask !== null && depthHigh.ask <= pair.high.ask + 1e-9 ? (depthHigh.askSize ?? 0) : 0;
+          const lowAvailable = depthLow.bid !== null && depthLow.bid >= pair.low.bid - 1e-9 ? (depthLow.bidSize ?? 0) : 0;
+          const most = capBreakoutToDepth(Number.MAX_SAFE_INTEGER, highAvailable, lowAvailable);
+          contracts = Math.min(wanted, most);
+          body.depth = {
+            outcomeAvailable: highAvailable,
+            conditionAvailable: lowAvailable,
+            maxStake: Math.round(planBreakout(most, pair.low.bid, pair.high.ask, deps.feeCoef).cost * 100) / 100,
+          };
+        } catch (err) {
+          body.depth = { unavailable: err instanceof Error ? err.message : String(err) };
+        }
+      }
+      const plan = planBreakout(contracts, pair.low.bid, pair.high.ask, deps.feeCoef);
+      body.stake = {
+        requested: stake,
+        reduced: contracts < wanted - 1e-9,
+        ...plan,
+        cost: Math.round(plan.cost * 100) / 100,
+        cashOutNow: pair.offer.cashOutPer100 === null ? null : Math.round(((pair.offer.cashOutPer100 * plan.cost) / 100) * 100) / 100,
+      };
+    }
+    return body;
+  }
+
   /** Turns a refusal from placing a bet into the API's 422 answer. */
   function refusal(err: unknown): never {
     if (err instanceof BasketRefused) {
@@ -536,7 +606,8 @@ export function createApi(deps: ApiDeps): ApiHandler {
   async function placeBet(body: Record<string, unknown>) {
     if (deps.isPaused?.()) throw new HttpError(503, 'paused', 'Betting is paused for a moment. Try again soon.');
     const user = requireUser(body.user);
-    if (productOf(body.product) === 'range') return placeRange(user, body);
+    const product = productOf(body.product);
+    if (product === 'range' || product === 'breakout') return placeRange(user, body, product);
     const request = {
       user,
       eventTicker: text(body.event, 'event'),
@@ -560,7 +631,8 @@ export function createApi(deps: ApiDeps): ApiHandler {
     });
   }
 
-  async function placeRange(user: string, body: Record<string, unknown>) {
+  /** A range or a breakout: the same request (a lower and a higher strike and a stake), placed by its own order path. */
+  async function placeRange(user: string, body: Record<string, unknown>, product: 'range' | 'breakout') {
     const request = {
       user,
       eventTicker: text(body.event, 'event'),
@@ -575,7 +647,7 @@ export function createApi(deps: ApiDeps): ApiHandler {
       const d = betDeps(user);
       await ensureBaseline(d.exchange, deps.ledger, user, now);
       try {
-        const bet = await placeRangeBet(d, request);
+        const bet = product === 'breakout' ? await placeBreakoutBet(d, request) : await placeRangeBet(d, request);
         return { status: 201, body: { bet: betView(bet), stakeReduced: bet.stakeReduced ?? null } };
       } catch (err) {
         return refusal(err);
@@ -604,7 +676,8 @@ export function createApi(deps: ApiDeps): ApiHandler {
         throw err;
       }
     })();
-    if (productOf(leg.product) === 'range') return { product: 'range', eventTicker: at('event'), lowSymbol: at('low'), highSymbol: at('high'), stake };
+    const product = productOf(leg.product);
+    if (product === 'range' || product === 'breakout') return { product, eventTicker: at('event'), lowSymbol: at('low'), highSymbol: at('high'), stake };
     return { product: 'parlay', direction: directionOf(leg.direction), eventTicker: at('event'), conditionSymbol: at('condition'), targetSymbol: at('target'), stake };
   }
 
@@ -686,6 +759,7 @@ export function createApi(deps: ApiDeps): ApiHandler {
       return {
         settled: done.settled.map(betView),
         needsReview: done.needsReview.map(betView),
+        called: done.called.map(betView),
         stillOpen: deps.ledger.data.bets.filter((b) => b.status === 'open' || b.status === 'unhedged').length,
       };
     });
@@ -785,7 +859,7 @@ export function createApi(deps: ApiDeps): ApiHandler {
     autoSettle = setInterval(() => {
       if (!deps.ledger.data.bets.some((b) => b.status === 'open' || b.status === 'unhedged')) return;
       settle().then(
-        (done) => (done.settled.length > 0 || done.needsReview.length > 0) && deps.live?.publish('bets'),
+        (done) => (done.settled.length > 0 || done.needsReview.length > 0 || done.called.length > 0) && deps.live?.publish('bets'),
         (err: unknown) => console.error(`[executor] auto-settle failed: ${err instanceof Error ? err.message : String(err)}`),
       );
     }, deps.autoSettleMs);
@@ -832,7 +906,7 @@ export function createApi(deps: ApiDeps): ApiHandler {
       POST: async () => {
         refuseIfReadOnly();
         const done = await settle();
-        if (done.settled.length > 0 || done.needsReview.length > 0) deps.live?.publish('bets');
+        if (done.settled.length > 0 || done.needsReview.length > 0 || done.called.length > 0) deps.live?.publish('bets');
         return done;
       },
     },

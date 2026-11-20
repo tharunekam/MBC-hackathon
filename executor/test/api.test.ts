@@ -100,21 +100,25 @@ test('GET /quote: the five numbers, the plan for a stake, and the depth limit', 
     assert.equal(bare.quote.verdict, 'warn');
     assert.equal(bare.stake, null);
 
-    // $2 fits inside the 5 contracts on offer: 3.80 YES at 0.42 = 1.596, hedge 1.995 -> 2.00 NO at 0.20 = 0.40
+    // $2 fits inside the 5 contracts on offer: 3.78 YES at 0.42 = 1.5876. The refund order is sized to cover that even if
+    // it fills two cents past the best price (1.5876 / 0.78 -> 2.04 NO), and is counted at the price it should fill at
+    // (2.04 at 0.20 = 0.408), so the plan is the bet that will be placed and never costs more than the $2 asked for.
     const small = (await app.call('GET', `${q}&stake=2`)).json;
     assert.equal(small.stake.reduced, false);
-    assert.equal(small.stake.outcomeContracts, 3.8);
-    assert.equal(small.stake.hedgeContracts, 2);
+    assert.equal(small.stake.outcomeContracts, 3.78);
+    assert.equal(small.stake.hedgeContracts, 2.04);
     assert.equal(small.stake.cost, 2);
-    near(small.stake.ifBothHit, 3.8 - 1.996);
-    assert.ok(small.stake.ifConditionFails >= 0 && small.stake.ifConditionFails < 0.01);
-    // most that fits: 5 YES = 2.10, hedge 2.625 -> 2.63 NO = 0.526 -> 2.63 total
-    assert.deepEqual(small.depth, { outcomeAvailable: 5, conditionAvailable: 1000, maxStake: 2.63 });
+    assert.ok(small.stake.cost <= 2);
+    near(small.stake.ifBothHit, 3.78 - 1.9956);
+    // The refund is the stake and a few cents more (the contracts bought for the worse price that did not come), never less.
+    assert.ok(small.stake.ifConditionFails >= 0 && small.stake.ifConditionFails < 0.06);
+    // most that fits: 5 YES = 2.10, refund sized two cents past the best price 2.10 / 0.78 -> 2.70 NO at 0.20 = 0.54 -> 2.64 total
+    assert.deepEqual(small.depth, { outcomeAvailable: 5, conditionAvailable: 1000, maxStake: 2.64 });
 
     const big = (await app.call('GET', `${q}&stake=100`)).json;
     assert.equal(big.stake.reduced, true);
     assert.equal(big.stake.outcomeContracts, 5);
-    assert.equal(big.stake.cost, 2.63);
+    assert.equal(big.stake.cost, 2.64);
 
     assert.equal((await app.call('GET', '/quote?event=ETHTEST')).status, 400);
     assert.equal((await app.call('GET', `${q}&stake=-1`)).status, 400);
@@ -171,6 +175,40 @@ test('POST /bets then GET /bets and GET /flow: a bet placed over HTTP shows up, 
     near(rec.cashDifference!, 0);
   } finally {
     await app.close();
+  }
+});
+
+test('a parlay never costs more than the stake asked for, and the quote is the bet that is placed', async () => {
+  // Found by placing a "$10.00" bet that came to $10.04: the refund order is sized to cover the stake even if it fills two
+  // cents past the best price, and the quote had been counting it at the best price. For several stakes, on a rising and
+  // a falling bet: the plan fits the stake, and the bet placed costs what the plan said, to the cent.
+  const LADDER = [
+    { strike: 1780, bid: 0.88, ask: 0.9 },
+    { strike: 1800, bid: 0.8, ask: 0.82 },
+    { strike: 1820, bid: 0.6, ask: 0.62 },
+    { strike: 1840, bid: 0.4, ask: 0.42 },
+  ];
+  for (const stake of [1, 5, 10, 25, 37.5]) {
+    for (const way of ['up', 'down'] as const) {
+      const app = await start(LADDER, { waiveMarkup: true });
+      try {
+        const [condition, target] = way === 'up' ? [app.exchange.symbol(1800), app.exchange.symbol(1840)] : [app.exchange.symbol(1840), app.exchange.symbol(1800)];
+        const dir = way === 'down' ? '&direction=down' : '';
+        const quote = (await app.call('GET', `/quote?event=ETHTEST&condition=${condition}&target=${target}&stake=${stake}${dir}`)).json;
+        assert.ok(quote.stake.cost <= stake + 1e-9, `${way} $${stake}: the plan costs ${quote.stake.cost}`);
+        assert.ok(quote.stake.cost > stake * 0.97, `${way} $${stake}: the plan uses the stake (${quote.stake.cost})`);
+        assert.ok(quote.stake.ifConditionFails >= 0, `${way} $${stake}: the refund covers the stake (${quote.stake.ifConditionFails})`);
+
+        const placed = (await app.call('POST', '/bets', { user: 'primary', event: 'ETHTEST', condition, target, stake, ...(way === 'down' ? { direction: 'down' } : {}) })).json;
+        assert.equal(placed.bet.status, 'open', JSON.stringify(placed));
+        assert.ok(placed.bet.cost <= stake + 1e-9, `${way} $${stake}: the bet cost ${placed.bet.cost}`);
+        near(placed.bet.cost, quote.stake.cost, 0.006);
+        near(placed.bet.payoffs.ifBothHit, quote.stake.ifBothHit, 0.006);
+        assert.ok(placed.bet.payoffs.ifConditionFails >= 0);
+      } finally {
+        await app.close();
+      }
+    }
   }
 });
 

@@ -9,8 +9,19 @@ export const pct = (x: number, digits = 0) => `${(x * 100).toFixed(digits)}%`;
 /** A price per $1 of payout, shown in cents: 0.554 -> 55¢ */
 export const cents = (x: number) => `${Math.round(x * 100)}¢`;
 
-/** A strike or price level from its number: $62,500 or $2.45. Never from an exchange's label text. */
-export const money = (n: number) => `$${n.toLocaleString('en-US', { maximumFractionDigits: n < 10 ? 4 : 2 })}`;
+/**
+ * A strike or price level from its number, never from an exchange's label text. A whole number of dollars stays whole
+ * ($63,500); a price with cents always shows both of them ($141.60, not $141.6, which reads as a typo); and under $10, where
+ * ladders step by fractions of a cent, up to four decimals are kept ($0.905).
+ */
+export function money(n: number): string {
+  const small = Math.abs(n) < 10;
+  // Rounded first, so 63,500.000001 (a price worked out between two rungs) still counts as whole.
+  const shown = Math.round(n * (small ? 1e4 : 100)) / (small ? 1e4 : 100);
+  const whole = Number.isInteger(shown);
+  const text = Math.abs(shown).toLocaleString('en-US', { minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: whole ? 0 : small ? 4 : 2 });
+  return `${shown < 0 ? '−' : ''}$${text}`;
+}
 
 export const trunc = (s: string, head = 6, tail = 4) => (s.length <= head + tail + 1 ? s : `${s.slice(0, head)}…${s.slice(-tail)}`);
 

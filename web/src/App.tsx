@@ -1,8 +1,10 @@
-import { Suspense, lazy } from 'react';
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Suspense, lazy, useEffect } from 'react';
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import Shell from './components/Shell';
+import { keepMode } from './lib/venue';
 import Parlay from './pages/Parlay';
 import Landing from './pages/Landing';
+import NotFound from './pages/NotFound';
 
 // The first screens load at once; the rest are fetched when first visited, so the opening download stays small.
 const Bets = lazy(() => import('./pages/Bets'));
@@ -47,7 +49,23 @@ function Moved({ to }: { to: string }) {
   return <Navigate to={{ pathname: to, search, hash }} replace />;
 }
 
+/**
+ * The app was opened with `?mock` or `?live`, and that decided what it talks to for the whole visit. The shell's own links
+ * carry the flag; a link elsewhere may not, so after any move that dropped it the address gets it back. Otherwise the address
+ * bar would name one mode while the page ran in another, and a reload or a shared link would silently change it.
+ */
+function useModeInAddress(): void {
+  const { pathname, search, hash } = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    const here = pathname + search + hash;
+    const kept = keepMode(here);
+    if (kept !== here) navigate(kept, { replace: true });
+  }, [pathname, search, hash, navigate]);
+}
+
 export default function App() {
+  useModeInAddress();
   return (
     <Routes>
       <Route element={<Shell />}>
@@ -64,7 +82,8 @@ export default function App() {
         {/* The old addresses, kept so shared links and bookmarks still land. */}
         <Route path="app" element={<Moved to="/parlay" />} />
         <Route path="app/bets" element={<Moved to="/bets" />} />
-        <Route path="*" element={<Landing />} />
+        {/* An address the app does not know says so, rather than showing the landing page under it. */}
+        <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
   );

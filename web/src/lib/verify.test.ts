@@ -185,6 +185,15 @@ describe('the question a call asked, from what is on Solana', () => {
     expect(callQuestion({ ...base, betId: 'rg-x', condition: sym(1), target: sym(2), outcome: 0 }).result).toBe('Finished outside');
   });
 
+  it('a breakout: the same two strikes as a range, and outside is the hit', () => {
+    const q = callQuestion({ ...base, betId: 'bo-d1a2b3', condition: sym(62500), target: sym(64000) });
+    expect(q.kind.product).toBe('breakout');
+    expect(q.text).toBe('Will BTC finish outside $62,500 to $64,000?');
+    expect(q.parts.filter((p) => p.em).map((p) => p.text)).toEqual(['BTC', '$62,500', '$64,000']);
+    expect(q.result).toBe('Finished outside');
+    expect(callQuestion({ ...base, betId: 'bo-x', condition: sym(1), target: sym(2), outcome: 0 }).result).toBe('Finished inside');
+  });
+
   it('a symbol it cannot read is shown as committed', () => {
     expect(callQuestion({ ...base, betId: 'x', condition: 'odd', target: sym(2) }).text).toBe('Given BTC at odd or above, will it reach $2?');
   });
