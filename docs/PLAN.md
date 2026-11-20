@@ -166,6 +166,30 @@ and 51 scripts tests, `npm run rehearse` 33 checks, `npm run e2e` 24 checks, `np
 `npm run e2e` only builds the web app when `web/dist` is missing, so run `npm run build` first after pulling: on a
 stale build the two new pages' checks time out.
 
+**The second machine's next order-path changes, run on the real sandbox before they were committed (2026-11-20,
+04:14 to 04:16 UTC).** The second machine cannot place orders, so its uncommitted `executor/src` and `executor/test`
+were copied as they stood at 04:07 UTC into a throwaway checkout on the laptop that holds the key (258 executor tests
+passing) and run with the real ledger. **This is evidence about that snapshot, not about what is finally committed:
+if the order path changes again before the commit, run it again.**
+
+- **A bet no longer costs more than its stake.** A $5 rising parlay (`ec823ff4`, SOL $69 then $74) cost $4.9956, and
+  two $3 breakouts cost $2.9988 and $3.00. Under the old sizing the same parlay would have come to a few cents over $5.
+- **Breakout placed for the first time, as designed**: `bo-a6e6e593` and `bo-1d2e32ad` each bought a YES on the higher
+  strike and a NO on the lower, equal size, both filled.
+- **A breakout cashed out**: `bo-1d2e32ad`, $3.00, quoted $1.04 and sold for $1.04 in two filled sells.
+- **Two breakouts did not go in, and one of them was expensive.** `bo-20fb81f4`: the first order filled nothing, no
+  position, no cost. `bo-01b9b82d`: the first order filled (9.67 YES at 19¢), the second was never sent, and the
+  position was sold back at 3¢, a loss of $1.55 on a $3 bet. The ETH ladder was flipping between `open` and
+  `post_only` at the time (it had been listed about 14 minutes), so the likeliest cause is that the lower strike
+  stopped taking orders between the two legs. On a book as wide as the sandbox's an unwind gives up most of the first
+  leg. **Do not place a demo bet on a ladder in its first quarter of an hour**, and it may be worth leaving a bet
+  unhedged for a few seconds and retrying the second leg when the reason is `post_only`, before selling back.
+- `reconcile` tied out after all of it (the same $0.00017 as before). Still open and due to settle at 05:00 UTC: the
+  parlay `ec823ff4` and the breakout `bo-a6e6e593`.
+- The real ledger now holds breakout bets. Code without the breakout product reads them as rising parlays, which sends
+  the same two orders and settles to the same cash, but shows the wrong words; merge the second machine's commit here
+  before using this ledger for the demo. A copy from before the run is at `executor/data/ledger.before-mini-snapshot.json`.
+
 **Verified by running** (599 tests across the four packages; the golden path and the three products were also driven in a
 real browser against the real executor handler and chain service): bet builder on the probability ladder, quote, place,
 receipt, My bets, settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is and is not verified:
