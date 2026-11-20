@@ -166,39 +166,6 @@ and 51 scripts tests, `npm run rehearse` 33 checks, `npm run e2e` 24 checks, `np
 `npm run e2e` only builds the web app when `web/dist` is missing, so run `npm run build` first after pulling: on a
 stale build the two new pages' checks time out.
 
-**The second machine's next order-path changes, run on the real sandbox before they were committed (2026-11-20,
-04:14 to 04:16 UTC).** The second machine cannot place orders, so its uncommitted `executor/src` and `executor/test`
-were copied as they stood at 04:07 UTC into a throwaway checkout on the laptop that holds the key (258 executor tests
-passing) and run with the real ledger. **This is evidence about that snapshot, not about what is finally committed:
-if the order path changes again before the commit, run it again.**
-
-- **A bet no longer costs more than its stake.** A $5 rising parlay (`ec823ff4`, SOL $69 then $74) cost $4.9956, and
-  two $3 breakouts cost $2.9988 and $3.00. The old sizing ran a few cents over (a $10 bet cost $10.05 on the test
-  exchange and $10.04 in the browser run).
-- **Breakout placed for the first time, as designed**: `bo-a6e6e593` and `bo-1d2e32ad` each bought a YES on the higher
-  strike and a NO on the lower, equal size, both filled.
-- **A breakout cashed out**: `bo-1d2e32ad`, $3.00, quoted $1.04 and sold for $1.04 in two filled sells.
-- **Two breakouts did not go in, and one of them was expensive.** `bo-20fb81f4`: the first order filled nothing, no
-  position, no cost. `bo-01b9b82d`: the first order filled (9.67 YES at 19¢), the second was never sent, and the
-  position was sold back at 3¢, a loss of $1.55 on a $3 bet. The ETH ladder was flipping between `open` and
-  `post_only` at the time (it had been listed about 14 minutes), so the likeliest cause is that the lower strike
-  stopped taking orders between the two legs. On a book as wide as the sandbox's an unwind gives up most of the first
-  leg. **Do not place a demo bet on a ladder in its first quarter of an hour**, and it may be worth leaving a bet
-  unhedged for a few seconds and retrying the second leg when the reason is `post_only`, before selling back.
-- `reconcile` tied out after all of it (the same $0.00017 as before).
-- **A breakout held to settlement, and it won (05:00 UTC).** `bo-a6e6e593` (XRP, $0.96 and $0.98): the ladder finished
-  at $0.9598, under the lower level, so the NO on $0.96 paid $5.88 (+$2.88). The parlay `ec823ff4` lost its $5.00 (SOL
-  finished at $72.04: above $69, short of $74). Both carry `settlement.finishedAt`. The same pass gave the five bets
-  that had been sold back that night the result of their call (`called`), the cashed-out breakout among them, and
-  `reconcile` tied out again.
-- **The snapshot is the committed code.** The second machine committed at 04:54 UTC (`b177a95`). Its `executor/test`
-  is identical to the snapshot and its `executor/src` differs in one place, a `maxStake` field added to `/health`, so
-  everything above stands for the commit. Still not seen on the sandbox: a part-filled cash-out, and a cashed-out
-  bet's call being revealed on Solana.
-- The real ledger now holds breakout bets. Code without the breakout product reads them as rising parlays, which sends
-  the same two orders and settles to the same cash, but shows the wrong words; merge the second machine's commit here
-  before using this ledger for the demo. A copy from before the run is at `executor/data/ledger.before-mini-snapshot.json`.
-
 **Breakout and cash-out, Thursday 2026-11-19 late.** Cash-out (`feat/cash-out`, run on the real sandbox) is merged into
 this branch. **Breakout** is the range's opposite: YES on the higher level and NO on the lower, equal size, winning if the
 price finishes outside them either way (`executor/src/breakout.ts`, `breakout-bet.ts`; decision 27). It reuses the range's
@@ -206,7 +173,7 @@ order path on the other two sides of the same books, and cash-out, the unwind, c
 record and the leaderboard handle it with no case of their own. Tested on the in-memory exchange (21 tests), through the
 real Gemini client on the wire stand-in, and in `npm run rehearse` (36 checks: quoted, placed, committed, settled as a win,
 revealed, verified, ledger tied out). When this was written it had not been placed on the real sandbox; it since has
-been, cashed out and held to a winning settlement (the entry above this one).
+been, cashed out and held to a winning settlement: see "The second machine's next order-path changes" below.
 
 **A record that cannot be built by leaving things out, Thursday 2026-11-19 late.** Two holes in "a track record that
 cannot be faked", both closed with no change to the hash or the program:
@@ -242,6 +209,74 @@ and phone width and read the code behind what looked wrong; 22 findings, fixed t
 Totals after it: 987 tests (executor 258, chain 126, web 551, scripts 52); `npm run e2e` 25 checks; `npm run rehearse`
 40 (41 with injected failures); `npm run e2e:replay` 7.
 
+**The second machine's next order-path changes, run on the real sandbox before they were committed (2026-11-20,
+04:14 to 04:16 UTC).** The second machine cannot place orders, so its uncommitted `executor/src` and `executor/test`
+were copied as they stood at 04:07 UTC into a throwaway checkout on the laptop that holds the key (258 executor tests
+passing) and run with the real ledger. **This is evidence about that snapshot, not about what is finally committed:
+if the order path changes again before the commit, run it again.**
+
+- **A bet no longer costs more than its stake.** A $5 rising parlay (`ec823ff4`, SOL $69 then $74) cost $4.9956, and
+  two $3 breakouts cost $2.9988 and $3.00. The old sizing ran a few cents over (a $10 bet cost $10.05 on the test
+  exchange and $10.04 in the browser run).
+- **Breakout placed for the first time, as designed**: `bo-a6e6e593` and `bo-1d2e32ad` each bought a YES on the higher
+  strike and a NO on the lower, equal size, both filled.
+- **A breakout cashed out**: `bo-1d2e32ad`, $3.00, quoted $1.04 and sold for $1.04 in two filled sells.
+- **Two breakouts did not go in, and one of them was expensive.** `bo-20fb81f4`: the first order filled nothing, no
+  position, no cost. `bo-01b9b82d`: the first order filled (9.67 YES at 19¢), the second was never sent, and the
+  position was sold back at 3¢, a loss of $1.55 on a $3 bet. The ETH ladder was flipping between `open` and
+  `post_only` at the time (it had been listed about 14 minutes), so the likeliest cause is that the lower strike
+  stopped taking orders between the two legs. On a book as wide as the sandbox's an unwind gives up most of the first
+  leg. **Do not place a demo bet on a ladder in its first quarter of an hour**, and it may be worth leaving a bet
+  unhedged for a few seconds and retrying the second leg when the reason is `post_only`, before selling back.
+- `reconcile` tied out after all of it (the same $0.00017 as before).
+- **A breakout held to settlement, and it won (05:00 UTC).** `bo-a6e6e593` (XRP, $0.96 and $0.98): the ladder finished
+  at $0.9598, under the lower level, so the NO on $0.96 paid $5.88 (+$2.88). The parlay `ec823ff4` lost its $5.00 (SOL
+  finished at $72.04: above $69, short of $74). Both carry `settlement.finishedAt`. The same pass gave the five bets
+  that had been sold back that night the result of their call (`called`), the cashed-out breakout among them, and
+  `reconcile` tied out again.
+- **The snapshot is the committed code.** The second machine committed at 04:54 UTC (`b177a95`). Its `executor/test`
+  is identical to the snapshot and its `executor/src` differs in one place, a `maxStake` field added to `/health`, so
+  everything above stands for the commit. Still not seen on the sandbox: a part-filled cash-out, and a cashed-out
+  bet's call being revealed on Solana.
+- The real ledger now holds breakout bets. Code without the breakout product reads them as rising parlays, which sends
+  the same two orders and settles to the same cash, but shows the wrong words; merge the second machine's commit here
+  before using this ledger for the demo. A copy from before the run is at `executor/data/ledger.before-mini-snapshot.json`.
+  **That merge is done** (the next entry).
+
+**The two machines' work in one branch, and the demo up on the second machine (Thursday 2026-11-19, 23:00 CST; branch
+`demo/merged`).** The second machine is the always-on one, so it hosts; the laptop still holds the Gemini key, the funded
+Solana authority and the real ledger until they are copied across by hand.
+
+- **One branch.** The second machine's tree was committed as it stood (`b177a95`, pushed as `feat/structured-products`)
+  and merged with `feat/cash-out`; the only conflicts were in this file and `executor/README.md`, both sides kept. On
+  the merged code, on the second machine: typecheck clean, **987 tests** (executor 258, chain 126, web 551, scripts 52),
+  `npm run rehearse` 40 checks, `npm run e2e` 25 checks.
+- **Sandbox evidence for the merged order path.** Nothing new was placed for the merge. The committed `executor/src`
+  and `executor/test` are the snapshot run on the real sandbox at 04:14 UTC (above) plus one line that adds `maxStake`
+  to a read-only response. **Not re-run after the merge**; if the order path changes again, run it again.
+- **Quotes mode is public**, from a separate checkout on the second machine (`~/given-demo`, `npm start`, bound to
+  loopback) behind a Cloudflare quick tunnel. `npm run check:deploy` from the laptop: **10 of 11 pass** (29 ladders, 52
+  offerable pairs with the sandbox markup waiver on). The one failure is the live-updates check, the quick tunnel
+  holding the event stream back as measured on 11-18; the page polls instead.
+- **The stage fallback is public too**: a second server from the same checkout with `GIVEN_MODE=fake`,
+  `FAKE_ROUND_MINUTES=5`, its own ports (8081, 8751, 8752), its own data folder and `GIVEN_NO_PROJECT_ENV=1` so it never
+  reads the keys. Same 10 of 11. Its nav reads "Test exchange" and every builder page says no order reaches Gemini;
+  seen in a browser through the public address. **Present it as the test exchange.**
+- **Not done: live mode.** The second machine's preflight still fails "API keys present" and "Authority key exists".
+  Live mode, `check:deploy --bet`, the recorded replay session and the video all wait on `.env`, `executor/data/ledger.json`
+  and `chain/data/` being copied to `~/given-demo` by the account owner, after which the laptop must never place or
+  settle a real bet again.
+- **A quick tunnel's address dies with its process.** Both addresses change if `cloudflared` or the machine restarts,
+  and `GIVEN_PUBLIC_URL` (and the Stream's destination) must then be changed with them. Do not put one in Devpost
+  without knowing that; a named tunnel or a real host does not have this problem.
+- The servers run in `tmux` sessions on the second machine (`given-demo`, `given-tunnel`, `given-fake`,
+  `given-fake-tunnel`), logs in `~/given-demo-logs/`. The machine is set never to sleep and to restart after a power
+  cut, but nothing restarts the servers after a reboot.
+- **One line, 2026-11-20 05:15 UTC.** Two sessions had each merged the second machine's `b177a95` with
+  `feat/cash-out` on their own (`952e72c` on `feat/cash-out`, `7a29228` on `demo/merged`): the same code, different
+  notes. They are merged into one commit, pushed as `feat/cash-out`, which both can reach by fast-forward. **Build on
+  `origin/feat/cash-out`**; `demo/merged` is the same commit under an older name.
+
 **Verified by running** (599 tests across the four packages; the golden path and the three products were also driven in a
 real browser against the real executor handler and chain service): bet builder on the probability ladder, quote, place,
 receipt, My bets, settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is and is not verified:
@@ -254,7 +289,7 @@ receipt, My bets, settle, reveal, leaderboard, Proof (reconcile to the cent). De
 | T-P7, T-P8 landing copy, polish, design review | **Review pass done 2026-11-18** at 1280 and 390 wide, both themes: no sideways scroll anywhere; fixed the phone order (quote right after the chart), refusal wording, chart labels, and the default pair on a closed ladder. `npm run e2e` guards it. A second look by someone who did not build it is still worth an hour |
 | T-P9 README, Devpost, video, pitch | README current; Devpost answers and shot list drafted in `docs/SUBMISSION.md`; **video not recorded** (needs a live ladder on the hosted demo) |
 | T-V1 OAuth test | Not started. The sandbox key is on Victor's laptop; registering a sandbox OAuth app needs the account owner |
-| T-V2 host the executor | **Built, not yet deployed.** `scripts/serve.mjs` serves the built app and a fixed allowlist of API paths from one public port with the backends on loopback; `Dockerfile`; `npm run check:deploy` checks a deployed URL from outside; the guide is `docs/DEPLOY.md`. The image builds and runs here (non-root, real sandbox prices). **Needs a host, then the live settings** |
+| T-V2 host the executor | **Up in quotes mode and in test-exchange mode on the second machine behind quick tunnels (2026-11-19, see above); live mode waits on the keys.** Before that: built, not deployed. `scripts/serve.mjs` serves the built app and a fixed allowlist of API paths from one public port with the backends on loopback; `Dockerfile`; `npm run check:deploy` checks a deployed URL from outside; the guide is `docs/DEPLOY.md`. The image builds and runs here (non-root, real sandbox prices). **Needs a host, then the live settings** |
 | T-V3 `GET /reconcile` | **Done**. Event feed not needed: the chain service reads bets from the executor |
 | T-V4 sandbox liquidity seeder | **Built and tested, not run on the sandbox** (`executor/src/seeder.ts`, `npm run seed`). It needs a **second sandbox account**. A dry run on the live sandbox's public prices: 0 of 112 pairs pass the offer rule as the books stand, 7 would with 4-cent quotes resting, 22 with 2-cent quotes. The app labels itself "Seeded prices" when `GIVEN_SEEDED=1`. First-run steps in `executor/README.md` |
 | T-V5 history script | `scripts/seed-history.mjs` places and finishes a win, a refund and a loss |
@@ -263,7 +298,7 @@ receipt, My bets, settle, reveal, leaderboard, Proof (reconcile to the cent). De
 | T-C0 Memo smoke test | **Done 2026-11-18**: commit and reveal with our own key on real devnet, Memo only and through Victor's program (`npm run smoke`); the proof page verified real devnet records in a browser |
 | T-C1 Anchor program | **Done; the Wednesday gate is met.** `given_receipts` is deployed on devnet (`8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK`) and recorded a commit and a reveal there on 11-17 through the chain service's smoke test (links in `chain/README.md`). It checks each record in the same transaction as its Memo when `GIVEN_PROGRAM_ID` is set. **Still to do:** set `GIVEN_PROGRAM_ID` where the demo's chain service runs, once its authority key is funded. Memo records stay the fallback |
 | T-C2 chain service | **Done** (commit, reveal, verify, void handling) |
-| T-C3 Stream, filter, webhook | Webhook receiver done and tested, gzip included. Filter and signature check **confirmed against QuickNode's docs** (2026-11-18) and tested on real devnet log lines. `npm run quicknode` (keys, plan, test-filter, test-delivery, create, activate, pause) is written from the docs and OpenAPI spec and **has not been run with a key**. **Stream not created** (needs `QUICKNODE_API_KEY` and a public URL). **Credits: about 10.8M a day running (devnet makes a block every 240 ms, measured), against a 10M free trial**: run it only for tests and demos |
+| T-C3 Stream, filter, webhook | Webhook receiver done and tested, gzip included. Filter and signature check **confirmed against QuickNode's docs** (2026-11-18) and tested on real devnet log lines. `npm run quicknode` (keys, plan, test-filter, test-delivery, create, activate, pause) is written from the docs and OpenAPI spec. **The Stream exists (`given-calls`) and is kept paused**, as reported on 2026-11-19 by the teammate whose QuickNode account holds it; neither machine that holds or runs the demo has a `QUICKNODE_API_KEY`, so `npm run quicknode -- status` could not confirm it there. **Not yet seen: a real delivery to a hosted receiver** (it needs the demo's public URL, `QN_SECURITY_TOKEN` and `GIVEN_HOOK_TOKEN` on the host, then `pitch-on`). **Credits: about 10.8M a day running (devnet makes a block every 240 ms, measured), against a 10M free trial**: run it only for tests and demos |
 | T-C4 leaderboard, backfill | **Done** |
 | T-C5 verify-from-chain page | **Done** (`web/src/pages/Verify.tsx`, `web/src/lib/verify.ts`); verified in a browser against real devnet records |
 
@@ -273,9 +308,10 @@ receipt, My bets, settle, reveal, leaderboard, Proof (reconcile to the cent). De
 2. ~~Put Gemini sandbox keys in `.env`, then `npm run dev:live`~~ **Done on Victor's laptop 2026-11-18** (see above). Other
    machines still need their own key, or use `npm run dev:quotes`. The OAuth test needs a sandbox OAuth app registered
    by the account owner.
-3. Create the QuickNode Stream: put an API key (Streams enabled) in `.env`, then `npm run quicknode -- test-filter` and
-   `create` (steps in `chain/README.md`). It is created paused; `activate` for a test or a demo, `pause` after. **A
-   running Stream uses the whole free trial in under a day.**
+3. ~~Create the QuickNode Stream~~ **Created, paused** (`given-calls`; see T-C3). Still owed by whoever holds the QuickNode
+   key: put `QN_SECURITY_TOKEN` and `GIVEN_HOOK_TOKEN` on the demo host, then `npm run quicknode -- pitch-on` against the
+   demo's public URL before recording and before judging, and `pitch-off` after (`docs/PITCH_DAY.md`). **A running Stream
+   uses the whole free trial in under a day.**
 4. Pick and open a host for the executor, chain service and web app (the hosted demo link).
 5. If the demo should run with the markup waiver off and at full stake: create a **second Gemini sandbox account** and
    key for the liquidity seeder, then follow "First run" in `executor/README.md`. Say on screen and in the pitch that

@@ -205,7 +205,10 @@ server's board showed after the 2026-11-18 run.
 
 Status: the receiver is built and tested (authentication, replay window, deduplication, gzipped deliveries), and
 `npm run quicknode` tests the filter on QuickNode, creates and manages the Stream, and sends signed test deliveries. **The
-Stream itself is not created yet** and the filter has not run on a live Stream. Its field names and the signature check
+Stream exists (`given-calls`, Solana devnet) and is kept paused**, because it bills for every block it reads; `npm run
+quicknode -- pitch-on` starts it for a recording or the pitch (`docs/PITCH_DAY.md`). That it exists is as reported by the
+teammate whose QuickNode account holds it: the machines this README was checked on have no QuickNode key. It has not
+delivered a real record yet, so the filter has not run on a live Stream. Its field names and the signature check
 were confirmed against QuickNode's documentation on 2026-11-18, and the filter is tested on the log lines of real devnet
 records. A running devnet Stream uses about 10.8M credits a day, so it runs only for tests and demos. The receiver has been
 exercised with real devnet signatures. A real commit and reveal with our own key has run on devnet, both as Memo records and through the Anchor program
@@ -276,7 +279,8 @@ against a NO on the same contract and pays $1 a pair early, which the reconcile 
 - **A deployed demo.** Everything needed is built and tested (`docs/DEPLOY.md`, a `Dockerfile`, `scripts/serve.mjs`, a
   deployment checker); it needs a host and the live settings.
 - Gemini OAuth sign-in. Bets use demo accounts. Production needs Gemini's review.
-- The QuickNode Stream itself (above). Without it the leaderboard fills from an RPC backfill, about three minutes behind.
+- A real delivery from the QuickNode Stream (above): it exists and is paused, and has not been run against a hosted
+  receiver. While it is off the leaderboard fills from an RPC backfill, about three minutes behind.
 - Production has never been run. Gemini's sandbox is not production: its books are far thinner and wider.
 - Maker-first pricing and sports ladders. See `docs/PLAN.md`.
 - Hunch, the histogram, the basket's joint chances and the leaderboard read from the program have run on the local test
