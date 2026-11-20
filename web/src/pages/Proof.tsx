@@ -228,17 +228,7 @@ export default function Proof() {
               {err}
             </p>
           )}
-          {!rec && !err && (
-            // What the result will look like, so the card is not an empty box before the first check.
-            <dl className="recon recon-4 is-idle" role="group" aria-label="What the check reports">
-              {['Orders found', 'Our books say', 'Account holds', 'Difference'].map((t) => (
-                <div key={t}>
-                  <dt>{t}</dt>
-                  <dd>–</dd>
-                </div>
-              ))}
-            </dl>
-          )}
+          {!rec && !err && <p className="fine">The result appears here once the check has run.</p>}
           {/* Present from the start, empty while the books are read, so the answer is announced once when it arrives. */}
           <p className="sr-only" role="status">
             {rec && !running && !err ? booksVerdict(rec.ok, where.checked) : ''}

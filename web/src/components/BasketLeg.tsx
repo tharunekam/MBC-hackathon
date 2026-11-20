@@ -252,15 +252,21 @@ export default function BasketLeg(p: Props) {
               disabled={locked}
             >
               {!event && <option value="">Choose a market</option>}
-              {groups.map((g) => (
-                <optgroup key={g.key} label={g.label}>
-                  {g.events.map((e) => (
-                    <option key={e.ticker} value={e.ticker}>
-                      {assetLabel(e)} · {closesLabel(e.expiry)}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
+              {/* A header over a single market only repeats its name, so groups are drawn only where one asset has several. */}
+              {groups.map((g) => {
+                const options = g.events.map((e) => (
+                  <option key={e.ticker} value={e.ticker}>
+                    {assetLabel(e)} · {closesLabel(e.expiry)}
+                  </option>
+                ));
+                return g.events.length > 1 ? (
+                  <optgroup key={g.key} label={g.label}>
+                    {options}
+                  </optgroup>
+                ) : (
+                  options
+                );
+              })}
             </select>
           </span>
         </label>

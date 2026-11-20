@@ -863,3 +863,79 @@ html:has(.place-bar) {
     transition: none;
   }
 }
+
+/* The open list. Where the browser lets a page draw it (appearance: base-select), it is drawn like the rest of the app: a raised
+   panel, rounded rows, the chosen one ticked. Elsewhere the native list is used and everything above still applies. */
+@supports (appearance: base-select) {
+  .select select,
+  .select select::picker(select) {
+    appearance: base-select;
+  }
+  .select::after {
+    display: none;
+  }
+  .select select {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 14px 0 12px;
+    line-height: 1;
+  }
+  .select select::picker-icon {
+    content: '';
+    flex: none;
+    width: 6px;
+    height: 6px;
+    margin-top: -4px;
+    border-right: 1.5px solid var(--muted);
+    border-bottom: 1.5px solid var(--muted);
+    transform: rotate(45deg);
+    transition: transform var(--t-fast) var(--ease-ui);
+  }
+  .select select:open::picker-icon {
+    margin-top: 2px;
+    transform: rotate(225deg);
+  }
+  .select select::picker(select) {
+    box-sizing: border-box;
+    min-width: anchor-size(width);
+    max-height: min(320px, 50dvh);
+    margin-block: 4px;
+    padding: 6px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-lg);
+    background: var(--panel);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.18);
+  }
+  .select select option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: var(--r-ctl);
+    font-size: 15px;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .select select option:hover,
+  .select select option:focus-visible {
+    background: var(--stage);
+    outline: none;
+  }
+  .select select option:checked {
+    font-weight: 500;
+  }
+  .select select option::checkmark {
+    order: 1;
+    margin-left: auto;
+    font-size: 13px;
+    color: var(--ink);
+  }
+  .select select optgroup {
+    padding-top: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+  }
+}
