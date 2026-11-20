@@ -27,6 +27,9 @@ const bet: ExecutorBet = {
   createdAt: new Date().toISOString(),
   eventTicker: 'SMOKE2611190100',
   eventTitle: 'Smoke test',
+  // A call can only be sealed while its market is still open (with 90 seconds to spare), so this stand-in market closes an
+  // hour from now instead of at the time written into its code.
+  expiry: new Date(Date.now() + 60 * 60_000).toISOString(),
   condition: { symbol: 'GEMI-SMOKE2611190100-HI100', label: '$100 or above', strike: 100 },
   target: { symbol: 'GEMI-SMOKE2611190100-HI110', label: '$110 or above', strike: 110 },
   status: 'open',

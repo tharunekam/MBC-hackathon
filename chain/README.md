@@ -111,8 +111,8 @@ solana-devnet", so a Stream cannot be resumed there once it has fallen far behin
 
 ### Running it for less (researched in QuickNode's docs on 2026-11-18)
 
-- **Streams** bill by block read (30 credits, and the filter does not reduce it): about 270,000 credits an hour on devnet, so
-  the free 10 million lasts about 37 hours if left running. Run it for a test, the recording and the demo, then `pause`.
+- **Streams** bill by block read (30 credits, and the filter does not reduce it): about 450,000 credits an hour on devnet (measured 2026-11-20: about 4.2 blocks a second), so
+  the free 10 million lasts about 22 hours if left running. Run it for a test, the recording and the demo, then `pause`.
   A paused Stream costs nothing; resuming "from the latest block" does not bill the blocks it missed. Free-plan devnet
   refused to resume a Stream that had fallen far behind ("backfill more than 100 blocks"), so resume it soon after pausing,
   or create a fresh one with `npm run quicknode -- create`.
