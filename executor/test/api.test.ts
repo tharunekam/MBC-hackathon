@@ -1,91 +1,21 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
-import { createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { test } from 'node:test';
-import { createApi } from '../src/api.ts';
-import { Ledger } from '../src/ledger.ts';
 import { reconcile } from '../src/reconcile.ts';
 import { FakeExchange } from './fake.ts';
+import { TIGHT, WIDE, near, start } from './api-harness.ts';
+import type { Json } from './api-harness.ts';
 
-const near = (actual: number, expected: number, eps = 1e-6) =>
-  assert.ok(Math.abs(actual - expected) < eps, `expected ${expected}, got ${actual}`);
-
-/** Offerable as it stands: fair 0.50, 4.1 cents over at production fees. */
-const TIGHT = [
-  { strike: 1800, bid: 0.8, ask: 0.82 },
-  { strike: 1820, bid: 0.4, ask: 0.41 },
-];
-/** The sandbox's bot book: about 18 cents over fair. */
-const WIDE = [
-  { strike: 1800, bid: 0.83, ask: 0.97 },
-  { strike: 1820, bid: 0.35, ask: 0.54 },
-];
-
-type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
-
-/** Runs the real HTTP handler on a spare local port, backed by the in-memory exchange. */
-async function start(strikes: ConstructorParameters<typeof FakeExchange>[1], opts: { waiveMarkup?: boolean } = {}) {
-  const exchange = new FakeExchange('ETHTEST', strikes);
-  const other = new FakeExchange('ETHTEST', strikes); // a second user's account
-  const ledger = new Ledger(join(mkdtempSync(join(tmpdir(), 'given-api-')), 'ledger.json'));
-  let clock = new Date('2026-11-17T23:10:00Z');
-  let n = 0;
-  let sessionsOpened = 0;
-  const sessions = new Map<string, FakeExchange>();
-  const api = createApi({
-    ledger,
-    users: ['primary', 'alice'],
-    exchangeFor: (user) => {
-      if (!sessions.has(user)) {
-        sessionsOpened++;
-        sessions.set(user, user === 'primary' ? exchange : other);
-      }
-      return sessions.get(user)!;
-    },
-    isConnected: (user) => sessions.has(user),
-    markets: { listEvents: () => exchange.listEvents(), getEvent: (t) => exchange.getEvent(t) },
-    isSandbox: true,
-    feeCoef: 0,
-    waiveMarkup: opts.waiveMarkup ?? false,
-    marketsCacheMs: 0,
-    now: () => clock,
-    newId: () => `api${++n}`,
-  });
-  const server = createServer(api);
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  const call = async (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) => {
-    const res = await fetch(base + path, {
-      method,
-      headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...headers },
-      body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
-    });
-    const text = await res.text();
-    return { status: res.status, headers: res.headers, json: (text ? JSON.parse(text) : null) as Json };
-  };
-  const betBody = (extra: object = {}) => ({
-    user: 'primary',
-    event: 'ETHTEST',
-    condition: exchange.symbol(1800),
-    target: exchange.symbol(1820),
-    stake: 10,
-    slippageTicks: 0,
-    ...extra,
-  });
-  return {
-    exchange,
-    other,
-    ledger,
-    call,
-    betBody,
-    setClock: (iso: string) => (clock = new Date(iso)),
-    sessionsOpened: () => sessionsOpened,
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
-  };
-}
+test('GET /health: says when our own seeder is quoting on the sandbox, and does not say so otherwise', async () => {
+  const plain = await start(TIGHT);
+  const seeded = await start(TIGHT, { seeded: true });
+  try {
+    assert.equal((await plain.call('GET', '/health')).json.seeded, false);
+    assert.equal((await seeded.call('GET', '/health')).json.seeded, true);
+  } finally {
+    await plain.close();
+    await seeded.close();
+  }
+});
 
 test('GET /health: says what it is talking to and never includes a key', async () => {
   const app = await start(TIGHT);
@@ -357,6 +287,54 @@ test('POST /settle: clean results settle; an unclear one is flagged for review, 
     assert.equal(listed.review.condition.settlementValue, '1800.00');
   } finally {
     await voided.close();
+  }
+});
+
+test('POST /review: records what Gemini paid for a bet settled without a clean result, behind an admin token', async () => {
+  const off = await start(TIGHT);
+  try {
+    const res = await off.call('POST', '/review', { betId: 'x', payout: 1, note: 'from the account' }, { 'X-Admin-Token': 'anything' });
+    assert.equal(res.status, 404, 'with no token configured the route does not exist');
+    assert.equal(res.json.code, 'not_enabled');
+  } finally {
+    await off.close();
+  }
+
+  const app = await start(TIGHT, { adminToken: 'admin-secret' });
+  try {
+    const admin = { 'X-Admin-Token': 'admin-secret' };
+    const open = (await app.call('POST', '/bets', app.betBody({ stake: 4 }))).json.bet;
+    assert.equal((await app.call('POST', '/review', { betId: open.id, payout: 1, note: 'from the account' })).status, 401);
+    assert.equal((await app.call('POST', '/review', { betId: open.id, payout: 1, note: 'from the account' }, { 'X-Admin-Token': 'admin-secreT' })).status, 401);
+    assert.equal((await app.call('POST', '/review', { betId: 'nope', payout: 1, note: 'from the account' }, admin)).status, 404);
+    const early = await app.call('POST', '/review', { betId: open.id, payout: 1, note: 'from the account' }, admin);
+    assert.equal(early.status, 409, 'an open bet cannot be given a payout');
+    assert.equal(early.json.code, 'not_in_review');
+
+    app.exchange.settleUnclear(1800, { resolutionSide: null, settlementValue: '1800.00' }, 0.5);
+    app.exchange.settleUnclear(1820, { resolutionSide: null }, 0.5);
+    app.setClock('2026-11-18T00:05:00Z');
+    await app.call('POST', '/settle');
+    const off0 = (await app.call('GET', '/reconcile?user=primary')).json;
+    assert.equal(off0.ok, false);
+    assert.deepEqual(off0.betsNeedingReview, [open.id]);
+
+    assert.equal((await app.call('POST', '/review', { betId: open.id, payout: 9999, note: 'from the account' }, admin)).status, 400);
+    assert.equal((await app.call('POST', '/review', { betId: open.id, payout: 1 }, admin)).json.code, 'bad_note');
+    const paid = Math.round(off0.cashDifference * 100) / 100;
+    const done = await app.call('POST', '/review', { betId: open.id, payout: paid, note: 'account history: both contracts paid 0.50' }, admin);
+    assert.equal(done.status, 200);
+    assert.equal(done.json.status, 'needs_review');
+    assert.equal(done.json.scorable, false);
+    assert.equal(done.json.review.resolved.payout, paid);
+
+    const after = (await app.call('GET', '/reconcile?user=primary')).json;
+    assert.equal(after.ok, true, `still off by ${after.cashDifference}`);
+    assert.deepEqual(after.betsNeedingReview, []);
+    assert.deepEqual(after.betsResolvedByHand, [open.id]);
+    assert.equal((await app.call('GET', '/bets?user=primary')).json.bets[0].review.resolved.payout, paid);
+  } finally {
+    await app.close();
   }
 });
 

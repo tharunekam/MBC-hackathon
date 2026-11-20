@@ -1,0 +1,45 @@
+{
+  "note": "Log lines of two real devnet transactions (the first call recorded through given_receipts), read from the public RPC with getTransaction on 2026-11-18, arranged in the shape QuickNode documents for Solana 'Programs + Logs'. The log text is Solana's; the wrapping is ours.",
+  "txs": [
+    {
+      "signature": "2DFD8UjXaPofQh82UXFpwsUm47ArcVkteQAxFSeyjp76CRFtr8tNK7JvZD8Th8NepmctkYqnDypHdKRavEJxQnQL",
+      "slot": 523513407,
+      "blockTime": 1794976998,
+      "success": true,
+      "logs": [
+        "Program MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr invoke [1]",
+        "Program log: Signed by 5fE6B5sFJQURtKiJJepzqvHshJZR9SkKSMgeKB3oaGsN",
+        "Program log: Memo (len 122): \"{\\\"g\\\":1,\\\"t\\\":\\\"c\\\",\\\"h\\\":\\\"b457ba91d0e222c76e3ef8a9676eaa58d7f6953cb9188716cecc1082b61360a8\\\",\\\"u\\\":\\\"north-tern-98\\\",\\\"at\\\":1794976998}\"",
+        "Program MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr consumed 58048 of 400000 compute units",
+        "Program MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr success",
+        "Program 8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK invoke [1]",
+        "Program log: Instruction: CommitCall",
+        "Program 11111111111111111111111111111111 invoke [2]",
+        "Program 11111111111111111111111111111111 success",
+        "Program data: DcS6FBcBZLZFOZ5TdR6CLJ3wB2P1Bbg+MvQAR5Ys/enxtmXxGuriTbRXupHQ4iLHbj74qWduqljX9pU8uRiHFs7MEIK2E2CoDQAAAG5vcnRoLXRlcm4tOTjmLP1qAAAAAOYs/WoAAAAA",
+        "Program 8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK consumed 7801 of 341952 compute units",
+        "Program 8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK success"
+      ]
+    },
+    {
+      "signature": "45iRt5TRfiiyBTY8PDJNp4gbscBsTSfmsW4sZkqPSbKLPgAiGcFTLTKX9hvEgA8hYCP6oFx1iGsBL6LoBJ3DT9xU",
+      "slot": 523513412,
+      "blockTime": 1794977000,
+      "success": true,
+      "logs": [
+        "Program MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr invoke [1]",
+        "Program log: Signed by 5fE6B5sFJQURtKiJJepzqvHshJZR9SkKSMgeKB3oaGsN",
+        "Program log: Memo (len 317): \"{\\\"g\\\":1,\\\"t\\\":\\\"r\\\",\\\"c\\\":\\\"2DFD8UjXaPofQh82UXFpwsUm47ArcVkteQAxFSeyjp76CRFtr8tNK7JvZD8Th8NepmctkYqnDypHdKRavEJxQnQL\\\",\\\"u\\\":\\\"north-tern-98\\\",\\\"b\\\":\\\"smokemwlmyjvy\\\",\\\"e\\\":\\\"SMOKE2611190100\\\",\\\"k\\\":\\\"GEMI-SMOKE2611190100-HI100\\\",\\\"x\\\":\\\"GEMI-SMOKE2611190100-HI110\\\",\\\"p\\\":0.45,\\\"f\\\":0.41,\\\"at\\\":1794976998,\\\"s\\\":\\\"4ad7cc813ef92f40e0f4fb7b5b113060\\\",\\\"o\\\":1}\"",
+        "Program MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr consumed 126282 of 400000 compute units",
+        "Program MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr success",
+        "Program 8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK invoke [1]",
+        "Program log: Instruction: RevealCall",
+        "Program 11111111111111111111111111111111 invoke [2]",
+        "Program 11111111111111111111111111111111 success",
+        "Program data: AMIuaqV8309FOZ5TdR6CLJ3wB2P1Bbg+MvQAR5Ys/enxtmXxGuriTbRXupHQ4iLHbj74qWduqljX9pU8uRiHFs7MEIK2E2CoDQAAAG5vcnRoLXRlcm4tOTgNAAAAc21va2Vtd2xteWp2eQ8AAABTTU9LRTI2MTExOTAxMDAaAAAAR0VNSS1TTU9LRTI2MTExOTAxMDAtSEkxMDAaAAAAR0VNSS1TTU9LRTI2MTExOTAxMDAtSEkxMTDQ3QYAAAAAAJBBBgDmLP1qAAAAAOYs/WoAAAAA5yz9agAAAAABsAAJAAAAAAA=",
+        "Program 8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK consumed 16321 of 273718 compute units",
+        "Program 8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK success"
+      ]
+    }
+  ]
+}

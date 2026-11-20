@@ -1,0 +1,33 @@
+{
+  "name": "given",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Given: money-back bets on Gemini prediction markets, recorded on Solana",
+  "engines": {
+    "node": ">=23.6"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs fake",
+    "dev:quotes": "node scripts/dev.mjs quotes",
+    "dev:live": "node scripts/dev.mjs live",
+    "preflight": "node scripts/preflight.mjs",
+    "rehearse": "node scripts/rehearse.mjs",
+    "rehearse:chaos": "node scripts/rehearse.mjs --chaos",
+    "stop": "node scripts/dev.mjs stop",
+    "status": "node scripts/dev.mjs status",
+    "build": "VITE_API_MODE=live npm --prefix web run build",
+    "start": "node scripts/serve.mjs",
+    "check:deploy": "node scripts/check-deploy.mjs",
+    "quicknode": "node scripts/quicknode.mjs",
+    "e2e": "node scripts/e2e.mjs",
+    "e2e:sabotage": "node scripts/e2e.mjs --sabotage",
+    "e2e:replay": "node scripts/replay-check.mjs",
+    "install:all": "npm --prefix executor install && npm --prefix chain install && npm --prefix web install",
+    "test": "npm --prefix executor test && npm --prefix chain test && npm --prefix web test && npm run test:edge",
+    "typecheck": "npm --prefix executor run typecheck && npm --prefix chain run typecheck && npm --prefix web run typecheck",
+    "test:edge": "GIVEN_NO_PROJECT_ENV=1 node --test \"scripts/test/*.test.mjs\""
+  },
+  "devDependencies": {
+    "playwright-core": "^1.49.1"
+  }
+}

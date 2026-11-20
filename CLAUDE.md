@@ -11,9 +11,9 @@ bets on Gemini prediction markets: you bet on the second half of a hunch and
 get your stake back if the first half doesn't happen. Each bet is two real
 orders in the user's own Gemini account.
 
-The repo started as "Living Tokens" (root `README.md`, `docs/ARCHITECTURE.md`,
-`programs/`, `hedge-engine/`, `relay/`). That draft is kept for reference; the
-current direction is described in `docs/GIVEN.md`.
+The repo started as "Living Tokens" (a vault-and-token design). That draft was removed from the working tree on
+2026-11-17 and is preserved at the git tag `living-tokens-draft`; the current direction is described in `docs/GIVEN.md`.
+The root `README.md` is the public description of Given.
 
 ## Read these, in this order
 
@@ -60,6 +60,34 @@ evidence supports it.
 - **The repo will be public** for submission. Don't commit anything you
   wouldn't want a judge to read: no credentials, no personal details, and no
   raw research notes (the conclusions belong in `docs/`).
+
+## Running it
+
+Three packages: `executor/` (places the Gemini orders), `chain/` (Solana commit-reveal and the leaderboard) and `web/`
+(the app). From the repo root:
+
+```bash
+npm run install:all
+npm run dev        # whole stack with NO keys and no SOL: local test exchange + in-memory chain + web
+npm run status     # who is listening on this project's ports (web 5273, executor 8741, chain 8742)
+npm run stop       # stop this project's servers (never touches another project's)
+npm run dev:quotes # REAL Gemini sandbox prices and order books, no keys, every order refused
+npm run dev:live   # real Gemini sandbox + Solana devnet; needs .env keys and a funded chain/data/authority.json
+npm run preflight  # which of the above is ready, and the exact fix for what is not (places nothing)
+npm run rehearse   # the golden path through the real executor + chain code, Gemini and Solana stood in on the wire
+npm run build      # production web build; npm start serves it with both backends on one public port (see docs/DEPLOY.md)
+npm run check:deploy -- https://your-demo   # checks a deployed demo from outside (add --bet to place one small bet)
+npm run quicknode -- pitch-on | pitch-off   # start / pause the QuickNode Stream (kept PAUSED: it bills per block); runbook: docs/PITCH_DAY.md
+npm run e2e        # the production build in real Chrome: golden path, live updates, a not-open market, a click storm, phone layout
+npm test           # every package
+npm run typecheck
+```
+
+- The ports are fixed and the stack refuses to start if one is taken, naming who holds it. Do not change a port to dodge
+  a clash: a service that quietly talks to another project's server is worse than one that does not start.
+- `chain/data/` and `executor/data/` hold keys, salts and ledgers and are git-ignored.
+- `docs/CONTRACTS.md` lists every endpoint and what each lane still owes. `chain/README.md` covers Solana and QuickNode,
+  including what has and has not been verified.
 
 ## Wording guardrails (from our reading of Gemini's rules; re-verify before the pitch)
 

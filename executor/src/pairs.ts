@@ -1,4 +1,6 @@
 import type { GeminiContract, GeminiEvent } from './gemini/types.ts';
+import { mirrorBook, mirrorEvent, realStrike } from './mirror.ts';
+import type { Direction } from './mirror.ts';
 import { assessPair } from './offer.ts';
 import type { OfferQuote } from './offer.ts';
 import { conditionalPrice } from './pricing.ts';
@@ -60,16 +62,30 @@ export function ladder(event: GeminiEvent): Rung[] {
 }
 
 /**
+ * A rung as the reader knows it. Pairs for a falling-price bet are found on the mirror of the ladder (see mirror.ts), where
+ * strikes are negated and books flipped; this turns one back into the real strike and the real YES book.
+ */
+export function realRung(r: Rung, direction: Direction | undefined): Rung {
+  if (direction !== 'down') return r;
+  const book = mirrorBook({ symbol: r.symbol, bid: r.bid, bidSize: null, ask: r.ask, askSize: null });
+  return { ...r, strike: realStrike(direction, r.strike), bid: book.bid, ask: book.ask };
+}
+
+/**
  * Every (condition, outcome) pair in an event where the outcome strike sits
  * above the condition strike. Both are "price at or above X" on the same
  * underlying and expiry, so B hitting implies A hit: the link that lets two
  * plain orders behave as a conditional bet.
+ *
+ * With `direction: 'down'` the pairs are those of a falling-price bet: the condition is the higher strike, the outcome the
+ * lower one. They are found on the mirror of the ladder, so every rung in the result is a mirrored rung; `realRung` shows
+ * it the way a reader knows it.
  */
 export function linkedPairs(
   event: GeminiEvent,
-  opts: { tradableOnly?: boolean; feeCoef?: number; waiveMarkup?: boolean } = {},
+  opts: { tradableOnly?: boolean; feeCoef?: number; waiveMarkup?: boolean; direction?: Direction } = {},
 ): LinkedPair[] {
-  const rungs = ladder(event);
+  const rungs = ladder(opts.direction === 'down' ? mirrorEvent(event) : event);
   const out: LinkedPair[] = [];
   for (let i = 0; i < rungs.length; i++) {
     for (let j = i + 1; j < rungs.length; j++) {
@@ -92,12 +108,12 @@ export function linkedPairs(
   return out;
 }
 
-export function findPair(event: GeminiEvent, aSymbol: string, bSymbol: string, feeCoef = 0, waiveMarkup = false): LinkedPair {
-  const pair = linkedPairs(event, { feeCoef, waiveMarkup }).find((p) => p.a.symbol === aSymbol && p.b.symbol === bSymbol);
+export function findPair(event: GeminiEvent, aSymbol: string, bSymbol: string, feeCoef = 0, waiveMarkup = false, direction: Direction = 'up'): LinkedPair {
+  const pair = linkedPairs(event, { feeCoef, waiveMarkup, direction }).find((p) => p.a.symbol === aSymbol && p.b.symbol === bSymbol);
   if (!pair) {
     throw new Error(
       `${aSymbol} and ${bSymbol} are not a linked pair in ${event.ticker}: both must be "or above" strikes ` +
-        'of this event, with the outcome strike higher than the condition strike.',
+        `of this event, with the outcome strike ${direction === 'down' ? 'lower' : 'higher'} than the condition strike.`,
     );
   }
   return pair;

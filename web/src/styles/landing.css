@@ -1,0 +1,151 @@
+/* ------------------------------------------------------------ product showcase */
+.showcase-head {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 48px;
+}
+.showcase {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+.showcase li {
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.showcase a {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  padding: 24px 24px 28px;
+  text-decoration: none;
+  transition: background 160ms var(--ease);
+}
+.showcase a:hover {
+  background: var(--surface);
+}
+.showcase-index {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--faint);
+}
+.showcase b {
+  margin-top: 6px;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.showcase-line {
+  flex: 1; /* the link sits at the foot of every cell, whatever the line above it takes */
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.showcase-go {
+  margin-top: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--accent-text);
+}
+.showcase-go span {
+  display: inline-block;
+  transition: transform 160ms var(--ease);
+}
+.showcase a:hover .showcase-go span {
+  transform: translateX(3px);
+}
+.showcase-note {
+  margin-top: 16px;
+}
+
+/* The three pictures draw themselves in once, when the section comes into view. */
+.fig {
+  width: 100%;
+  height: auto;
+  margin: 12px 0 8px;
+  overflow: visible;
+}
+.fig-zero {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+.fig path {
+  fill: none;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+}
+.fig-join {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+.fig-back {
+  stroke: var(--accent-text);
+}
+.fig-lose {
+  stroke: var(--bad);
+}
+.fig-win {
+  stroke: var(--good);
+}
+.fig-label {
+  fill: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.js [data-reveal] .fig path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 1.3s var(--ease) 250ms;
+}
+.js [data-reveal] .fig path:nth-of-type(n + 3) {
+  transition-delay: 600ms;
+}
+.js [data-reveal].in .fig path {
+  stroke-dashoffset: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .js [data-reveal] .fig path {
+    stroke-dashoffset: 0;
+    transition: none;
+  }
+}
+:root[data-still='1'] .js [data-reveal] .fig path {
+  stroke-dashoffset: 0;
+  transition: none;
+}
+
+@media (max-width: 960px) {
+  .showcase {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .showcase a {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    column-gap: 24px;
+    align-content: start;
+  }
+  .showcase a > .fig {
+    grid-row: 1 / span 5;
+    grid-column: 2;
+    align-self: center;
+  }
+  .showcase a > :not(.fig) {
+    grid-column: 1;
+  }
+}
+@media (max-width: 560px) {
+  .showcase a {
+    display: flex;
+  }
+  .showcase a > .fig {
+    grid-row: auto;
+    grid-column: 1;
+  }
+}

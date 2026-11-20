@@ -49,6 +49,22 @@ Every quote shows four numbers, in plain words:
 
 The app refuses pairs that are poor value (see "The cost problem").
 
+## The products
+
+All three are plain orders on contracts that already exist, so nothing here needs anything from Gemini that the first bet
+did not.
+
+- **Return Parlay.** The bet above. It goes either way: a rising parlay bets that a price reaches a higher level given that
+  it first holds a lower one; a falling parlay bets that it falls to a lower level given that it first stays under a higher
+  one. A falling parlay is the rising bet on the mirror image of the ladder, so it shares every check and every line of
+  sizing code with it.
+- **Range.** Win if the price finishes between two levels. YES on the lower level and NO on the higher, the same number of
+  contracts of each. One of the two always pays $1, so the bet is the second dollar for landing inside, and its price is what
+  the pair costs above that dollar. At least one dollar per contract comes back whatever happens.
+- **Basket.** Two to six of the above, on any ladders, placed in one request. A basket adds two things: every leg is checked
+  against the live market before the first is placed, and the placed bets are shown together. It is not atomic: nothing on
+  the exchange links the legs.
+
 ## How value reaches Gemini
 
 - **Order flow.** Two real orders per bet. On a $100 bet that is roughly 240
@@ -101,12 +117,21 @@ our current pick, cheap to change. **Open** = not settled.
 | 6 | Combos are not used | Decided | Creation is rejected in the sandbox and documented as not enabled in production; no taker API | Gemini enables combo creation or request-for-stream for a sandbox key |
 | 7 | "Given the favourite doesn't win" is cut | Provisional | No such markets in the sandbox; if no winner is declared every outcome can lose | A market type with a guaranteed single winner, and a void rule we've read |
 | 8 | A Solana record of every call is required | Decided | The Consumer track needs blockchain interaction and Gemini isn't a chain | The track rules change |
-| 9 | Solana design: small commit-reveal program, Memo-program fallback | Provisional | Proves when a call was made and that it wasn't edited; fallback is 3–4 hours vs 8–10 | The program isn't recording a call by the Wednesday gate (see `docs/PLAN.md`) |
+| 9 | Solana design: commit-reveal records through the **Memo program** (shipped 11-17), with our own Anchor program (`given_receipts`, deployed on devnet 11-17) checking each record in the same transaction | Decided for now | Memo records prove when a call was made and that it wasn't edited, and the whole path (commit, reveal, hash check, Stream-fed leaderboard) is built and tested. The program (built and tested 11-17 night, opt-in through `GIVEN_PROGRAM_ID`) adds on-chain validation and state without changing the Memo, so nothing that reads Memos had to change | The program misbehaving on devnet: unset `GIVEN_PROGRAM_ID` and Memo records carry on alone |
 | 10 | Leaderboard ranks skill against the market price, not profit or volume | Provisional | Profit is mostly luck at small samples; ranking by volume conflicts with exchange rules on inflated volume | A better scoring rule, tested on data |
-| 11 | Sign-in is OAuth; our own sandbox keys for the demo | Open | OAuth is Gemini's sanctioned route; whether an OAuth token can place WebSocket orders is undocumented | The OAuth test on Wednesday morning |
+| 11 | Sign-in is OAuth; our own sandbox keys for the demo | Open | OAuth is Gemini's sanctioned route. 11-17: Gemini's docs say a bearer token can authenticate the WebSocket and `orders:create` covers prediction-market orders, but no page says outright that it can `order.place`; sandbox apps register immediately, production needs review | The OAuth test on Wednesday morning |
 | 12 | Refusal threshold is 8¢ / 20% | Provisional | See "The cost problem" | Data from more snapshots; maker-first pricing changing the economics |
 | 13 | Maker-first pricing is the first stretch goal | Provisional | Improves both the price and the value-to-Gemini case | Fill and legging risk proving worse than expected in the sandbox |
 | 14 | Name: "Given" | Provisional | Short, says the mechanic | A better name |
+| 15 | Solana record is **commit at bet time (hash), reveal after settlement (opt-in)**; the app is fee payer and authority, users never hold a wallet | Provisional | Keeps trades off a public chain by default (guardrail), gives the program real state to check, and keeps crypto invisible for the Consumer track | A rule that requires user-held keys; the program not working by the Wednesday gate (fall back to Memo records) |
+| 16 | The demo is **hosted** (web + executor on an always-on host), sandbox-only, with a stake cap and per-visitor sessions | Decided | Devpost requires a working demo or deployed app; the QuickNode webhook needs an always-on host anyway | Gemini says no public sandbox demo |
+| 17 | Both teammates attend the Nov 21 finals in person | Decided (needs D4 confirmation) | Rules: presence in person is required to qualify for any prize, bounties included | The organizers confirm a remote option in writing |
+| 18 | We run a **sandbox liquidity seeder** and disclose it | Provisional | Sandbox books are ~20¢ wide, so quotes and depth look nothing like production without it | Gemini tightens the sandbox, or says seeding is not allowed |
+| 19 | Priority order: Gemini bounty, then Consumer track, Solana, QuickNode, Official | Provisional | Gemini 1st is a finalist slot; Gemini's judges value real API use and order flow most | The Gemini office-hours answers change what they want to see |
+| 20 | Three products: Return Parlay (rising or falling), Range, Basket | Decided | Each is two plain orders per bet on contracts that already exist, so each is as exchange-friendly as the first bet. Built and tested on the local test exchange and through the real client on the wire stand-in; not yet run on the real sandbox | Gemini says a third-party app may not place a user's own orders (the same as decision 1) |
+| 21 | A falling parlay is the rising parlay on the mirror of the ladder | Decided | The pairing, offer rule, depth guard, sizing, unwind and settlement are the code the rising bet already has, run on a ladder whose strikes are negated and books flipped; only the order sides differ. One implementation means one set of tests | A ladder whose NO book is not the mirror of its YES book |
+| 22 | A basket is not atomic | Decided | No exchange primitive links the legs. Every leg is checked first, a leg that fails stops the rest, and the app says plainly what was and was not placed | The exchange lists a basket or combined-order primitive |
+| 23 | A bet id carries its product (`dn-` falling, `rg-` range) | Decided | The id is committed on Solana with the call and revealed with it, so the proof page and leaderboard can say what a call was without changing the hash format or the deployed program, and the label cannot be changed after the result | A program upgrade that commits a product field instead |
 
 ## Open questions
 
@@ -142,9 +167,10 @@ None of these are commitments. Each is a direction someone could pick up.
   169 events on 2026-11-17, almost all sports totals and spreads (strike types
   `over` and `spread`). The executor only handles `above`. A read-only quote
   browser over production would show breadth without trading.
-- **Other bets one ladder can express.** Any payoff decided by single contracts
-  on one ladder can be built exactly: range bets ("between A and B"), "given
-  below X", three-strike chains.
+- **Other bets one ladder can express.** Range bets and the falling parlay are
+  built (see "The products"). A three-strike chain adds nothing: "given A, then B,
+  will C" is the same bet as "given B, will C", because a failure at B already
+  refunds a failure at A.
 - **Draw no bet / without the favourite.** The same idea on winner lists. Needs
   a market where exactly one outcome wins, and a clear void rule.
 - **True cross-market bets.** If Gemini opens combo creation, "given X, will Y?"

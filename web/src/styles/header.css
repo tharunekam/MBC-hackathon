@@ -1,0 +1,269 @@
+/* ------------------------------------------------------------ header */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  border-bottom: 1px solid var(--line);
+  transition: border-color 240ms var(--ease);
+}
+/* The blur lives on a layer behind the bar, not on the bar: a filter on the bar would trap the phone menu's fixed panel inside it. */
+.nav::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: opacity 240ms var(--ease);
+}
+.nav-in {
+  width: min(1200px, 100% - 48px);
+  height: 60px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 32px;
+}
+
+/* The name is set in a wide face, spaced out, and nothing else in the product uses it. */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  font-family: var(--font-mark);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+.nav-links {
+  display: flex;
+  align-items: stretch;
+  height: 60px;
+}
+.nav-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 60px;
+  padding: 0 12px;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 160ms var(--ease);
+}
+.nav-link:hover,
+.nav-link.is-on {
+  color: var(--ink);
+}
+/* The current section is marked by a rule that sits on the bar's own bottom edge. */
+.nav-link.is-on::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: -1px;
+  height: 2px;
+  background: var(--accent);
+}
+/* Products to the left of the rule, tools to the right. */
+.nav-sep {
+  align-self: center;
+  width: 1px;
+  height: 16px;
+  margin: 0 8px;
+  background: var(--line-strong);
+}
+
+.nav-right {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--soft);
+  cursor: pointer;
+  transition: background 160ms var(--ease), border-color 160ms var(--ease);
+}
+.icon-btn:hover {
+  background: var(--surface);
+  border-color: var(--line-strong);
+}
+.btn.btn-sm {
+  height: 36px;
+  padding: 0 16px;
+  border-radius: var(--r-md);
+  font-size: 14px;
+}
+.bets-link.is-on {
+  border-color: var(--ink);
+}
+
+/* On the landing page the bar floats over the dark hero, then settles into the usual bar once the page moves. Over the hero
+   it takes the dark band's colours, so every control in it reads against the dark whatever the theme. */
+.nav[data-home] {
+  position: fixed;
+  inset: 0 0 auto 0;
+}
+.nav[data-home][data-over] {
+  --ink: #f3efe6;
+  --soft: #d4cebf;
+  --muted: #a39c8b;
+  --line: rgba(243, 239, 230, 0.18);
+  --line-strong: rgba(243, 239, 230, 0.32);
+  --surface: rgba(243, 239, 230, 0.08);
+  color: var(--ink);
+  border-bottom-color: transparent;
+}
+.nav[data-home][data-over]::before {
+  opacity: 0;
+}
+
+/* A small word label, such as the Given and Reach marks on the builder's ladder. */
+.tag {
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------ phone menu */
+.menu-btn {
+  display: none;
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: inherit;
+  cursor: pointer;
+}
+/* With the sheet open, the bar above it is solid too, so the two read as one panel. */
+.nav:has(.sheet)::before {
+  background: var(--bg);
+}
+.sheet {
+  position: fixed;
+  inset: 60px 0 0 0;
+  z-index: 39;
+  overflow-y: auto;
+  padding: 8px 0 96px;
+  background: var(--bg);
+  color: var(--ink);
+  animation: sheet-in 200ms var(--ease) both;
+}
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+  }
+}
+.sheet-in {
+  width: min(600px, 100% - 32px);
+  margin: 0 auto;
+}
+.sheet-label {
+  padding: 24px 0 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.sheet-list {
+  border-top: 1px solid var(--line);
+}
+.sheet-list a {
+  display: grid;
+  gap: 4px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+  text-decoration: none;
+  color: inherit;
+}
+.sheet-list b {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.sheet-list span {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.sheet-plain a {
+  font-size: 16px;
+  font-weight: 500;
+}
+.sheet-list a[aria-current='page'] b,
+.sheet-plain a[aria-current='page'] {
+  color: var(--accent-text);
+}
+
+/* Tighter tabs where the bar starts to fill. */
+@media (max-width: 1180px) {
+  .nav-in {
+    gap: 24px;
+  }
+  .nav-link {
+    padding: 0 10px;
+  }
+  .nav-link.is-on::after {
+    left: 10px;
+    right: 10px;
+  }
+}
+@media (min-width: 1001px) {
+  .sheet {
+    display: none;
+  }
+}
+@media (max-width: 1000px) {
+  .nav-in {
+    grid-template-columns: 1fr auto;
+  }
+  .nav-links,
+  .nav-right .bets-link {
+    display: none;
+  }
+  .menu-btn {
+    display: inline-flex;
+    align-items: center;
+  }
+}
+@media (max-width: 720px) {
+  .nav-in {
+    width: calc(100% - 32px);
+  }
+  .nav-right .live,
+  .nav-right .chip-quiet {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet {
+    animation: none;
+  }
+}

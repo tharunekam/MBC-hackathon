@@ -32,9 +32,33 @@ export interface Config {
    * there. Always false outside the sandbox, whatever the setting says.
    */
   waiveMarkup: boolean;
+  /**
+   * GIVEN_SEEDED=1: our liquidity seeder (src/seeder.ts) is resting quotes on this sandbox from a second account, so
+   * some of the prices shown are our own. The API reports it and the app says so. Sandbox only.
+   */
+  seeded: boolean;
   /** Extra browser origins allowed to call the HTTP API (GIVEN_CORS_ORIGINS, comma-separated). Localhost is always allowed. */
   corsOrigins: string[];
+  /** Address to listen on (GIVEN_HOST). Default 127.0.0.1; anything else needs the hosted-demo protections below. */
+  host: string;
+  /** GIVEN_PINNED_USER: every request acts as this one account; the browser cannot choose. */
+  pinnedUser: string | null;
+  /** GIVEN_ADMIN_TOKEN: enables POST /review, which records by hand what Gemini paid for a bet it settled unclearly. */
+  adminToken: string | null;
+  /** GIVEN_MAX_STAKE: refuse bets above this many dollars. */
+  maxStake: number | null;
+  /** GIVEN_RATE_LIMIT_PER_MIN: bets and settles allowed per client per minute. */
+  rateLimitPerMin: number | null;
+  /** GIVEN_TRUST_PROXY=1: take the client address from X-Forwarded-For. */
+  trustProxy: boolean;
+  /** GIVEN_READONLY=1: real Gemini prices and order books with no account. Quotes work; every order is refused. */
+  readOnly: boolean;
+  /** GIVEN_AUTO_SETTLE_MS: settle finished bets by itself this often. 0 turns it off. Default 20000. */
+  autoSettleMs: number;
 }
+
+/** True for loopback addresses: the only ones that may run without the hosted-demo protections. */
+export const isLoopback = (host: string): boolean => host === '127.0.0.1' || host === 'localhost' || host === '::1';
 
 function parseEnvFile(path: string): Record<string, string> {
   if (!existsSync(path)) return {};
@@ -94,10 +118,19 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     port: Number(merged.GIVEN_PORT ?? 8787),
     takerFeeCoef: merged.GIVEN_TAKER_FEE_COEF !== undefined ? Number(merged.GIVEN_TAKER_FEE_COEF) : isSandbox ? 0 : 0.07,
     waiveMarkup: isSandbox && merged.GIVEN_SANDBOX_WAIVE_MARKUP === '1',
+    seeded: isSandbox && merged.GIVEN_SEEDED === '1',
     corsOrigins: (merged.GIVEN_CORS_ORIGINS ?? '')
       .split(',')
       .map((o) => o.trim().replace(/\/+$/, ''))
       .filter(Boolean),
+    host: merged.GIVEN_HOST ?? '127.0.0.1',
+    pinnedUser: merged.GIVEN_PINNED_USER ? merged.GIVEN_PINNED_USER : null,
+    adminToken: merged.GIVEN_ADMIN_TOKEN ? merged.GIVEN_ADMIN_TOKEN : null,
+    maxStake: merged.GIVEN_MAX_STAKE ? Number(merged.GIVEN_MAX_STAKE) : null,
+    rateLimitPerMin: merged.GIVEN_RATE_LIMIT_PER_MIN ? Number(merged.GIVEN_RATE_LIMIT_PER_MIN) : null,
+    trustProxy: merged.GIVEN_TRUST_PROXY === '1',
+    readOnly: merged.GIVEN_READONLY === '1',
+    autoSettleMs: merged.GIVEN_AUTO_SETTLE_MS !== undefined ? Number(merged.GIVEN_AUTO_SETTLE_MS) : 20_000,
   };
 }
 

@@ -32,8 +32,29 @@ Hosts: sandbox REST `https://api.sandbox.gemini.com`, sandbox WebSocket
 - **[docs]** OAuth: scopes `orders:create`, `orders:read`, `positions:read`;
   access tokens last 24 hours, refresh tokens are single-use; bearer tokens work
   on the WebSocket; sandbox apps register immediately, production apps need
-  Gemini's review. **[unknown]** whether a bearer token can place WebSocket
-  orders, and which scope allows it.
+  Gemini's review (duration not published; contact trading@gemini.com). The
+  docs say `orders:create` covers prediction-market order placement and that a
+  WebSocket can authenticate with the same access token (`Bearer <token>` on the
+  upgrade request; `developer.gemini.com/authentication/oauth.md`). The
+  positions stream needs `positions:read`. **[unknown]** whether a bearer token
+  can actually `order.place` over the WebSocket: no page says it outright. Test
+  it (plan gate Wed 11:00). Terms must be accepted on the account before ordering.
+
+## Licence and rules to check before the pitch
+
+- **[docs, 2026-11-17]** Gemini's API agreement calls Gemini Market Data
+  "proprietary", governed by a separate Market Data Agreement, with a
+  non-transferable, non-sublicensable licence; redistribution needs a separate
+  agreement (marketdata@gemini.com). Whether showing prices in a public app
+  counts is **[unknown]**: ask. Nothing found on leaderboards, public-chain
+  records, or tokenised positions. The rulebook (v1.13, July 2026) was not read
+  in full: search it for "transfer".
+- **[docs]** No builder code, referral or revenue share found. Taker rewards
+  run to 2026-12-31 ($1.5M pool, $250k per-participant cap); whether orders
+  placed through a third-party app count is **[unknown]**.
+- **[docs]** Combos: the overview says live, AND-only, 2–6 legs, request-for-quote
+  in production beta; the spec page says creation is not enabled in production.
+  We could not reconcile this; the sandbox rejects creation (verified).
 
 ## Market data (no key needed)
 
@@ -89,6 +110,26 @@ Hosts: sandbox REST `https://api.sandbox.gemini.com`, sandbox WebSocket
   often a single contract.
 - **[verified]** Buying and selling both YES and NO works; a round trip returns
   the position to zero.
+- **[verified 2026-11-18]** **Gemini keeps one position per contract and nets
+  YES against NO at once, paying $1 a pair straight away.** Holding 1 YES on
+  `…-HI1800` (one bet's target) and then buying 3.52 NO on it (another bet's
+  condition) left a position of 2.52 NO and $1.00 more cash than the two orders
+  cost. Total money is unchanged (the $1 arrives early instead of at
+  settlement), but anything that tracks bets separately has to know: the
+  reconcile counts it (`nettedContracts`, `nettedCash`), and the test exchange
+  nets the same way. **Not handled yet:** an unwind that tries to sell a leg
+  Gemini has already netted away. It needs a second bet to share a strike
+  inside the few seconds between a bet's two orders; untested.
+- **[verified 2026-11-18]** A contract's state can be `active/post_only`: the
+  book is visible but taker orders are not accepted, so the offer rule refuses
+  the pair as `market_closed`. What we saw on the sandbox's hourly ladders:
+  **every newly listed ladder was post-only when first seen** (all 45
+  contracts of the 07:00 UTC ladders, from 06:03 to at least 06:06; ETH and SOL
+  were open by 06:15, BTC and XRP still were not),
+  and BTC and XRP also showed it for a few minutes around 25 to 30 minutes
+  before expiry while ETH and SOL stayed `active/open`. We do not know the
+  rule. **For a live demo bet, pick a ladder that has been open a while and
+  check its state first; do not count on the top of the hour.**
 - **[verified]** `clientOrderId` is echoed in `orderUpdate` (`c`) and in REST
   order records. **[docs]** Length limit is 36 characters in one place and 100
   in another; stay under 36.

@@ -161,6 +161,39 @@ A bet refused before trading throws `BetRefused` with a `code`:
 `offer_refused`, `market_closed`, `no_depth`, `insufficient_depth`,
 `price_above_limit` or `stake_too_small`. Nothing is written to the ledger.
 
+## The other bets (`src/mirror.ts`, `src/range.ts`, `src/range-bet.ts`, `src/basket.ts`)
+
+**Falling parlay.** "Given it stays below H, will it fall below L?" is the rising parlay on the *mirror* of the ladder: every
+strike negated, every YES book flipped into the NO book (`bid' = 1 - ask`, `ask' = 1 - bid`), every result swapped. On the
+mirror H is the lower strike (the condition) and L the higher (the target), so `findPair`, the offer rule, the depth
+guard, `planForQuantity`, the hedge sizing, the unwind and the settlement run unchanged. Only the real orders differ: the
+outcome leg is a NO on L (priced `1 - bid(L)`, the mirror's ask) and the hedge leg a YES on H (priced at its ask). The
+reads go through `mirrorExchange`; orders pass straight through with the real side. Pass `direction: "down"`.
+
+**Range.** Buy YES on a lower strike L and NO on a higher strike H, the same number of contracts of each:
+
+| Price finishes | Pays |
+|---|---|
+| below L | the NO on H: $1 per contract |
+| between L and H | both: $2 per contract |
+| at or above H | the YES on L: $1 per contract |
+
+One order always pays a dollar, so the bet is the second dollar and its price per $1 is `askL - bidH` plus fees. The fair
+price is the chance of finishing inside, `mid(L) - mid(H)`, and `assessRange` applies the same refusal and warning limits
+as a pair. A stake buys `stake / (askL + (1 - bidH) + fees)` contracts of each leg, capped by the smaller of the offers on L
+and the YES bids on H. Orders: YES on L, then NO on H for the contracts that filled, retried up to three times; if the legs
+cannot be matched within the price cap the position is sold back. `payoffs` carries `ifInRange` and `ifOutside` (and the
+same numbers as `ifBothHit` and `ifConditionOnly`; there is no refund line). Settlement: `conditionResolved` is always
+`yes` (a range is never refunded) and `targetResolved` is `yes` when L resolved yes and H no.
+
+**Basket.** `placeBasket` takes 2 to 6 legs. Every leg goes through its `plan…` step first (the same reads and checks as
+placing, no order sent), so one that is not on offer refuses the whole basket before anything is bought. Then the legs are
+placed in order with a shared `basket` tag on each bet; a leg that cannot be completed stops the rest and is returned as
+`failed`, with the earlier legs left in place. It is not atomic: nothing on the exchange links the legs.
+
+**Ids.** A bet's id carries its product: `dn-` falling parlay, `rg-` range, nothing for a rising parlay. The id is committed
+on Solana with the call (see `docs/CONTRACTS.md`).
+
 ## Settlement
 
 `settle` (CLI) or `POST /settle` reads each open bet's event:
@@ -178,8 +211,32 @@ An unclear result is only flagged once the event is at least a minute past
 expiry, because the yes/no can trail the "settled" flag by a few seconds. A
 `needs_review` bet is re-checked on every pass and becomes `settled` if Gemini
 later reports a clean result. `reconcile` lists `betsNeedingReview`; any cash
-such a bet paid shows up as a cash difference until someone records it by hand
-(there is no command for that yet).
+such a bet paid shows up as a cash difference until someone records it by hand.
+
+### Recording what such a bet paid
+
+This service cannot work out the payout of a void or fractional settlement, so
+a person reads it off the Gemini account and records it:
+
+```bash
+node src/cli.ts review                       # the bets waiting, what each cost and the most it could have paid
+node src/cli.ts resolve <betId> 3.24 --note "Gemini account history 2026-11-19: both contracts paid 0.50"
+node src/cli.ts reconcile                    # the cash check ties out again
+```
+
+While an executor is running it holds the ledger in memory, so add
+`--server http://127.0.0.1:8741` and the change goes through it
+(`POST /review`, which needs `GIVEN_ADMIN_TOKEN` set on the executor and in
+your shell). That route answers 404 without the token and is not forwarded by
+the hosted server, so it can only be reached from inside the host.
+
+The amount is refused if it is negative or more than every contract the bet
+holds at a dollar each, and a note saying where it came from is required. The
+bet stays `needs_review` and is still never scored: a payout says what was
+paid, not whether the call was right. `reconcile` then counts it and lists the
+bet under `betsResolvedByHand`, and the Proof page says a hand-entered amount is
+part of the total. If Gemini later reports a clean result, the computed payout
+replaces the recorded one; the two are never counted together.
 
 ## Fees
 
@@ -255,6 +312,27 @@ and how much fits in the book right now:
 configured user). If it cannot be read, `depth` is `{"unavailable": "..."}` and
 the quote still answers.
 
+### `GET /quote?product=range&event=&low=&high=&stake=`
+
+A range's quote: `quote` (the offer rule's verdict and numbers: `chanceInRange`, `fairPrice`, `pricePaid`,
+`allInPrice`, `markup`, `cashOutPer100`), and with `stake` the plan (`contracts`, `cost`, `backAlways`, `ifInRange`,
+`ifOutside`) and `depth`. `GET /quote` for a parlay takes `&direction=down` for a falling one, and `GET /markets` lists the
+falling pairs under each event's `down`.
+
+### `POST /baskets`
+
+```json
+{ "user": "primary", "name": "Majors", "legs": [
+  { "event": "BTC2611200100", "condition": "GEMI-BTC2611200100-HI62500", "target": "GEMI-BTC2611200100-HI64000", "stake": 10 },
+  { "event": "ETH2611200100", "condition": "GEMI-ETH2611200100-HI1860", "target": "GEMI-ETH2611200100-HI1820", "direction": "down", "stake": 10 },
+  { "product": "range", "event": "SOL2611200100", "low": "GEMI-SOL2611200100-HI138", "high": "GEMI-SOL2611200100-HI146", "stake": 10 } ] }
+```
+
+2 to 6 legs. A leg that is not on offer, or is not a real pair or range, refuses the whole basket: HTTP 422, `leg` is its
+index, nothing is bought. Otherwise 201 with `{ "basket": { "id", "name", "size", "failed" }, "bets": [...] }`; `failed` is
+`null`, or `{ index, code, message }` for a leg that could not be completed, in which case the legs before it are placed, the
+failed leg is recorded, and the legs after it were not attempted.
+
 ### `POST /bets`
 
 ```json
@@ -322,11 +400,71 @@ Gemini has no builder attribution scheme, so this ledger is the only measure.
 - Combos (parlays) cannot be created through the API, so bets across unrelated
   markets are not possible as a locked price; only linked contracts are.
 
+## Sandbox liquidity seeder (`src/seeder.ts`, `npm run seed`)
+
+**Built and tested here; not yet run on the sandbox** (it needs a second sandbox account, and no keys were available
+where it was written).
+
+The sandbox's books are about 19 cents wide and often hold one contract at the best price, so the offer rule refuses
+nearly everything and the depth guard cuts a $10 bet to about a dollar. The seeder is a small market maker for the
+sandbox only: from a **second sandbox account** it rests two-sided quotes, 4 cents wide and 40 contracts a side by
+default, on every rung of the ladders being demoed. The executor then runs against that book with its rules unchanged
+and the waiver off.
+
+**It is not real liquidity, and the demo must say so.** Every bet it fills is one of our accounts trading with another
+on a test exchange with test money. Set `GIVEN_SEEDED=1` on the executor whenever the seeder is running: `/health` then
+reports `seeded: true` and the app shows "Seeded prices" in the nav and says in the footer that some prices are our own
+test quotes. Never present those fills as order flow.
+
+```bash
+npm run seed -- --dry-run                 # what it WOULD quote, from public prices. Places nothing, needs no keys
+npm run seed -- --user seeder             # quote the ladders that have prices; Ctrl-C cancels everything
+npm run seed -- --user seeder --cancel    # cancel every seeder order on that account
+```
+
+On the hosted server (`scripts/serve.mjs`), `GIVEN_SEEDER=1` runs it beside the executor and sets `GIVEN_SEEDED=1`
+for you, so the label cannot be forgotten; it is restarted if it stops and never takes the server down.
+
+Options: `--event TICKER` (repeatable; default: the open ladders with prices, soonest to close, moving on as each
+closes), `--half-spread 0.02`, `--size 40`, `--max-dollars 400` (per ladder), `--interval 5`, `--ladders 4`. The
+account is `GEMINI_USER_SEEDER_KEY` / `GEMINI_USER_SEEDER_SECRET` in `.env`: a time-based-nonce key with trading and
+balance permissions, on an account that is **not** the one the demo bets from.
+
+How it prices and what it guarantees (`planQuotes`, covered by 29 tests including 1,500 random ladders):
+
+- Fair value is the middle of the *other* participants' book on each rung (its own orders are subtracted from the
+  depth it reads), interpolated across rungs with no book, and forced to fall as the strike rises.
+- A quote never reaches the other side of the existing book, so it rests instead of trading; bid is always below ask.
+- Its quotes never put a ladder out of order, and where the bots' own books are out of order by a few cents it covers
+  the step (all rungs or none). This matters: the executor refuses every pair on an out-of-order ladder.
+- "Sell YES at 0.57" is placed as "buy NO at 0.43". When both of a rung's quotes fill, Gemini nets them and pays the
+  dollar, so the position closes itself.
+- It stops and cancels two minutes before a ladder closes, on Ctrl-C, when `executor/data/SEEDER_PAUSED` exists, and
+  when the account's cash runs low. Every order is tagged `gvs-…`, and a start or `--cancel` sweeps any left behind.
+- It refuses to run off the sandbox whatever `GIVEN_ALLOW_PRODUCTION` says, and refuses to run as the demo's account.
+
+What the dry run showed on the live sandbox (2026-11-18, about 22:25 UTC, four hourly ladders): **0 of 112 pairs
+passed the offer rule as the books stood; 7 would with 4-cent quotes resting, 22 with 2-cent quotes**, and the one
+out-of-order ladder came back in order. The rule counts Gemini's production fee on top of the spread, which is why a
+4-cent book still refuses most pairs; 2 cents is tighter than production and should be described that way if used.
+
+First run, on the machine with the keys:
+
+1. Create a second sandbox account and API key; add `GEMINI_USER_SEEDER_KEY` / `_SECRET` to `.env`.
+2. `npm run seed -- --dry-run`, then `npm run seed -- --user seeder --event <one ladder> --size 5 --max-dollars 30`.
+3. Check in the sandbox UI that the orders rest, then that `npm run cli -- pairs` shows offers with the waiver off.
+4. Ctrl-C and confirm nothing is left resting (`--cancel` if anything is).
+
+Not verified until that run: that a good-till-cancelled order rests as expected, that `order.cancel` works on it, the
+depth stream's shape with our own orders in it, any minimum size, and rate limits (it sends at most 16 orders a pass).
+Until then the wire-level test only shows the pieces fit Gemini's documented protocol.
+
 ## Not built
 
 - Sports ladder types ("over", "spread"): only "or above" ladders are paired.
-- A way to record the payout of a `needs_review` bet by hand.
 - Sign-in for end users (Gemini OAuth). The API trusts the `user` name it is
   given and is meant for a local frontend with pre-connected demo accounts.
 - Cut from the project: conditional orders across markets, combos, and "given
   the favourite doesn't win" bets.
+- The falling parlay, the range and the basket have not been placed on the real Gemini sandbox yet. They are covered by the
+  unit tests on the in-memory exchange, by the real client against the wire stand-in, and by `npm run rehearse`.

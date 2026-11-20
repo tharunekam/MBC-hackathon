@@ -110,3 +110,30 @@ export function payoffs(b: LegFill, a: LegFill): Payoffs {
 export function settlementPayout(b: LegFill, a: LegFill, aResolved: 'yes' | 'no', bResolved: 'yes' | 'no'): number {
   return clean((bResolved === 'yes' ? b.quantity : 0) + (aResolved === 'no' ? a.quantity : 0));
 }
+
+// ------------------------------------------------------------------ range bets
+
+/**
+ * A range bet buys YES on a lower strike L and NO on a higher strike H, the same number of contracts of each.
+ *
+ *     price at or above H      the YES on L pays $1
+ *     price between L and H    both pay: $2
+ *     price below L            the NO on H pays $1
+ *
+ * One of the two always pays a dollar, so what is really bought is the second dollar for landing inside the range. Its
+ * price per $1 is what the pair costs above that guaranteed dollar:  askL + (1 - bidH) - 1  =  askL - bidH, plus fees.
+ */
+
+/** Cash for one contract of each leg: YES on L at its ask, NO on H at 1 - H's bid, each with its taker fee. */
+export function rangeUnitCost(askL: number, bidH: number, coef = 0): number {
+  const noH = clean(1 - bidH);
+  return clean(askL + feeRate(askL, coef) + noH + feeRate(noH, coef));
+}
+
+/** What the range pays for each $1 of "inside the range" payout, after the dollar that always comes back. Null if it is not a price. */
+export function rangePrice(askL: number | null, bidH: number | null, coef = 0): number | null {
+  if (askL === null || bidH === null || !(askL > 0) || !(bidH >= 0) || askL >= 1) return null;
+  const price = clean(rangeUnitCost(askL, bidH, coef) - 1);
+  return price > 0 && price < 1 ? price : null;
+}
+

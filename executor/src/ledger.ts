@@ -1,6 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, writeSync } from 'node:fs';
 import { dirname } from 'node:path';
+import type { Direction } from './mirror.ts';
 import type { OfferQuote } from './offer.ts';
+import type { RangeQuote } from './range.ts';
+
+/** The kinds of bet the service places. A bet recorded before there were two is a parlay. */
+export type Product = 'parlay' | 'range';
 
 /** One order sent to Gemini, identified by the tag we attach (`clientOrderId`). */
 export interface LegRecord {
@@ -29,6 +34,17 @@ export interface BetRecord {
   eventTicker: string;
   eventTitle: string;
   expiry: string | null;
+  /** What kind of bet this is. Absent on bets recorded before ranges existed: those are parlays going up. */
+  product?: Product;
+  /** Which way a parlay looks: "up" bets that a price reaches a higher level, "down" that it falls to a lower one. */
+  direction?: Direction;
+  /** Set when the bet was placed as one leg of a basket. */
+  basket?: { id: string; name?: string; index: number; size: number };
+  /**
+   * A parlay's condition is the strike that has to hold first and its target the strike it is really about; for a falling
+   * parlay the condition is the HIGHER strike. A range has no condition: its "condition" is the lower strike (the YES leg)
+   * and its "target" the higher (the NO leg).
+   */
   condition: { symbol: string; label: string; strike: number };
   target: { symbol: string; label: string; strike: number };
   requestedStake: number;
@@ -47,16 +63,23 @@ export interface BetRecord {
   legs: LegRecord[];
   /** Net dollars spent (buys minus any unwind proceeds). */
   cost: number;
+  /**
+   * What the bet pays. For a parlay: ifBothHit is the win, ifConditionOnly the loss, ifConditionFails the refund. For a
+   * range: ifBothHit and ifInRange are the win, ifConditionOnly and ifOutside the loss, and there is no refund line.
+   * `hedged` means both legs are in place (a range's two legs are matched).
+   */
   payoffs?: {
     stake: number;
-    ifConditionFails: number;
+    ifConditionFails?: number;
     ifBothHit: number;
     ifConditionOnly: number;
+    ifInRange?: number;
+    ifOutside?: number;
     conditionalPrice: number | null;
     hedged: boolean;
   };
   /** The offer rule's numbers and verdict at the moment the bet was placed. */
-  offer?: OfferQuote;
+  offer?: OfferQuote | RangeQuote;
   /** Present when the depth guard shrank the bet so both orders fit at the best price. */
   stakeReduced?: {
     requested: number;
@@ -74,6 +97,12 @@ export interface BetRecord {
     eventStatus: string | null;
     condition: ReportedSettlement | null;
     target: ReportedSettlement | null;
+    /**
+     * What Gemini actually paid for this bet, read from the account and recorded by a person (`recordReviewedPayout`).
+     * It lets the cash check tie out again. The bet stays needs_review and is still never scored: a payout says what
+     * was paid, not whether the call was right.
+     */
+    resolved?: { payout: number; pnl: number; recordedAt: string; note: string };
   };
   settlement?: {
     conditionResolved: 'yes' | 'no';
@@ -127,6 +156,18 @@ export interface LedgerData {
 
 const empty = (): LedgerData => ({ version: 1, baselines: {}, bets: [], intents: [] });
 
+/** The ledger file exists but cannot be trusted. Never swallowed. */
+export class LedgerError extends Error {}
+
+function readLedger(path: string): LedgerData | null {
+  try {
+    const v = JSON.parse(readFileSync(path, 'utf8')) as Partial<LedgerData> | null;
+    return v !== null && typeof v === 'object' && v.version === 1 && Array.isArray(v.bets) ? (v as LedgerData) : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The service's own record of what it did, in one JSON file. Gemini positions
  * are netted per account, so per-bet results can only come from here.
@@ -136,19 +177,47 @@ export class Ledger {
   readonly path: string;
   data: LedgerData;
 
-  constructor(path: string) {
+  constructor(path: string, warn: (line: string) => void = (l) => console.error(l)) {
     this.path = path;
-    this.data = existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as LedgerData) : empty();
+    const bak = `${path}.bak`;
+    let loaded: LedgerData | null = null;
+    if (existsSync(path)) {
+      loaded = readLedger(path);
+      if (!loaded) {
+        loaded = existsSync(bak) ? readLedger(bak) : null;
+        if (!loaded) throw new LedgerError(`${path} exists but is not a valid ledger, and there is no usable backup. Refusing to start: an empty ledger would forget every order sent, and the next reconcile would call them mismatches. Restore it from a copy, or move it aside if you really want to begin again.`);
+        warn(`[executor] ${path} was damaged; restored the previous copy (${bak}). Orders sent since that copy was written are NOT in it: run /reconcile before trading.`);
+      }
+    } else if (existsSync(bak)) {
+      loaded = readLedger(bak);
+      if (!loaded) throw new LedgerError(`${path} is missing and ${bak} is not a valid ledger. Refusing to start empty.`);
+      warn(`[executor] ${path} was missing; restored ${bak}. Run /reconcile before trading.`);
+    }
+    this.data = loaded ?? empty();
     this.data.baselines ??= {};
     this.data.bets ??= [];
     this.data.intents ??= [];
   }
 
+  /** Durable: temp file fsynced, the previous good copy kept as .bak, then renamed into place and the directory synced. */
   save(): void {
     mkdirSync(dirname(this.path), { recursive: true });
     const tmp = `${this.path}.tmp`;
-    writeFileSync(tmp, JSON.stringify(this.data, null, 2));
+    const fd = openSync(tmp, 'w', 0o600);
+    try {
+      writeSync(fd, JSON.stringify(this.data, null, 2));
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    if (existsSync(this.path) && readLedger(this.path)) copyFileSync(this.path, `${this.path}.bak`); // never replace a good backup with a bad file
     renameSync(tmp, this.path);
+    const dir = openSync(dirname(this.path), 'r');
+    try {
+      fsyncSync(dir);
+    } finally {
+      closeSync(dir);
+    }
   }
 
   bet(id: string): BetRecord | undefined {
