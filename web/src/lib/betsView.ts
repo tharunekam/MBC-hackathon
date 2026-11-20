@@ -1,7 +1,7 @@
 import type { Bet, LegRecord } from '../api/types';
 import { kindOf, productName, resultOf, resultWords } from './betKind';
-import type { BetKind } from './betKind';
-import { money } from './format';
+import type { BetKind, BetResult } from './betKind';
+import { money, trunc } from './format';
 import { receiptWords } from './receiptWords';
 
 /**
@@ -72,10 +72,104 @@ export function realised(b: Pick<Bet, 'status' | 'settlement' | 'review' | 'cash
   return null;
 }
 
+/**
+ * Where the ladder finished, when the exchange reported it: "Finished at $63,696.06". A settled bet carries it on its
+ * settlement; a bet sold back before its market settled carries it with how its call turned out, once the market has a
+ * result. Null until then. It is there to show where the price ended; what the bet paid never depends on it.
+ */
+export function finishedWords(b: Pick<Bet, 'settlement' | 'called'>): string | null {
+  const at = b.settlement?.finishedAt ?? b.called?.finishedAt;
+  return typeof at === 'number' && Number.isFinite(at) ? `Finished at ${money(at)}` : null;
+}
+
+// ------------------------------------------------------------------ the call of a bet that was sold back
+
+/**
+ * How the call of a sold-back bet turned out. Selling a bet early ends the bet, not the call: the call was still right or
+ * wrong, and the executor writes down which once the market has a clean result (`called`). Null until it has, and for any
+ * bet that was not sold back.
+ */
+export function calledResult(b: Pick<Bet, 'status' | 'called'>): BetResult | null {
+  if (b.status !== 'cashed_out' || !b.called) return null;
+  if (b.called.conditionResolved === 'no') return 'refunded';
+  return b.called.targetResolved === 'yes' ? 'won' : 'lost';
+}
+
+/**
+ * How a bet's call came out, whether the bet was held to the end or sold back first: won, lost, or refunded (the first level
+ * failed, so the call does not count). Null while there is no clean result.
+ */
+export function callResult(b: Pick<Bet, 'status' | 'settlement' | 'called'>): BetResult | null {
+  if (b.status === 'cashed_out') return calledResult(b);
+  return b.status === 'settled' ? resultOf(b) : null;
+}
+
+/** A call that can be revealed and scored: it has a result, and the result is a plain won or lost. */
+export const canRevealCall = (b: Pick<Bet, 'status' | 'settlement' | 'called'>): boolean => {
+  const r = callResult(b);
+  return r === 'won' || r === 'lost';
+};
+
+/**
+ * What became of the call of a bet that was sold back, in the bet's own words: still waiting on the market, came off, did
+ * not, or does not count because the first level failed.
+ */
+export function soldCallWords(b: Pick<Bet, 'status' | 'called' | 'product' | 'direction' | 'condition' | 'target'>): string {
+  const result = calledResult(b);
+  if (result === null) return 'Its call can be revealed once the market settles.';
+  if (result === 'refunded') return 'The market has since settled: the first level failed, so this call does not count.';
+  const kind = kindOf(b);
+  const won = result === 'won';
+  // For a range or a breakout the two strikes are its lower and higher level.
+  const [c, t] = [money(b.condition.strike), money(b.target.strike)];
+  const what =
+    kind.product === 'parlay'
+      ? kind.direction === 'down'
+        ? won
+          ? `it fell below ${t}`
+          : `it did not fall below ${t}`
+        : won
+          ? `it reached ${t}`
+          : `it did not reach ${t}`
+      : won === (kind.product === 'range')
+        ? `it finished between ${c} and ${t}`
+        : `it finished outside ${c} to ${t}`;
+  return `The market has since settled: ${what}, so the call ${won ? 'came off' : 'did not come off'}.`;
+}
+
+/** How a sold-back bet was sold, from the sell orders it carries: "as two sell orders". Empty when it carries none. */
+export function sellOrdersWords(b: Pick<Bet, 'legs'>): string {
+  const n = b.legs.filter((l) => l.role === 'cashout').length;
+  if (n === 0) return '';
+  return `as ${n === 1 ? 'one sell order' : n === 2 ? 'two sell orders' : `${n} sell orders`}`;
+}
+
+/**
+ * Whether "Check results" has anything to check: a bet still open or under review, or one sold back whose market has not
+ * given its call a result yet. With none of those, every bet on the page is final.
+ */
+export const hasPending = (bets: readonly Pick<Bet, 'status' | 'settlement' | 'called'>[]): boolean =>
+  bets.some((b) => {
+    const o = outcomeOf(b);
+    return o === 'open' || o === 'review' || (o === 'cashed' && !b.called);
+  });
+
+/** What "Check results" found, in a sentence. `called` counts sold-back bets whose call has just been given its result. */
+export function checkedWords(found: { settled: number; called?: number; stillOpen: number }): string {
+  const bets = (n: number) => `${n} bet${n === 1 ? '' : 's'}`;
+  const called = found.called ?? 0;
+  const parts: string[] = [];
+  if (found.settled > 0) parts.push(`${bets(found.settled)} settled.`);
+  if (called > 0) parts.push(`The market behind ${bets(called)} you sold back has settled, so ${called === 1 ? 'its call' : 'their calls'} can be revealed.`);
+  if (parts.length > 0) return parts.join(' ');
+  return found.stillOpen > 0 ? 'Nothing has closed yet. Markets settle a few seconds after they expire.' : 'Everything is up to date.';
+}
+
 /** What an open bet nets if it comes off, and the words for what it takes. */
 export function ifItComesOff(b: Pick<Bet, 'product' | 'direction' | 'target' | 'payoffs'>): { amount: number; condition: string } {
   const kind = kindOf(b);
   if (kind.product === 'range') return { amount: b.payoffs?.ifInRange ?? b.payoffs?.ifBothHit ?? 0, condition: 'if it finishes inside' };
+  if (kind.product === 'breakout') return { amount: b.payoffs?.ifOutside ?? b.payoffs?.ifBothHit ?? 0, condition: 'if it finishes outside' };
   return { amount: b.payoffs?.ifBothHit ?? 0, condition: kind.direction === 'down' ? `if it falls below ${money(b.target.strike)}` : `if it reaches ${money(b.target.strike)}` };
 }
 
@@ -146,21 +240,29 @@ export interface BasketSummary {
   settled: number;
   /** Net over the legs whose result is in; null until one is. */
   net: number | null;
+  /** True once every placed leg is finished, so the net is the basket's result and no longer a running figure. */
+  done: boolean;
 }
 
 export function basketSummary(entry: Extract<Entry, { type: 'basket' }>): BasketSummary {
   const placed = entry.legs.filter(isPlaced);
   const known = entry.legs.map(realised).filter((r): r is { payout: number; pnl: number } => r !== null);
   const placedAt = entry.legs.reduce((first, b) => (b.createdAt < first ? b.createdAt : first), entry.legs[0]?.createdAt ?? '');
+  const settled = entry.legs.filter(isSettled).length;
   return {
     legs: entry.legs.length,
     size: Math.max(entry.size, entry.legs.length),
     placedAt,
     stake: placed.reduce((n, b) => n + stakeOf(b), 0),
-    settled: entry.legs.filter(isSettled).length,
+    settled,
     net: known.length > 0 ? known.reduce((n, r) => n + r.pnl, 0) : null,
+    // A leg under review counts as settled before what it paid is known, so the net is final only once every leg has a figure.
+    done: placed.length > 0 && placed.every(isSettled) && known.length === placed.length,
   };
 }
+
+/** The name of a basket's net figure: a running one while legs are still open, the result once they are all in. */
+export const netLabel = (s: Pick<BasketSummary, 'done'>): string => (s.done ? 'Net result' : 'Net so far');
 
 export type Filter = 'all' | 'open' | 'settled';
 
@@ -193,7 +295,8 @@ export interface OrderLine {
 
 /**
  * Each order of a bet, described in its product's words. A parlay's first order is on its target and the second on its
- * condition; a range's are a YES on its lower strike and a NO on its higher one.
+ * condition; a range's are a YES on its lower strike and a NO on its higher one; a breakout's are a YES on its higher strike
+ * and a NO on its lower one.
  */
 export function orderLine(bet: Pick<Bet, 'product' | 'direction' | 'condition' | 'target'>, leg: Pick<LegRecord, 'role' | 'symbol' | 'outcome' | 'side'>): OrderLine {
   const w = receiptWords(bet);
@@ -205,3 +308,6 @@ export function orderLine(bet: Pick<Bet, 'product' | 'direction' | 'condition' |
   if (leg.role === 'cashout') return { label: 'Cashed out', bets: 'Sells this order back at the best price on offer', side, strike };
   return { label: 'Trigger', bets: leg.side === 'sell' ? 'Sold when a set price was reached' : 'Bought when a set price was reached', side, strike };
 }
+
+/** An order's id as it is shown: named, so an id as short as "1" (the local test exchange counts from one) is not left as a bare digit. */
+export const orderIdWords = (orderId: string | undefined): string => (orderId ? `Order id ${trunc(orderId, 6, 4)}` : 'No order id');

@@ -1,14 +1,19 @@
 import type { MarketEvent, Pair, Rung } from '../api/types';
 import type { Chance } from './distribution';
-import { rangeEstimate } from './pricing';
+import { breakoutEstimate, breakoutOutcomesFor, outcomesFor, rangeEstimate, rangeOutcomesFor } from './pricing';
 
 /**
- * From a person's view of where a price finishes to the bets on offer that pay best if they are right.
+ * From a person's view of where a price finishes to the bets on offer that the view makes worth more than they cost.
  *
  * Every bet the app sells on a ladder is listed with the price the exchange asks for it (spread and fees included, the same
  * number the builders show as "You pay per $1"), then valued under the person's own view. The difference is what their view
- * is worth on that bet, per $1 of payout. Nothing here is a forecast of ours: the only inputs are the exchange's prices and
- * the view the person entered, and the page says so.
+ * is worth on that bet, per $1 of payout, and the list is ordered by it. Nothing here is a forecast of ours: the only inputs
+ * are the exchange's prices and the view the person entered, and the page says so.
+ *
+ * It used to order by the average return on $100 and print that number. A long shot at 10 cents that the view thinks is
+ * worth 20 "returns 100%" on that measure, so a small nudge put bets that lose four times in five at the top, under a dollar
+ * figure that read as a promise. Now a bet has to win reasonably often under the person's own view to be listed ahead of
+ * one that does, and the only dollar figure shown is what a stake wins at the price, which is a fact and not an expectation.
  */
 
 interface Leg {
@@ -28,21 +33,29 @@ interface Terms {
   waived: boolean;
 }
 
-export type Idea = ({ product: 'parlay'; direction: 'up' | 'down'; condition: Leg; target: Leg } | { product: 'range'; low: Leg; high: Leg }) & Terms;
+export type Idea = ({ product: 'parlay'; direction: 'up' | 'down'; condition: Leg; target: Leg } | { product: 'range'; low: Leg; high: Leg } | { product: 'breakout'; low: Leg; high: Leg }) & Terms;
 
 export interface Scored {
   idea: Idea;
-  /** What $1 of this bet's payout is worth if the view is right: for a parlay, the chance of the target once the condition holds. */
+  /** What $1 of this bet's payout is worth if the view is right: for a parlay, the chance of the target once the first level holds. */
   worth: number;
   /** `worth` minus the price paid, per $1 of payout. Positive when the view makes the bet worth more than it costs. */
   edge: number;
+  /**
+   * The same three as whole cents, the way the page shows them. The difference is taken between the two rounded figures, so
+   * "36¢, 17¢" is never followed by "+18¢".
+   */
+  worthCents: number;
+  priceCents: number;
+  edgeCents: number;
   /** The view's chance of each result. They add up to 1. */
   win: number;
   back: number;
   lose: number;
-  /** The average result of putting $100 on it, if the view is right. */
-  expectedPer100: number;
 }
+
+/** A bet has to win at least this often under the person's own view to be listed ahead of a long shot. */
+export const MIN_WIN = 0.2;
 
 const leg = (l: { symbol: string; strike: number }): Leg => ({ symbol: l.symbol, strike: l.strike });
 
@@ -57,72 +70,102 @@ function parlayIdeas(pairs: Pair[] | undefined, direction: 'up' | 'down'): Idea[
   return out;
 }
 
-/** Ranges are not in the market list, so they are judged here by the page's port of the same rule, waiver included. */
-function rangeIdeas(rungs: Rung[], feeCoef: number, waiveMarkup: boolean): Idea[] {
+/**
+ * Ranges and breakouts are not in the market list, so they are judged here by the page's port of the same rule, waiver
+ * included: every pair of open two-sided rungs, as a bet that the price finishes between them and as a bet that it does not.
+ */
+function levelIdeas(rungs: Rung[], feeCoef: number, waiveMarkup: boolean): Idea[] {
   const usable = rungs.filter((r) => r.bid !== null && r.ask !== null && r.open).sort((a, b) => a.strike - b.strike);
   const out: Idea[] = [];
   for (let i = 0; i < usable.length - 1; i++) {
     for (let j = i + 1; j < usable.length; j++) {
       const lo = usable[i]!;
       const hi = usable[j]!;
-      const est = rangeEstimate({ bid: lo.bid, ask: lo.ask }, { bid: hi.bid, ask: hi.ask }, feeCoef);
-      if (!est) continue;
-      const waived = est.verdict === 'refuse' && waiveMarkup && est.code === 'markup_too_high';
-      if (est.verdict === 'refuse' && !waived) continue;
-      out.push({ product: 'range', low: leg(lo), high: leg(hi), pricePaid: est.pricePaid, fairPrice: est.fairPrice, warn: est.verdict === 'warn', waived });
+      const books = [{ bid: lo.bid, ask: lo.ask }, { bid: hi.bid, ask: hi.ask }] as const;
+      for (const product of ['range', 'breakout'] as const) {
+        const est = product === 'range' ? rangeEstimate(books[0], books[1], feeCoef) : breakoutEstimate(books[0], books[1], feeCoef);
+        if (!est) continue;
+        const waived = est.verdict === 'refuse' && waiveMarkup && est.code === 'markup_too_high';
+        if (est.verdict === 'refuse' && !waived) continue;
+        out.push({ product, low: leg(lo), high: leg(hi), pricePaid: est.pricePaid, fairPrice: est.fairPrice, warn: est.verdict === 'warn', waived });
+      }
     }
   }
   return out;
 }
 
-/** Every bet a ladder has on offer right now: the parlays the exchange's prices allow, both ways, and every range that passes the same rule. */
+/**
+ * Every bet a ladder has on offer right now: the parlays the exchange's prices allow, both ways, and every range and breakout
+ * that passes the same rule.
+ */
 export function ideasOn(ev: MarketEvent, feeCoef: number): Idea[] {
   // The market list does not say outright whether the venue waives the markup rule; a parlay it let through says so.
   const waiveMarkup = [...ev.pairs, ...(ev.down?.pairs ?? [])].some((p) => p.quote.overridden);
-  return [...parlayIdeas(ev.pairs, 'up'), ...parlayIdeas(ev.down?.pairs, 'down'), ...rangeIdeas(ev.rungs, feeCoef, waiveMarkup)];
+  return [...parlayIdeas(ev.pairs, 'up'), ...parlayIdeas(ev.down?.pairs, 'down'), ...levelIdeas(ev.rungs, feeCoef, waiveMarkup)];
 }
+
+const valued = (idea: Idea, worth: number, win: number, back: number): Scored => {
+  const worthCents = Math.round(worth * 100);
+  const priceCents = Math.round(idea.pricePaid * 100);
+  return { idea, worth, edge: worth - idea.pricePaid, worthCents, priceCents, edgeCents: worthCents - priceCents, win, back, lose: Math.max(0, 1 - win - back) };
+};
 
 /**
  * One bet valued under a view, given as the view's chance of finishing at or above any price. Null when the view gives the
- * bet's condition no chance at all, so there is nothing to value.
+ * bet's first level no chance of holding, so there is nothing to value.
  */
 export function score(idea: Idea, chance: Chance): Scored | null {
   if (idea.product === 'range') {
-    const win = Math.max(0, chance(idea.low.strike) - chance(idea.high.strike));
-    // Each pair of contracts costs $1 + price and returns $2 inside the range and $1 outside it.
-    const expectedPer100 = (100 * (win - idea.pricePaid)) / (1 + idea.pricePaid);
-    return { idea, worth: win, edge: win - idea.pricePaid, win, back: 0, lose: 1 - win, expectedPer100 };
+    const win = Math.min(1, Math.max(0, chance(idea.low.strike) - chance(idea.high.strike)));
+    return valued(idea, win, win, 0);
+  }
+  if (idea.product === 'breakout') {
+    const win = Math.min(1, Math.max(0, 1 - (chance(idea.low.strike) - chance(idea.high.strike))));
+    return valued(idea, win, win, 0);
   }
   const up = idea.direction === 'up';
   const holds = up ? chance(idea.condition.strike) : 1 - chance(idea.condition.strike);
   const hits = up ? chance(idea.target.strike) : 1 - chance(idea.target.strike);
   if (!(holds > 1e-6)) return null;
-  const worth = Math.min(1, hits / holds);
-  // $100 buys 100 / price contracts that pay $1 each if the target is reached; the stake comes back if the condition fails.
-  const expectedPer100 = 100 * (hits / idea.pricePaid - holds);
-  return { idea, worth, edge: worth - idea.pricePaid, win: hits, back: 1 - holds, lose: Math.max(0, holds - hits), expectedPer100 };
+  // $1 of payout is only in play once the first level holds, so it is worth the chance of the target given that.
+  return valued(idea, Math.min(1, hits / holds), Math.min(hits, holds), 1 - holds);
 }
 
-const kindOf = (i: Idea) => (i.product === 'range' ? 'range' : i.direction);
+/**
+ * What a stake on a bet nets if it wins, in dollars, from the price alone: the same sum the builder's estimate does. A fact
+ * about the price, not a forecast: it says nothing about how often the bet wins.
+ */
+export function winsOn(idea: Idea, stake: number): number {
+  // A range's pair of contracts costs $1 more than its price (the dollar one of them pays either way); a breakout's costs its price.
+  if (idea.product === 'range') return rangeOutcomesFor(stake, 1 + idea.pricePaid).ifInRange;
+  if (idea.product === 'breakout') return breakoutOutcomesFor(stake, idea.pricePaid).ifOutside;
+  return outcomesFor(stake, idea.pricePaid).ifBothHit;
+}
 
-/** Two bets a reader would call the same idea: parlays the same way to the same target, or ranges that share an edge. */
+const kindOf = (i: Idea) => (i.product === 'parlay' ? i.direction : i.product);
+
+/** Two bets a reader would call the same idea: parlays the same way to the same target, or two ranges, or two breakouts, that share a level. */
 function alike(a: Idea, b: Idea): boolean {
-  if (a.product === 'range' && b.product === 'range') return a.low.strike === b.low.strike || a.high.strike === b.high.strike;
+  if (a.product !== 'parlay' && a.product === b.product) return a.low.strike === b.low.strike || a.high.strike === b.high.strike;
   if (a.product === 'parlay' && b.product === 'parlay') return a.direction === b.direction && a.target.strike === b.target.strike;
   return false;
 }
 
 /**
- * The bets a view favours, best first by what $100 is expected to return if the view is right. Only bets the view makes worth
- * more than they cost are listed, at most `perKind` of each kind (rising, falling, range), and never two that differ only in
- * where the condition sits, so the list is not five near-copies of one bet.
+ * The bets a view favours, biggest difference first: what $1 of the bet is worth to the view, less what it costs. Only bets
+ * whose difference is real and shows as at least a cent are listed, at most `perKind` of each kind (rising, falling, range, breakout),
+ * and never two that differ only in where the first level sits, so the list is not five near-copies of one bet.
+ *
+ * A bet must also win at least `MIN_WIN` of the time under the view itself. If none does, the best of the long shots are
+ * listed all the same (the page says that is what they are) rather than an empty list under a view that plainly differs.
  */
 export function rank(ideas: Idea[], chance: Chance, opts: { limit?: number; perKind?: number } = {}): Scored[] {
   const { limit = 5, perKind = 2 } = opts;
-  const scored = ideas
-    .map((i) => score(i, chance))
-    .filter((s): s is Scored => s !== null && s.edge > 0.005 && s.expectedPer100 > 0)
-    .sort((a, b) => b.expectedPer100 - a.expectedPer100 || b.edge - a.edge);
+  // More than half a cent of real difference, and a cent of it on screen: neither "69¢ against 68¢" for a fifth of a cent,
+  // nor "+0¢".
+  const worthIt = ideas.map((i) => score(i, chance)).filter((s): s is Scored => s !== null && s.edge > 0.005 && s.edgeCents >= 1);
+  const likely = worthIt.filter((s) => s.win >= MIN_WIN);
+  const scored = (likely.length > 0 ? likely : worthIt).sort((a, b) => b.edge - a.edge || b.win - a.win);
   const taken: Record<string, number> = {};
   const out: Scored[] = [];
   for (const s of scored) {
@@ -138,9 +181,11 @@ export function rank(ideas: Idea[], chance: Chance, opts: { limit?: number; perK
 /** Where a bet's builder opens with this bet already chosen. */
 export function builderLink(ticker: string, idea: Idea): string {
   const q = new URLSearchParams({ market: ticker });
-  if (idea.product === 'range') {
+  if (idea.product !== 'parlay') {
     q.set('low', idea.low.symbol);
     q.set('high', idea.high.symbol);
+    // A breakout is built on the Range page, on its other side.
+    if (idea.product === 'breakout') q.set('side', 'out');
     return `/range?${q}`;
   }
   q.set('condition', idea.condition.symbol);

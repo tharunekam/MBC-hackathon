@@ -105,7 +105,14 @@ async function start(mode) {
       name: 'exec ',
       cwd: 'executor',
       cmd: ['node', mode === 'fake' ? 'test/serve-fake.ts' : 'src/server.ts'],
-      env: { GIVEN_PORT: String(PORTS.executor), ...(mode === 'live' ? { GIVEN_SANDBOX_WAIVE_MARKUP: '1' } : {}), ...(mode === 'quotes' ? { GIVEN_READONLY: '1', GIVEN_SANDBOX_WAIVE_MARKUP: '1' } : {}) },
+      // On the local test exchange the ladder runs in rounds: it closes, settles its bets and opens again by itself, so a
+      // bet placed with no keys reaches a result, a reveal and the leaderboard without anyone calling /dev/resolve.
+      env: {
+        GIVEN_PORT: String(PORTS.executor),
+        ...(mode === 'fake' ? { FAKE_ROUND_MINUTES: process.env.FAKE_ROUND_MINUTES ?? '5' } : {}),
+        ...(mode === 'live' ? { GIVEN_SANDBOX_WAIVE_MARKUP: '1' } : {}),
+        ...(mode === 'quotes' ? { GIVEN_READONLY: '1', GIVEN_SANDBOX_WAIVE_MARKUP: '1' } : {}),
+      },
     },
     {
       name: 'chain',

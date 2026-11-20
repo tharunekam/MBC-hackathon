@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import type { MarketEvent } from '../api/types';
+import { distributionOf, evenBand, moveText } from '../lib/distribution';
 import { money } from '../lib/format';
 import { useNow, useResource } from '../lib/hooks';
 import { hasPrices } from '../lib/ladders';
@@ -15,6 +16,15 @@ type LadderState = 'priced' | 'none' | 'order';
 
 const stateOf = (e: MarketEvent): LadderState => (e.ladderOutOfOrder ? 'order' : hasPrices(e) ? 'priced' : 'none');
 const STATE_TEXT: Record<LadderState, string> = { priced: 'Priced', none: 'No prices', order: 'Out of order' };
+
+/**
+ * How far the market expects this ladder's price to travel: half the width of the band it gives an even chance of holding,
+ * as a percent of the band's middle. A dash when the ladder's prices do not reach far enough either side to say.
+ */
+function expectedMove(e: MarketEvent): string {
+  const levels = distributionOf(e.rungs)?.levels;
+  return moveText(levels ? evenBand(levels) : null);
+}
 
 export default function Markets() {
   const [params, setParams] = useSearchParams();
@@ -177,7 +187,8 @@ export default function Markets() {
                           <th role="columnheader" scope="col" className="mk-c-closes">Closes</th>
                           <th role="columnheader" scope="col" className="mk-c-num">Strikes</th>
                           <th role="columnheader" scope="col" className="mk-c-num mk-c-rungs">Rungs</th>
-                          <th role="columnheader" scope="col" className="mk-c-num">Parlays on offer</th>
+                          <th role="columnheader" scope="col" className="mk-c-num mk-c-move">Expected move</th>
+                          <th role="columnheader" scope="col" className="mk-c-num mk-c-offers">Parlays on offer</th>
                           <th role="columnheader" scope="col" className="mk-c-state">State</th>
                           <th role="columnheader" scope="col" className="mk-c-act">
                             <span className="sr-only">Action</span>
@@ -200,6 +211,9 @@ export default function Markets() {
                               </td>
                               <td role="cell" className="mk-num mk-rungs" data-label="Rungs">
                                 {e.rungs.length}
+                              </td>
+                              <td role="cell" className="mk-num" data-label="Expected move">
+                                {expectedMove(e)}
                               </td>
                               <td role="cell" className="mk-num" data-label="Parlays on offer">
                                 {parlaysOnOffer(e) > 0 ? parlaysOnOffer(e) : <span className="mk-none">None</span>}
@@ -243,7 +257,10 @@ export default function Markets() {
             </div>
           )}
 
-          <p className="fine mk-foot">Prices come from the exchange and refresh on their own. A ladder with no prices cannot be bet on.</p>
+          <p className="fine mk-foot">
+            Prices come from the exchange and refresh on their own. A ladder with no prices cannot be bet on. Expected move is read from a ladder’s own prices: the market gives an even chance of
+            finishing within that much of the middle of its view, either side.
+          </p>
         </>
       )}
     </div>

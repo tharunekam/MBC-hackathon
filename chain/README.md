@@ -166,3 +166,13 @@ unknown at commit time and no hash can cover it; the Gemini order IDs on the own
 
 With the program, the second rule is enforced by Solana instead of by whoever reads the records: a reveal that does
 not reproduce its commit, or repeats one, never lands. The outcome is still attested by our authority.
+
+**A record cannot be built by leaving calls out.** Revealing is the player's choice, but a commit carries the handle, so
+how many calls a handle has sealed is public. Each leaderboard row carries `sealed` (every commit under that handle,
+revealed or not, counted from the chain) and `refunded` (commits this service knows were void, which can never be
+revealed) beside `calls` (revealed and scored). A verifier rebuilding the board from the chain alone gets the same
+`sealed`; it cannot tell a refunded call from one kept back, so its `refunded` is 0.
+
+**A bet that was sold back keeps its call.** Such a bet never settles, but once its market has a clean result the
+executor records how the call turned out (`called`) and `POST /calls/:id/reveal` then reveals and scores it like any
+other, against the fair price it was made at. Before that the reveal answers `409 cashed_out` and nothing is written.

@@ -2,12 +2,13 @@
  * A basket's legs as pure data: what each leg starts on, which levels it may take, what it can win and lose, whether it is
  * ready to place, and the request that places them. Kept apart from the page so every rule is tested on its own.
  *
- * A basket is several ordinary bets placed in one step. Each leg is a Return Parlay (rising or falling) or a Range on its own
- * ladder, with its own two orders and its own result. Nothing links the legs on the exchange.
+ * A basket is several ordinary bets placed in one step. Each leg is a Return Parlay (rising or falling), a Range or a Breakout
+ * on its own ladder, with its own two orders and its own result. Nothing links the legs on the exchange.
  */
 import { ApiError } from '../api/client';
 import type {
   BasketLegRequest,
+  BreakoutQuoteResponse,
   Direction,
   MarketEvent,
   PlaceBasketRequest,
@@ -18,15 +19,19 @@ import type {
 } from '../api/types';
 import {
   MIN_BET,
+  breakoutButtonState,
   buttonState,
   rangeButtonState,
   type ButtonState,
   type Phase,
 } from './betState';
 import { defaultPair } from './defaultPair';
+import { startingLevels } from './defaultRange';
 import { usd } from './format';
 import { assetKey } from './markets';
 import {
+  breakoutEstimate,
+  breakoutOutcomesFor,
   estimate,
   mirrorBook,
   outcomesFor,
@@ -40,24 +45,24 @@ export const MAX_LEGS = 6;
 export const LEG_MAX_STAKE = 100;
 export const NAME_MAX = 40;
 
-/** The three kinds of leg: a Return Parlay going up, one going down, and a Range. */
-export type LegKind = 'up' | 'down' | 'range';
+/** The four kinds of leg: a Return Parlay going up, one going down, a Range, and a Breakout (the range's other side). */
+export type LegKind = 'up' | 'down' | 'range' | 'breakout';
 
 export interface LegDraft {
   /** Stable for the life of the leg, so React keys and quote keys do not move when other legs change. */
   key: string;
   kind: LegKind;
   event: string | null;
-  /** A parlay's condition, or a range's floor. */
+  /** A parlay's condition, or the lower of a range's or a breakout's two levels. */
   a: string | null;
-  /** A parlay's target, or a range's ceiling. */
+  /** A parlay's target, or the higher of a range's or a breakout's two levels. */
   b: string | null;
   stakeText: string;
   stake: number;
 }
 
 export const productOf = (kind: LegKind): Product =>
-  kind === 'range' ? 'range' : 'parlay';
+  kind === 'range' || kind === 'breakout' ? kind : 'parlay';
 export const directionOf = (kind: LegKind): Direction =>
   kind === 'down' ? 'down' : 'up';
 export const kindOfLeg = (kind: LegKind) => ({
@@ -70,7 +75,7 @@ const mid = (r: Rung) => ((r.bid ?? 0) + (r.ask ?? 0)) / 2;
 const byStrike = (rungs: Rung[]) =>
   [...rungs].sort((x, y) => x.strike - y.strike);
 
-/** Whether two levels are in the order the leg needs: the condition below the target going up, above it going down, the floor below the ceiling. */
+/** Whether two levels are in the order the leg needs: the condition below the target going up, above it going down, and for a range or a breakout the lower level first. */
 export function inOrder(kind: LegKind, a: Rung, b: Rung): boolean {
   return kind === 'down' ? a.strike > b.strike : a.strike < b.strike;
 }
@@ -134,6 +139,11 @@ export function defaultLevels(
   feeCoef = 0,
 ): { a: string; b: string } | null {
   if (kind === 'range') return defaultRange(ev, feeCoef);
+  if (kind === 'breakout') {
+    // The same start as the Range page gives a breakout: about an even chance of finishing outside.
+    const lv = startingLevels(ev, feeCoef, 'out');
+    return lv ? { a: lv.low, b: lv.high } : null;
+  }
   const p = defaultPair(ev, kind);
   return p ? { a: p.c, b: p.t } : null;
 }
@@ -184,7 +194,10 @@ export function pickMarket(
 export const stakeText = (n: number): string =>
   Number.isInteger(n) ? String(n) : n.toFixed(2);
 
-/** Splits an amount across legs to the cent; the cents left over go to the first legs, so the parts add up to the amount. */
+/**
+ * Splits an amount across legs to the cent. Every leg gets the same whole number of cents and the last leg takes whatever is
+ * left over, so the parts always add up to exactly what was typed.
+ */
 export function splitEvenly(total: number, n: number): number[] {
   if (!(n > 0) || !(total > 0))
     return Array.from({ length: Math.max(0, n) }, () => 0);
@@ -193,8 +206,22 @@ export function splitEvenly(total: number, n: number): number[] {
   const extra = cents - each * n;
   return Array.from(
     { length: n },
-    (_, i) => (each + (i < extra ? 1 : 0)) / 100,
+    (_, i) => (each + (i === n - 1 ? extra : 0)) / 100,
   );
+}
+
+/**
+ * The line under the amount while it is shared evenly: what each leg gets, and what the last one gets when the amount does
+ * not divide to the cent. Empty when there is nothing to share.
+ */
+export function splitWords(total: number, n: number): string {
+  const parts = splitEvenly(total, n);
+  const first = parts[0];
+  const last = parts[parts.length - 1];
+  if (first === undefined || last === undefined || !(total > 0)) return '';
+  if (parts.length === 1) return `One leg takes all ${usd(first)}.`;
+  if (first === last) return `Shared evenly: ${usd(first)} a leg.`;
+  return `Shared evenly: ${usd(first)} a leg and ${usd(last)} on the last, so they add up to ${usd(total)}.`;
 }
 
 let seq = 0;
@@ -258,9 +285,9 @@ export function buildRequest(
     legs: legs.map((l): BasketLegRequest => {
       if (!l.event || !l.a || !l.b)
         throw new Error('Every leg needs a market and two levels.');
-      if (l.kind === 'range')
+      if (l.kind === 'range' || l.kind === 'breakout')
         return {
-          product: 'range',
+          product: l.kind,
           event: l.event,
           low: l.a,
           high: l.b,
@@ -280,9 +307,18 @@ export function buildRequest(
 
 // ------------------------------------------------------------------ one leg's quote, in figures
 
-export type LegAnswer = QuoteResponse | RangeQuoteResponse;
+export type LegAnswer =
+  | QuoteResponse
+  | RangeQuoteResponse
+  | BreakoutQuoteResponse;
 
-/** Whether an executor answer is for these levels: a parlay's condition and target, a range's floor and ceiling. */
+/** A range's answer, which a breakout's is told apart from by its product: both carry a `low` and a `high`. */
+const rangeAnswer = (x: LegAnswer | null): RangeQuoteResponse | null =>
+  x && 'low' in x && x.product !== 'breakout' ? x : null;
+const breakoutAnswer = (x: LegAnswer | null): BreakoutQuoteResponse | null =>
+  x && 'low' in x && x.product === 'breakout' ? x : null;
+
+/** Whether an executor answer is for these levels and this kind of leg: a parlay's condition and target, or the two levels of a range or a breakout. */
 export function answerMatches(
   kind: LegKind,
   answer: LegAnswer | null | undefined,
@@ -290,10 +326,11 @@ export function answerMatches(
   b: string | null,
 ): boolean {
   if (!answer) return false;
-  if (kind === 'range')
-    return (
-      'low' in answer && answer.low.symbol === a && answer.high.symbol === b
-    );
+  if (kind === 'range' || kind === 'breakout') {
+    const mine =
+      kind === 'range' ? rangeAnswer(answer) : breakoutAnswer(answer);
+    return !!mine && mine.low.symbol === a && mine.high.symbol === b;
+  }
   return (
     'condition' in answer &&
     answer.condition.symbol === a &&
@@ -308,6 +345,11 @@ export interface LegStatus {
   cost: number | null;
   win: number | null;
   lose: number | null;
+  /**
+   * What a parlay nets when its first level fails and the stake comes back: nothing, or the few cents the executor's answer
+   * says the refund order returns over the cost. Null for a range or a breakout, which have no such result.
+   */
+  back: number | null;
   /** The chance it wins; for a parlay also the chance the stake comes back. */
   chanceWin: number | null;
   chanceBack: number | null;
@@ -331,14 +373,16 @@ export interface LegInputs {
   shown: LegAnswer | null;
   answerError: boolean;
   feeCoef: number;
+  /** The most one bet may stake on this venue, when it is known (the hosted demo sets it lower than the default here). */
+  maxStake?: number | null;
 }
 
 const asSeen = (r: Rung, kind: LegKind) =>
   kind === 'down' ? { ...r, ...mirrorBook(r) } : r;
 
 /** A leg above the cap is refused by the executor, so the button says so before it is asked. */
-function capped(state: ButtonState, stake: number): ButtonState {
-  if (!(stake > LEG_MAX_STAKE)) return state;
+function capped(state: ButtonState, stake: number, cap = LEG_MAX_STAKE): ButtonState {
+  if (!(stake > cap)) return state;
   if (
     !state.canPlace &&
     state.blockedBy !== 'checking' &&
@@ -347,10 +391,10 @@ function capped(state: ButtonState, stake: number): ButtonState {
     return state;
   return {
     canPlace: false,
-    label: `Stake ${usd(LEG_MAX_STAKE, 0)} at most`,
+    label: `Stake ${usd(cap, 0)} at most`,
     notice: {
       tone: 'info',
-      text: `Each bet is capped at ${usd(LEG_MAX_STAKE, 0)} here.`,
+      text: `Each bet is capped at ${usd(cap, 0)} here.`,
     },
     blockedBy: 'stake',
   };
@@ -368,8 +412,8 @@ export function legStatus(i: LegInputs): LegStatus {
             i.feeCoef,
           )
         : null;
-    const answer = i.answer && 'low' in i.answer ? i.answer : null;
-    const shown = i.shown && 'low' in i.shown ? i.shown : null;
+    const answer = rangeAnswer(i.answer);
+    const shown = rangeAnswer(i.shown);
     const state = capped(
       rangeButtonState({
         phase: i.phase,
@@ -382,6 +426,7 @@ export function legStatus(i: LegInputs): LegStatus {
         est,
       }),
       stake,
+      i.maxStake ?? undefined,
     );
     const plan = shown?.stake ?? null;
     const q = shown?.quote;
@@ -403,7 +448,62 @@ export function legStatus(i: LegInputs): LegStatus {
       cost,
       win,
       lose,
+      back: null,
       chanceWin: q?.chanceInRange ?? est?.chanceInRange ?? null,
+      chanceBack: null,
+      pricePaid: q?.pricePaid ?? est?.pricePaid ?? null,
+      estimated: !answer,
+      reducedTo: answer?.stake?.reduced ? answer.stake.cost : null,
+    };
+  }
+
+  if (kind === 'breakout') {
+    const est =
+      a && b
+        ? breakoutEstimate(
+            { bid: a.bid, ask: a.ask },
+            { bid: b.bid, ask: b.ask },
+            i.feeCoef,
+          )
+        : null;
+    const answer = breakoutAnswer(i.answer);
+    const shown = breakoutAnswer(i.shown);
+    const state = capped(
+      breakoutButtonState({
+        phase: i.phase,
+        readOnly: i.readOnly,
+        stake,
+        low: a,
+        high: b,
+        answer,
+        answerError: i.answerError,
+        est,
+      }),
+      stake,
+      i.maxStake ?? undefined,
+    );
+    const plan = shown?.stake ?? null;
+    const q = shown?.quote;
+    let cost: number | null = null;
+    let win: number | null = null;
+    let lose: number | null = null;
+    if (plan && plan.cost >= MIN_BET && answer) {
+      cost = plan.cost;
+      win = plan.ifOutside;
+      lose = plan.ifInRange;
+    } else if (est && stake >= MIN_BET) {
+      const o = breakoutOutcomesFor(stake, est.unitCost);
+      cost = o.cost;
+      win = o.ifOutside;
+      lose = o.ifInRange;
+    }
+    return {
+      state,
+      cost,
+      win,
+      lose,
+      back: null,
+      chanceWin: q?.chanceOutside ?? est?.chanceOutside ?? null,
       chanceBack: null,
       pricePaid: q?.pricePaid ?? est?.pricePaid ?? null,
       estimated: !answer,
@@ -428,6 +528,7 @@ export function legStatus(i: LegInputs): LegStatus {
       est,
     }),
     stake,
+    i.maxStake ?? undefined,
   );
   const plan = shown?.stake ?? null;
   const q = shown?.quote;
@@ -435,15 +536,18 @@ export function legStatus(i: LegInputs): LegStatus {
   let cost: number | null = null;
   let win: number | null = null;
   let lose: number | null = null;
+  let back: number | null = null;
   if (plan && plan.cost >= MIN_BET && answer) {
     cost = plan.cost;
     win = plan.ifBothHit;
     lose = plan.ifConditionOnly;
+    back = plan.ifConditionFails;
   } else if (pricePaid && stake >= MIN_BET) {
     const o = outcomesFor(stake, pricePaid);
     cost = o.cost;
     win = o.ifBothHit;
     lose = o.ifConditionOnly;
+    back = o.ifConditionFails;
   }
   const chanceCondition = q?.chanceCondition ?? est?.chanceCondition ?? null;
   return {
@@ -451,6 +555,7 @@ export function legStatus(i: LegInputs): LegStatus {
     cost,
     win,
     lose,
+    back,
     chanceWin: q?.chanceBothHappen ?? est?.chanceBothHappen ?? null,
     chanceBack: chanceCondition !== null ? 1 - chanceCondition : null,
     pricePaid,
@@ -462,7 +567,13 @@ export function legStatus(i: LegInputs): LegStatus {
 // ------------------------------------------------------------------ the whole basket
 
 export interface Totals {
+  /** What the legs' stakes add up to, as they were set. */
   stake: number;
+  /**
+   * What the orders come to. A bet is sized to cost no more than its stake, and contracts come in hundredths, so this can be
+   * a cent or two under the stakes; it is well under when the market can only fill part of a leg.
+   */
+  cost: number;
   /** Every leg wins: the sum of the wins. Null until every leg has a figure. */
   best: number | null;
   /** Every leg loses: the sum of the losses. */
@@ -475,19 +586,60 @@ export function totals(
   legs: { stake: number; status?: Pick<LegStatus, 'cost' | 'win' | 'lose'> }[],
 ): Totals {
   let stake = 0;
+  let cost = 0;
   let best: number | null = 0;
   let worst: number | null = 0;
   for (const l of legs) {
-    stake += l.status?.cost ?? l.stake;
+    stake += l.stake;
+    cost += l.status?.cost ?? l.stake;
     best = best !== null && l.status?.win != null ? best + l.status.win : null;
     worst =
       worst !== null && l.status?.lose != null ? worst + l.status.lose : null;
   }
   return {
     stake: round(stake),
+    cost: round(cost),
     best: best === null ? null : round(best),
     worst: worst === null ? null : round(worst),
   };
+}
+
+/** "2", "2 and 3", "1, 2 and 4". */
+export const listed = (ns: number[]): string =>
+  ns.length < 2
+    ? ns.join('')
+    : `${ns.slice(0, -1).join(', ')} and ${ns[ns.length - 1]}`;
+
+/**
+ * The line under what the orders cost, saying why that figure can sit below the stakes. It is always there, so the ticket
+ * does not jump each time a moving price takes a cent off: the executor sizes every bet to cost no more than its stake, and
+ * contracts come in hundredths, so a leg often comes in a cent or two under. `reduced` are the legs, from 0, that the market
+ * can only fill part of, which is the one case where the gap is more than cents. Null if the orders ever came to more than
+ * the stakes: that should not happen, and the figure is then shown without a sentence that would be untrue.
+ */
+export function costNote(
+  t: Pick<Totals, 'stake' | 'cost'>,
+  reduced: number[] = [],
+): string | null {
+  if (t.cost > t.stake + 0.005) return null;
+  if (reduced.length > 0 && t.stake - t.cost >= 0.005)
+    return `The market can only fill part of ${reduced.length === 1 ? 'leg' : 'legs'} ${listed(reduced.map((i) => i + 1))} right now.`;
+  return 'Each bet is sized to cost no more than its stake.';
+}
+
+/**
+ * Where the ticket sticks while the legs scroll beside it, in pixels from the top of the window. A ticket that fits sits
+ * under the header. One taller than the window is given a place above the top instead, so it scrolls with the page until
+ * its last line (the Place basket button) reaches the bottom of the window and stays in view from there; stuck under the
+ * header, its button would be out of reach until the legs had been scrolled past.
+ */
+export function ticketTop(
+  height: number,
+  viewport: number,
+  header = 84,
+  gap = 16,
+): number {
+  return Math.min(header, Math.round(viewport - height - gap));
 }
 
 const lowerFirst = (s: string) => (s ? s[0]!.toLowerCase() + s.slice(1) : s);

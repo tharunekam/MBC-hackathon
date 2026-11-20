@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Rung } from '../api/types';
 import { distributionOf, zoneChances, type Shape } from './distribution';
-import { canBothWin, chanceWords, shapeOf, spanWords, together, winsAt, type JointLeg, type Span } from './together';
+import { canAllWin, canBothWin, chanceWords, neverAllWin, shapeOf, spanWords, together, winsAt, type JointLeg, type Span } from './together';
 
 const rung = (strike: number, chance: number | null, spread = 0.02): Rung => ({
   symbol: `S${strike}`,
@@ -23,6 +23,7 @@ const ladders = { BTC: btc, ETH: eth, SOL: sol };
 const up = (ticker: string, condition: number, target: number): JointLeg => ({ ticker, shape: { kind: 'up', condition, target } });
 const down = (ticker: string, condition: number, target: number): JointLeg => ({ ticker, shape: { kind: 'down', condition, target } });
 const range = (ticker: string, low: number, high: number): JointLeg => ({ ticker, shape: { kind: 'range', low, high } });
+const breakout = (ticker: string, low: number, high: number): JointLeg => ({ ticker, shape: { kind: 'breakout', low, high } });
 
 /** Every number anywhere in a result, to check that none of them is NaN. */
 const numbers = (x: unknown): number[] => (typeof x === 'number' ? [x] : x && typeof x === 'object' ? Object.values(x).flatMap(numbers) : []);
@@ -126,6 +127,117 @@ describe('legs on one ladder are decided by one price, so the answer is exact', 
     expect(b.allWin).toEqual(a.allWin);
     expect(b.anyWin).toEqual(a.anyWin);
     expect(b.noneLose).toEqual(a.noneLose);
+  });
+});
+
+describe('a breakout wins on two stretches of the price line: below its lower level, and at or above its higher one', () => {
+  it('a breakout and a range on the same two levels can never both win, and exactly one always does', () => {
+    const t = together([breakout('BTC', 62500, 63500), range('BTC', 62500, 63500)], ladders);
+    expect(canBothWin({ kind: 'breakout', low: 62500, high: 63500 }, { kind: 'range', low: 62500, high: 63500 })).toBe(false);
+    expect(t.impossible).toEqual([{ legs: [0, 1], ticker: 'BTC' }]);
+    expect(t.groups[0]!.allWin).toBe(0);
+    expect(t.groups[0]!.anyWin).toBe(1);
+    // Wherever the price finishes, one of the two has lost: neither has a stake that comes back.
+    expect(t.groups[0]!.noneLose).toBe(0);
+    expectSpan(t.allWin, { low: 0, high: 0, ifUnrelated: 0, exact: true });
+    expectSpan(t.anyWin, { low: 1, high: 1, ifUnrelated: 1, exact: true });
+  });
+
+  it('with a rising parlay whose target is at or above its higher level: both win exactly when the parlay does', () => {
+    // The parlay's target is the breakout's own higher level, then one above it.
+    for (const [target, both] of [
+      [63500, 0.41],
+      [64000, 0.2],
+    ] as const) {
+      const t = together([breakout('BTC', 62500, 63500), up('BTC', 62000, target)], ladders);
+      expect(t.impossible).toEqual([]);
+      expect(t.groups[0]!.allWin).toBeCloseTo(both, 8);
+      // The parlay wins only where the breakout already does, so at least one winning is the breakout winning.
+      expect(t.groups[0]!.anyWin).toBeCloseTo(0.18 + 0.41, 8);
+      expect(t.allWin!.exact).toBe(true);
+    }
+    // Neither loses below 62,000 (the breakout wins, the parlay's stake comes back) or where both win.
+    const t = together([breakout('BTC', 62500, 63500), up('BTC', 62000, 64000)], ladders);
+    expect(t.groups[0]!.noneLose).toBeCloseTo(0.08 + 0.2, 8);
+  });
+
+  it('with a rising parlay whose target is inside its band: both win only at or above the higher level', () => {
+    const t = together([breakout('BTC', 62500, 64000), up('BTC', 62000, 63000)], ladders);
+    expect(t.impossible).toEqual([]);
+    expect(t.groups[0]!.allWin).toBeCloseTo(0.2, 8);
+    expect(t.groups[0]!.anyWin).toBeCloseTo(0.18 + 0.62, 8);
+  });
+
+  it('with a falling parlay: both win below whichever of the two levels is lower', () => {
+    expect(together([breakout('BTC', 62500, 63500), down('BTC', 63500, 63000)], ladders).groups[0]!.allWin).toBeCloseTo(0.18, 8);
+    expect(together([breakout('BTC', 62500, 63500), down('BTC', 63000, 62000)], ladders).groups[0]!.allWin).toBeCloseTo(0.08, 8);
+  });
+
+  it('with a range that lies wholly inside its band, the two cannot both win; one that reaches past an edge can', () => {
+    expect(together([breakout('BTC', 62000, 64000), range('BTC', 62500, 63500)], ladders).impossible).toEqual([{ legs: [0, 1], ticker: 'BTC' }]);
+    const t = together([breakout('BTC', 62500, 63500), range('BTC', 62000, 63000)], ladders);
+    expect(t.impossible).toEqual([]);
+    expect(t.groups[0]!.allWin).toBeCloseTo(0.92 - 0.82, 8);
+  });
+
+  it('two breakouts both win outside the wider of the two bands', () => {
+    const t = together([breakout('BTC', 62500, 63500), breakout('BTC', 62000, 64000)], ladders);
+    expect(t.impossible).toEqual([]);
+    expect(t.groups[0]!.allWin).toBeCloseTo(0.08 + 0.2, 8);
+    expect(t.groups[0]!.anyWin).toBeCloseTo(0.18 + 0.41, 8);
+  });
+
+  it('agrees with adding up the bars directly, for every breakout the ladder can hold', () => {
+    const { buckets, levels } = distributionOf(btc)!;
+    const strikes = levels.map((l) => l.strike);
+    let seen = 0;
+    for (let i = 0; i < strikes.length; i++) {
+      for (let j = i + 1; j < strikes.length; j++) {
+        const shape: Shape = { kind: 'breakout', low: strikes[i]!, high: strikes[j]! };
+        const z = zoneChances(shape, buckets);
+        const t = together([{ ticker: 'BTC', shape }], ladders);
+        expect(t.groups[0]!.allWin).toBeCloseTo(z.win, 8);
+        expect(t.groups[0]!.noneLose).toBeCloseTo(z.win, 8);
+        expect(z.win).toBeCloseTo(1 - (levels[i]!.chance - levels[j]!.chance), 8);
+        seen++;
+      }
+    }
+    expect(seen).toBe(21);
+  });
+
+  it('says from the strikes alone whether two legs can both win, the same as the bars do', () => {
+    const { levels } = distributionOf(btc)!;
+    const strikes = levels.map((l) => l.strike);
+    const b: JointLeg = breakout('BTC', 62500, 63500);
+    for (let i = 0; i < strikes.length; i++) {
+      for (let j = i + 1; j < strikes.length; j++) {
+        for (const other of [up('BTC', strikes[i]!, strikes[j]!), down('BTC', strikes[j]!, strikes[i]!), range('BTC', strikes[i]!, strikes[j]!), breakout('BTC', strikes[i]!, strikes[j]!)]) {
+          // Every bar of this ladder has some chance, so the two can both win exactly when some bar wins both.
+          expect(canBothWin(b.shape, other.shape)).toBe(together([b, other], ladders).groups[0]!.allWin > 0);
+        }
+      }
+    }
+  });
+
+  it('three legs can win two by two and still never all win, and that is named', () => {
+    // The breakout wins with the first range only below 62,500 and with the second only at 63,500 or above; the two ranges
+    // win together only between 62,500 and 63,000, where the breakout loses.
+    const legs = [breakout('BTC', 62500, 63500), range('BTC', 62000, 63000), range('BTC', 62500, 64000)];
+    const t = together(legs, ladders);
+    expect(t.impossible).toEqual([]);
+    expect(canAllWin(legs.map((l) => l.shape))).toBe(false);
+    expect(t.groups[0]!.allWin).toBe(0);
+    expectSpan(t.allWin, { low: 0, high: 0, ifUnrelated: 0, exact: true });
+    expect(neverAllWin(legs)).toEqual([{ legs: [0, 1, 2], ticker: 'BTC' }]);
+  });
+
+  it('names nothing when the legs do share a winning price, when a pair already cannot, or when they are on other ladders', () => {
+    expect(neverAllWin([breakout('BTC', 62500, 63500), up('BTC', 62000, 64000), range('BTC', 63500, 64500)])).toEqual([]);
+    // The pair that cannot both win is reported as a pair, not twice.
+    const clash = [breakout('BTC', 62500, 63500), range('BTC', 62500, 63500), up('BTC', 61500, 62000)];
+    expect(together(clash, ladders).impossible).toHaveLength(1);
+    expect(neverAllWin(clash)).toEqual([]);
+    expect(neverAllWin([breakout('BTC', 62500, 63500), range('ETH', 3000, 3100), range('SOL', 140, 150), null])).toEqual([]);
   });
 });
 
@@ -249,12 +361,14 @@ describe('in words', () => {
     expect(shapeOf('up', 62500, 63500)).toEqual({ kind: 'up', condition: 62500, target: 63500 });
     expect(shapeOf('down', 63500, 62500)).toEqual({ kind: 'down', condition: 63500, target: 62500 });
     expect(shapeOf('range', 62500, 63500)).toEqual({ kind: 'range', low: 62500, high: 63500 });
+    expect(shapeOf('breakout', 62500, 63500)).toEqual({ kind: 'breakout', low: 62500, high: 63500 });
   });
 
   it('says where each kind of leg wins', () => {
     expect(winsAt({ kind: 'up', condition: 62500, target: 63500 })).toBe('at $63,500 or above');
     expect(winsAt({ kind: 'down', condition: 63500, target: 62500 })).toBe('below $62,500');
     expect(winsAt({ kind: 'range', low: 62500, high: 63500 })).toBe('between $62,500 and $63,500');
+    expect(winsAt({ kind: 'breakout', low: 62500, high: 63500 })).toBe('outside $62,500 to $63,500');
   });
 
   it('never rounds a real chance to 0% or a real doubt to 100%', () => {

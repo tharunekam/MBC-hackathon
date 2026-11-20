@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../api/client';
 import type {
+  BreakoutQuoteResponse,
   MarketEvent,
   QuoteResponse,
   RangeQuoteResponse,
@@ -11,18 +12,22 @@ import {
   answerMatches,
   basketButton,
   buildRequest,
+  costNote,
   cryptoLegs,
   defaultLevels,
   defaultRange,
   firstOptions,
   legStatus,
   levelsValid,
+  listed,
   pickMarket,
   refusedLeg,
   secondOptions,
   seedLegs,
   splitEvenly,
+  splitWords,
   stripLegPrefix,
+  ticketTop,
   totals,
   withFirst,
   type LegStatus,
@@ -121,6 +126,21 @@ describe('levels', () => {
     }
   });
 
+  it('starts a breakout on two levels in order, with about an even chance of finishing outside them', () => {
+    const lv = defaultLevels(BTC, 'breakout')!;
+    expect(levelsValid(BTC, 'breakout', lv.a, lv.b)).toBe(true);
+    const lo = BTC.rungs.find((x) => x.symbol === lv.a)!;
+    const hi = BTC.rungs.find((x) => x.symbol === lv.b)!;
+    const outside = 1 - ((lo.bid! + lo.ask!) / 2 - (hi.bid! + hi.ask!) / 2);
+    expect(outside).toBeGreaterThan(0.39);
+    expect(outside).toBeLessThan(0.61);
+    // The same levels a range takes are in order for a breakout, and the options run the same way.
+    expect(firstOptions(BTC, 'breakout')).toEqual(firstOptions(BTC, 'range'));
+    expect(secondOptions(BTC, 'breakout', sym(BTC, 4))).toEqual(
+      secondOptions(BTC, 'range', sym(BTC, 4)),
+    );
+  });
+
   it('starts a range on the middle strikes when nothing has prices', () => {
     const bare = {
       ...BTC,
@@ -158,19 +178,42 @@ describe('markets for legs', () => {
 });
 
 describe('stakes and totals', () => {
-  it('splits to the cent and the parts add up', () => {
+  it('splits to the cent, and the last leg takes what is left over so the parts add up to what was typed', () => {
     expect(splitEvenly(30, 2)).toEqual([15, 15]);
-    expect(splitEvenly(10, 3)).toEqual([3.34, 3.33, 3.33]);
-    expect(splitEvenly(10, 3).reduce((a, b) => a + b, 0)).toBeCloseTo(10, 10);
+    expect(splitEvenly(10, 3)).toEqual([3.33, 3.33, 3.34]);
+    expect(splitEvenly(10, 6)).toEqual([1.66, 1.66, 1.66, 1.66, 1.66, 1.7]);
     expect(splitEvenly(0, 2)).toEqual([0, 0]);
+    for (const [total, n] of [
+      [10, 3],
+      [29.99, 2],
+      [100, 6],
+      [0.05, 3],
+      [33.33, 4],
+    ] as const) {
+      const cents = splitEvenly(total, n).reduce(
+        (sum, part) => sum + Math.round(part * 100),
+        0,
+      );
+      expect(cents).toBe(Math.round(total * 100));
+    }
   });
 
-  it('adds the costs, the wins (every leg wins) and the losses (every leg loses)', () => {
+  it('says what each leg gets, with cents, and what the last one takes', () => {
+    expect(splitWords(30, 2)).toBe('Shared evenly: $15.00 a leg.');
+    expect(splitWords(10, 3)).toBe(
+      'Shared evenly: $3.33 a leg and $3.34 on the last, so they add up to $10.00.',
+    );
+    expect(splitWords(12.5, 1)).toBe('One leg takes all $12.50.');
+    expect(splitWords(0, 2)).toBe('');
+    expect(splitWords(30, 0)).toBe('');
+  });
+
+  it('adds the stakes as set, what the orders cost, the wins (every leg wins) and the losses (every leg loses)', () => {
     const t = totals([
       { stake: 10, status: { cost: 10, win: 12.5, lose: -10 } },
       { stake: 10, status: { cost: 9.99, win: 6.01, lose: -4.2 } },
     ]);
-    expect(t).toEqual({ stake: 19.99, best: 18.51, worst: -14.2 });
+    expect(t).toEqual({ stake: 20, cost: 19.99, best: 18.51, worst: -14.2 });
   });
 
   it('has no best or worst case until every leg has figures', () => {
@@ -179,7 +222,37 @@ describe('stakes and totals', () => {
         { stake: 10, status: { cost: 10, win: 5, lose: -10 } },
         { stake: 5 },
       ]),
-    ).toEqual({ stake: 15, best: null, worst: null });
+    ).toEqual({ stake: 15, cost: 15, best: null, worst: null });
+  });
+
+  it('says why the orders can cost less than the stakes, in a line that is always there', () => {
+    const sized = 'Each bet is sized to cost no more than its stake.';
+    expect(costNote({ stake: 30, cost: 30 })).toBe(sized);
+    expect(costNote({ stake: 30, cost: 29.99 })).toBe(sized);
+    // A leg the market can only part fill is the one case where the gap is more than cents, so it is named.
+    expect(costNote({ stake: 30, cost: 24.2 }, [1])).toBe(
+      'The market can only fill part of leg 2 right now.',
+    );
+    expect(costNote({ stake: 45, cost: 30 }, [0, 2])).toBe(
+      'The market can only fill part of legs 1 and 3 right now.',
+    );
+    expect(costNote({ stake: 30, cost: 30 }, [1])).toBe(sized);
+    // It should not happen, and if it does the figure stands without a sentence that would be untrue.
+    expect(costNote({ stake: 30, cost: 30.05 })).toBeNull();
+  });
+
+  it('keeps a ticket under the header when it fits, and lets a taller one scroll until its button is in view', () => {
+    expect(ticketTop(600, 900)).toBe(84);
+    expect(ticketTop(800, 900)).toBe(84);
+    // 1,500 tall in a 900 window: it sticks 616 above the top, which is when its bottom is 16 from the window's.
+    expect(ticketTop(1500, 900)).toBe(-616);
+    expect(ticketTop(1500, 900) + 1500).toBe(900 - 16);
+  });
+
+  it('lists leg numbers the way a sentence does', () => {
+    expect(listed([2])).toBe('2');
+    expect(listed([2, 3])).toBe('2 and 3');
+    expect(listed([1, 2, 4])).toBe('1, 2 and 4');
   });
 });
 
@@ -263,6 +336,13 @@ describe('one leg', () => {
     expect(s.chanceBack).toBeCloseTo(0.2, 10);
   });
 
+  it('carries what a parlay nets when its stake comes back: nothing by the estimate, the quote\'s own figure once it answers', () => {
+    expect(legStatus({ ...base, answer: null, shown: null }).back).toBe(0);
+    const ans = parlayAnswer(a, b, 10);
+    ans.stake!.ifConditionFails = 0.03;
+    expect(legStatus({ ...base, answer: ans, shown: ans }).back).toBe(0.03);
+  });
+
   it('waits while there is no current answer, showing the estimate', () => {
     const s = legStatus({ ...base, answer: null, shown: null });
     expect(s.state.canPlace).toBe(false);
@@ -336,6 +416,109 @@ describe('one leg', () => {
     });
   });
 
+  const breakoutAnswer = (lo: Rung, hi: Rung): BreakoutQuoteResponse => ({
+    venue: 'test',
+    asOf: '',
+    product: 'breakout',
+    event: { ticker: BTC.ticker, title: '', expiry: null },
+    low: { ...lo },
+    high: { ...hi },
+    quote: {
+      verdict: 'ok',
+      reasons: [],
+      warnings: [],
+      offerable: true,
+      overridden: false,
+      chanceOutside: 0.55,
+      fairPrice: 0.55,
+      pricePaid: 0.57,
+      allInPrice: 0.6,
+      markup: 0.05,
+      markupPct: 0.09,
+      cashOutPer100: 93,
+      cashOutPer100AtProductionFees: null,
+      feeCoefCharged: 0,
+    },
+    stake: {
+      requested: 10,
+      reduced: false,
+      contracts: 17.54,
+      cost: 9.99,
+      ifOutside: 7.55,
+      ifInRange: -9.99,
+      feesAtProductionRates: 0,
+      cashOutNow: null,
+    },
+    depth: null,
+  });
+
+  it('reads a breakout answer with its own figures: the win is outside, and nothing comes back', () => {
+    const lo = BTC.rungs[2]!;
+    const hi = BTC.rungs[5]!;
+    const ans = breakoutAnswer(lo, hi);
+    const s = legStatus({
+      ...base,
+      kind: 'breakout',
+      a: lo,
+      b: hi,
+      answer: ans,
+      shown: ans,
+    });
+    expect(s.state.canPlace).toBe(true);
+    expect(s).toMatchObject({
+      cost: 9.99,
+      win: 7.55,
+      lose: -9.99,
+      chanceWin: 0.55,
+      chanceBack: null,
+      pricePaid: 0.57,
+      estimated: false,
+    });
+  });
+
+  it('shows a breakout leg its own estimate while the executor has not answered', () => {
+    const lo = BTC.rungs[2]!;
+    const hi = BTC.rungs[4]!;
+    const s = legStatus({
+      ...base,
+      kind: 'breakout',
+      a: lo,
+      b: hi,
+      answer: null,
+      shown: null,
+    });
+    expect(s.state.blockedBy).toBe('checking');
+    expect(s.estimated).toBe(true);
+    // 65% and 35%: 70% outside, and the pair costs 1 - 0.64 + 0.36.
+    expect(s.chanceWin).toBeCloseTo(0.7, 8);
+    expect(s.pricePaid).toBeCloseTo(0.72, 8);
+    expect(s.lose).toBeCloseTo(-(s.cost ?? 0), 8);
+    expect(s.win).toBeGreaterThan(0);
+  });
+
+  it('never takes a range answer for a breakout leg or the other way round, though both name a low and a high', () => {
+    const lo = BTC.rungs[2]!;
+    const hi = BTC.rungs[5]!;
+    const b = breakoutAnswer(lo, hi);
+    const r = { ...b, product: 'range' } as unknown as RangeQuoteResponse;
+    expect(answerMatches('breakout', b, lo.symbol, hi.symbol)).toBe(true);
+    expect(answerMatches('range', b, lo.symbol, hi.symbol)).toBe(false);
+    expect(answerMatches('range', r, lo.symbol, hi.symbol)).toBe(true);
+    expect(answerMatches('breakout', r, lo.symbol, hi.symbol)).toBe(false);
+    expect(answerMatches('breakout', b, lo.symbol, 'other')).toBe(false);
+    // A leg handed the wrong kind of answer falls back to its estimate and waits.
+    const s = legStatus({
+      ...base,
+      kind: 'breakout',
+      a: lo,
+      b: hi,
+      answer: r,
+      shown: r,
+    });
+    expect(s.state.canPlace).toBe(false);
+    expect(s.estimated).toBe(true);
+  });
+
   it('matches an answer to levels and kind', () => {
     const ans = parlayAnswer(a, b, 10);
     expect(answerMatches('up', ans, a.symbol, b.symbol)).toBe(true);
@@ -357,6 +540,7 @@ describe('the place button', () => {
     cost,
     win: 1,
     lose: -1,
+    back: null,
     chanceWin: 0.4,
     chanceBack: null,
     pricePaid: 0.4,
@@ -447,6 +631,22 @@ describe('the request', () => {
       event: ETH.ticker,
       low: legs[1]!.a,
       high: legs[1]!.b,
+      stake: 10,
+    });
+  });
+
+  it('sends a breakout leg as its own product, with its lower and higher level', () => {
+    const [first, second] = seedLegs([BTC, ETH], 20);
+    const lv = defaultLevels(ETH, 'breakout')!;
+    const req = buildRequest('', [
+      first!,
+      { ...second!, kind: 'breakout', a: lv.a, b: lv.b },
+    ]);
+    expect(req.legs[1]).toEqual({
+      product: 'breakout',
+      event: ETH.ticker,
+      low: lv.a,
+      high: lv.b,
       stake: 10,
     });
   });

@@ -1,6 +1,7 @@
 import type {
   ApiErrorBody,
   Bet,
+  BreakoutQuoteResponse,
   CallRecord,
   CashOutQuote,
   CashOutResponse,
@@ -40,6 +41,8 @@ export interface Api {
   quote(args: { event: string; condition: string; target: string; stake?: number; direction?: Direction }): Promise<QuoteResponse>;
   /** A range's quote: the lower and higher strike, and what a stake would buy. */
   quoteRange(args: { event: string; low: string; high: string; stake?: number }): Promise<RangeQuoteResponse>;
+  /** A breakout's quote: the same two strikes as a range, priced for finishing outside them. */
+  quoteBreakout(args: { event: string; low: string; high: string; stake?: number }): Promise<BreakoutQuoteResponse>;
   placeBet(req: PlaceBetRequest): Promise<PlaceBetResponse>;
   /** Several bets in one step. Every leg is checked first; a leg that cannot complete stops the rest. */
   placeBasket(req: PlaceBasketRequest): Promise<PlaceBasketResponse>;
@@ -48,7 +51,8 @@ export interface Api {
   cashOutQuote(betId: string): Promise<CashOutQuote>;
   /** Sells an open bet back as two sell orders. `minProceeds` refuses the sale if the price has dropped below it. */
   cashOut(betId: string, minProceeds?: number): Promise<CashOutResponse>;
-  settle(): Promise<{ settled: Bet[]; needsReview: Bet[]; stillOpen: number }>;
+  /** `called` lists bets that were sold back earlier and whose market has now settled, so their call has a result (absent from an older executor). */
+  settle(): Promise<{ settled: Bet[]; needsReview: Bet[]; called?: Bet[]; stillOpen: number }>;
   flow(user?: string): Promise<FlowResponse>;
   reconcile(): Promise<ReconcileResponse>;
   commitCall(betId: string): Promise<CallRecord>;
@@ -93,6 +97,7 @@ export function liveApi(base = '/api', chainBase = '/chain', defaultUser = 'prim
     markets: (event) => ex(`/markets${qs({ event })}`),
     quote: ({ event, condition, target, stake, direction }) => ex(`/quote${qs({ event, condition, target, stake, direction: direction === 'down' ? 'down' : undefined })}`),
     quoteRange: ({ event, low, high, stake }) => ex(`/quote${qs({ product: 'range', event, low, high, stake })}`),
+    quoteBreakout: ({ event, low, high, stake }) => ex(`/quote${qs({ product: 'breakout', event, low, high, stake })}`),
     placeBet: (req) => ex('/bets', { method: 'POST', body: JSON.stringify({ ...req, user: req.user || defaultUser }) }),
     placeBasket: (req) => ex('/baskets', { method: 'POST', body: JSON.stringify({ ...req, user: req.user || defaultUser }) }),
     bets: (user) => ex(`/bets${qs({ user: user ?? defaultUser })}`),

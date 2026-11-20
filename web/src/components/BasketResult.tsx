@@ -2,10 +2,12 @@ import { Link } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import type { Bet, MarketEvent, PlaceBasketResponse } from '../api/types';
 import { stripLegPrefix, kindOfLeg, type LegDraft } from '../lib/basket';
+import { betPay, extremes, outcomeLine } from '../lib/basketPays';
 import { betSentence, betTitle, productName } from '../lib/betKind';
-import { usd } from '../lib/format';
+import { usd, usdSigned } from '../lib/format';
 import { friendly } from '../lib/friendly';
 import { assetLabel } from '../lib/markets';
+import { keepMode } from '../lib/venue';
 
 export interface CallProgress {
   /** Placed bets whose call is being recorded. */
@@ -32,7 +34,10 @@ const STATE_WORDS: Record<RowState, string> = {
   skipped: 'Not placed',
 };
 
-/** What a placed basket turned into: one row per leg, what happened to it, and what it cost. */
+/**
+ * What a placed basket turned into: one row per leg with what happened to it, what it cost and what it nets each way, then
+ * the basket's own total. It leads to My bets, as a single bet's receipt does, because that is where the results arrive.
+ */
 export default function BasketResult({
   result,
   legs,
@@ -89,6 +94,12 @@ export default function BasketResult({
   });
 
   const placed = rows.filter((r) => r.state === 'placed').length;
+  // The total is over the legs that were really placed, at what their orders filled for.
+  const placedBets = rows.flatMap((r) =>
+    r.state === 'placed' && r.bet ? [r.bet] : [],
+  );
+  const staked = placedBets.reduce((sum, b) => sum + b.cost, 0);
+  const range = extremes(placedBets.map(betPay));
   const failedLeg = failed ? legs[failed.index] : undefined;
   const reason = failed
     ? stripLegPrefix(
@@ -161,6 +172,9 @@ export default function BasketResult({
                 <span className="row-bet">
                   {r.sentence || `Leg ${r.i + 1}`}
                 </span>
+                {r.bet && r.state === 'placed' && outcomeLine(r.bet) && (
+                  <span className="row-pays">{outcomeLine(r.bet)}</span>
+                )}
               </td>
               <td className="n">
                 {r.bet && r.state === 'placed' ? usd(r.bet.cost) : '–'}
@@ -169,6 +183,33 @@ export default function BasketResult({
           ))}
         </tbody>
       </table>
+
+      {placedBets.length > 0 && (
+        <dl className="basket-totals" aria-label="The basket in total">
+          <div>
+            <dt>Staked{failed ? `, ${placed} of ${basket.size} legs` : ''}</dt>
+            <dd>{usd(staked)}</dd>
+          </div>
+          {range && (
+            <>
+              <div data-kind="win">
+                <dt>
+                  {range.everyWin ? 'Best case, every leg wins' : 'Best case'}
+                </dt>
+                <dd>{usdSigned(range.best)}</dd>
+              </div>
+              <div data-kind="lose">
+                <dt>
+                  {range.everyLose
+                    ? 'Worst case, every leg loses'
+                    : 'Worst case'}
+                </dt>
+                <dd>{usdSigned(range.worst)}</dd>
+              </div>
+            </>
+          )}
+        </dl>
+      )}
 
       {calls.total > 0 && (
         <p className="fine basket-calls">
@@ -181,11 +222,18 @@ export default function BasketResult({
         </p>
       )}
 
+      {placedBets.length > 0 && (
+        <p className="fine basket-next">
+          Each result appears on My bets by itself as its market settles. You
+          do not need to keep this page open.
+        </p>
+      )}
+
       <div className="basket-actions">
-        <Link to="/bets" className="btn btn-ghost">
+        <Link to={keepMode('/bets')} className="btn btn-primary">
           See my bets
         </Link>
-        <button type="button" className="btn btn-primary" onClick={onAgain}>
+        <button type="button" className="btn btn-ghost" onClick={onAgain}>
           Make another
         </button>
       </div>

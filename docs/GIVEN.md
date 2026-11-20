@@ -78,7 +78,8 @@ did not.
 - **Measurable.** Every order carries a tag (`gv-…`), so the flow can be
   counted. Gemini has no builder code or revenue share that we could find;
   proposing one is a fair ask.
-- **Shown in the app.** A "Flow to Gemini" panel: orders, contracts, premium,
+- **Shown in the app.** An "Orders sent" panel on the Proof page (first called "Flow to Gemini"; renamed 2026-11-19
+  because on the demo it is one team sandbox account, not volume delivered): orders, contracts, premium,
   and the fees each bet would pay at production rates (the sandbox charges none).
 
 ## The cost problem (the sharpest risk)
@@ -133,9 +134,11 @@ our current pick, cheap to change. **Open** = not settled.
 | 22 | A basket is not atomic | Decided | No exchange primitive links the legs. Every leg is checked first, a leg that fails stops the rest, and the app says plainly what was and was not placed | The exchange lists a basket or combined-order primitive |
 | 23 | A bet id carries its product (`dn-` falling, `rg-` range) | Decided | The id is committed on Solana with the call and revealed with it, so the proof page and leaderboard can say what a call was without changing the hash format or the deployed program, and the label cannot be changed after the result | A program upgrade that commits a product field instead |
 | 24 | The ladder is also shown as a histogram, and **Hunch** ranks the bets on offer against a view the person enters | Provisional | A ladder's neighbouring prices differ by the market's chance of finishing between them, so the histogram is exact and needs no model. A person's view is the market's own curve moved and squeezed, so an unmoved view is the market's and nothing is listed: no difference on screen is an artefact of fitting a shape. It adds no order type and touches no order path: every listed bet opens in the builder that already places it | People read "bets that fit your view" as advice from us. The page says the odds are theirs and the market may be right; if that is not enough, drop the ranking and keep the histogram |
-
 | 25 | An open bet can be **cashed out**: both orders sold back at the live bids, all or nothing | Provisional | Every quote already showed "what you'd get back if you sold immediately"; without a way to do it that number was a claim, not a feature. It is two more plain orders per bet on Gemini's book, and it makes a bet something you manage, not only something you wait on. Run on the real sandbox 2026-11-20 for all three products, reconciled each time | Gemini's rules treating a sell-back differently from any other order; or sandbox depth making the all-or-nothing check refuse so often that selling part is needed |
-| 26 | A cashed-out bet's Solana call stays sealed and is never scored | Provisional | The leaderboard scores a call against the market's result, and the executor only records the result of bets it still holds. Leaving the call committed publishes nothing and costs nothing | Wanting cashed-out calls on the leaderboard: record the market's result for them (see "Ideas worth exploring") |
+| 26 | A cashed-out bet's call **can be revealed once its market settles**, scored on the market's result against the fair price it was made at (changed 2026-11-19; first version: stays sealed, never scored) | Provisional | Selling early does not change whether the call was right. The first version left such calls sealed for good, which was harmless while the board showed only revealed calls; once each row also showed how many calls a player had sealed, a call that could never be revealed looked the same as one being hidden, and cashing out would have cost a player their record. The executor records how the call turned out (`called`) when the market gives a clean result; nothing is paid, the bet stays `cashed_out` | A scoring rule that should treat an early exit differently (for example scoring the sale price against the entry price instead) |
+| 27 | A **Breakout** is offered beside the Range: YES on the higher level and NO on the lower, equal size, winning if the price finishes outside them either way | Provisional | The products covered direction (Return Parlay, both ways) and "it stays put" (Range) but had no way to say "it moves, I do not know which way", which is the other half of a view on how far a price will travel. It is two plain buy orders through the range's order path on the other two sides of the same books, and it is a yes-or-no result, so the Solana record, the program and the leaderboard score it with no change (`bo-` in the bet id). We found no venue listing a symmetric "outside the range" contract (search 2026-11-19; not exhaustive). Built and tested on the local exchange, the wire stand-in and the rehearsal; **not yet placed on the real sandbox** | A sandbox run that will not reconcile; or Gemini enabling combos, where a range is one combo (YES low AND NO high) and a breakout is its NO side, which would be one order instead of two |
+| 28 | We call these **defined-outcome bets**, never "structured products" | Decided | "Structured product" means something an issuer packages and stands behind (in retail finance, unsecured notes with conditional "principal protection"; in crypto, exchange-issued yield wrappers). Given issues, pools and holds nothing: each bet is two orders in the user's own account, and what we add is that every result is shown before they are sent. The idea underneath is static replication: a ladder is a contract at every level, so any payoff that changes only at those levels can be built exactly from plain orders. Avoid "protected", "buffer", "guaranteed" and "risk-free"; say "stake back if…" only with its cost beside it | Counsel or Gemini preferring another term |
+| 29 | The leaderboard shows how many calls each player has **sealed**, beside how many they revealed | Decided | Revealing is the player's choice, so a record could be built by revealing only the calls that came off. A commit carries the handle, so the number of calls a player made is already public on chain; the board now shows it, with refunded calls counted apart because they can never be revealed. It needs no change to the hash or the program | Handles that rotate per call (then the count would have to come from somewhere else) |
 
 ## Open questions
 
@@ -167,9 +170,9 @@ None of these are commitments. Each is a direction someone could pick up.
 
 - **Maker-first pricing.** Rest the outcome order (maker-or-cancel), hedge the
   moment it fills. Halves the cost; adds book depth for Gemini.
-- **More to do with a bet you already hold.** Cash-out is built (decision 25).
-  Next along the same line: score a cashed-out call from the market's result,
-  since selling early does not change whether the call was right; sell part of
+- **More to do with a bet you already hold.** Cash-out is built (decision 25), and
+  a cashed-out call is now scored from the market's result (decision 26).
+  Next along the same line: sell part of
   a bet; a "sell if it reaches $X" instruction (this needs standing authority
   over the account, the reason decision 5 cut trigger orders); and cashing out
   a bet Gemini has netted against another, by buying the other side instead
@@ -192,6 +195,15 @@ None of these are commitments. Each is a direction someone could pick up.
 - **What survives from Living Tokens.** The instinct that value must flow to
   Gemini drove this whole design. The "Underdog Stamp" could return as a
   non-monetary receipt for a call made at long odds.
+- **The name "Return Parlay".** Exchanges avoid the word: Gemini and Robinhood call multi-leg contracts "combos", and
+  "parlay" reads as all-legs-must-win, which is the one thing this bet is not. Worth a second look before production;
+  left alone this week because the app, the video and the README all use it.
+- **Fee-true and collateral-true numbers.** On a narrow band the two taker fees are a large share of what is paid, and a
+  range ties up the dollar a pair that always comes back. Show fees as a share of the price and the return on what is
+  actually at risk; a resting (maker) entry is the fix for the first (decision 13).
+- **Scoring a stated view, with no bet.** Hunch already holds a person's whole view of a ladder. Sealed on Solana before
+  the close and scored against the market's own view at that moment with the ranked probability score (the squared
+  error of each "at or above" chance, summed over the rungs), it would rank forecasting skill separately from betting.
 - **Verify-from-chain page.** Rebuild the leaderboard from Solana alone, with no
   backend. **Built 2026-11-19** as "Read from the program" on the leaderboard page: the browser reads the program's score
   accounts and lines them up against the server's table. It holds totals only; rebuilding each call from Memos alone is

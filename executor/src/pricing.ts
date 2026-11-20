@@ -137,3 +137,31 @@ export function rangePrice(askL: number | null, bidH: number | null, coef = 0): 
   return price > 0 && price < 1 ? price : null;
 }
 
+
+// ------------------------------------------------------------------ breakout bets
+
+/**
+ * A breakout is the range's opposite: YES on the higher strike H and NO on the lower strike L, the same number of contracts
+ * of each.
+ *
+ *     price at or above H      the YES on H pays $1
+ *     price between L and H    neither pays
+ *     price below L            the NO on L pays $1
+ *
+ * Exactly one of the two can pay, so the pair costs less than a dollar and that cost IS the price of $1 for finishing outside
+ * the two levels, whichever way:  (1 - bidL) + askH, plus fees. A range is a bet that the price stays put; this is a bet that
+ * it moves, and it needs no view on which way.
+ */
+
+/** Cash for one contract of each leg: NO on L at 1 - L's bid, YES on H at its ask, each with its taker fee. */
+export function breakoutUnitCost(bidL: number, askH: number, coef = 0): number {
+  const noL = clean(1 - bidL);
+  return clean(noL + feeRate(noL, coef) + askH + feeRate(askH, coef));
+}
+
+/** What a breakout costs for each $1 of "outside the two levels" payout. Null if it is not a price. */
+export function breakoutPrice(bidL: number | null, askH: number | null, coef = 0): number | null {
+  if (bidL === null || askH === null || !(askH > 0) || !(bidL > 0) || bidL >= 1) return null;
+  const price = breakoutUnitCost(bidL, askH, coef);
+  return price > 0 && price < 1 ? price : null;
+}

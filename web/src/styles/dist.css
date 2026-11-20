@@ -56,6 +56,38 @@
   transition: none;
 }
 
+/* What a set of bets nets at each finishing price (components/PayoffBars.tsx): bars above and below a zero line. */
+.pv {
+  width: 100%;
+  min-height: 188px;
+}
+.pv svg {
+  display: block;
+  overflow: visible;
+}
+.pv-bar {
+  fill: var(--faint);
+  transition:
+    y 260ms var(--ease),
+    height 260ms var(--ease);
+}
+.pv-slot[data-kind='ahead'] .pv-bar {
+  fill: var(--good);
+}
+.pv-slot[data-kind='behind'] .pv-bar {
+  fill: var(--bad);
+}
+.pv-slot:hover .pv-bar {
+  filter: brightness(1.08);
+}
+.pv-zero {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+:root[data-still] .pv-bar {
+  transition: none;
+}
+
 /* On a builder: the same bet, bar by bar. */
 .dist-card {
   padding: 24px;
@@ -266,6 +298,19 @@
 .hunch-odds [data-kind='lose'] b {
   color: var(--bad);
 }
+/* What the price pays on a small stake: a fact, set apart from the odds the person entered. */
+.hunch-wins {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.hunch-wins b {
+  font-weight: 600;
+  color: var(--ink);
+}
+.hunch-list .hunch-long {
+  margin: 0 0 16px;
+}
 .hunch-none {
   padding: 20px 0 4px;
   border-top: 1px solid var(--line);
@@ -291,6 +336,21 @@
     order: 2;
     position: static;
     padding: 20px;
+  }
+}
+@media (max-width: 720px) {
+  /* A finger needs 44px: the two dials, the link back to the market's view, and each bet's Open button. */
+  .hunch-dial input[type='range'] {
+    height: 44px;
+  }
+  .hunch-dial {
+    gap: 0;
+  }
+  .hunch-reset {
+    min-height: 44px;
+  }
+  .hunch-idea .btn.btn-sm {
+    height: 44px;
   }
 }
 @media (max-width: 560px) {

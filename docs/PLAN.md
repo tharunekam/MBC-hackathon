@@ -185,11 +185,62 @@ if the order path changes again before the commit, run it again.**
   stopped taking orders between the two legs. On a book as wide as the sandbox's an unwind gives up most of the first
   leg. **Do not place a demo bet on a ladder in its first quarter of an hour**, and it may be worth leaving a bet
   unhedged for a few seconds and retrying the second leg when the reason is `post_only`, before selling back.
-- `reconcile` tied out after all of it (the same $0.00017 as before). Still open and due to settle at 05:00 UTC: the
-  parlay `ec823ff4` and the breakout `bo-a6e6e593`.
+- `reconcile` tied out after all of it (the same $0.00017 as before).
+- **A breakout held to settlement, and it won (05:00 UTC).** `bo-a6e6e593` (XRP, $0.96 and $0.98): the ladder finished
+  at $0.9598, under the lower level, so the NO on $0.96 paid $5.88 (+$2.88). The parlay `ec823ff4` lost its $5.00 (SOL
+  finished at $72.04: above $69, short of $74). Both carry `settlement.finishedAt`. The same pass gave the five bets
+  that had been sold back that night the result of their call (`called`), the cashed-out breakout among them, and
+  `reconcile` tied out again.
+- **The snapshot is the committed code.** The second machine committed at 04:54 UTC (`b177a95`). Its `executor/test`
+  is identical to the snapshot and its `executor/src` differs in one place, a `maxStake` field added to `/health`, so
+  everything above stands for the commit. Still not seen on the sandbox: a part-filled cash-out, and a cashed-out
+  bet's call being revealed on Solana.
 - The real ledger now holds breakout bets. Code without the breakout product reads them as rising parlays, which sends
   the same two orders and settles to the same cash, but shows the wrong words; merge the second machine's commit here
   before using this ledger for the demo. A copy from before the run is at `executor/data/ledger.before-mini-snapshot.json`.
+
+**Breakout and cash-out, Thursday 2026-11-19 late.** Cash-out (`feat/cash-out`, run on the real sandbox) is merged into
+this branch. **Breakout** is the range's opposite: YES on the higher level and NO on the lower, equal size, winning if the
+price finishes outside them either way (`executor/src/breakout.ts`, `breakout-bet.ts`; decision 27). It reuses the range's
+order path on the other two sides of the same books, and cash-out, the unwind, crash recovery, the reconcile, the Solana
+record and the leaderboard handle it with no case of their own. Tested on the in-memory exchange (21 tests), through the
+real Gemini client on the wire stand-in, and in `npm run rehearse` (36 checks: quoted, placed, committed, settled as a win,
+revealed, verified, ledger tied out). When this was written it had not been placed on the real sandbox; it since has
+been, cashed out and held to a winning settlement (the entry above this one).
+
+**A record that cannot be built by leaving things out, Thursday 2026-11-19 late.** Two holes in "a track record that
+cannot be faked", both closed with no change to the hash or the program:
+- **Revealing only winners.** Revealing is the player's choice, so a board of revealed calls alone could be gamed by
+  keeping the losing ones sealed. Each row now carries `sealed`, every call that handle has committed on chain (the
+  handle is in the commit, so anyone can count them), and `refunded`, the ones that were void (decision 29).
+- **Cashing out lost the call.** A bet sold back never settles, so its call could never be revealed, and with sealed
+  counts on the board that would have looked like hiding it. The executor now records how a sold bet's call turned out
+  once its market has a clean result (`called`), and the chain service reveals and scores it like any other (decision
+  26, changed). `npm run rehearse` sells a bet, shows its call refused while the market is open, then revealed and
+  scored after it settles (40 checks).
+- A settled bet also records **where the ladder finished** (`settlement.finishedAt`), from the reference price Gemini
+  reports on a settled contract, for showing a person; no payout depends on it.
+
+**An independent audit and what it changed, Thursday 2026-11-19 night.** A fresh pair of eyes walked every page at desktop
+and phone width and read the code behind what looked wrong; 22 findings, fixed the same night. The ones that mattered:
+- **A "$10.00" parlay cost $10.04.** The refund order is sized to cover the stake even if it fills two cents past the best
+  price, and the quote had been counting it at the best price. The quote now plans the bet as it is placed, and a bet
+  never costs more than its stake (`executor/src/offer.ts`, `contractsForStake`).
+- **A cash-out that sold only part of its first leg sold all of the refund leg**, leaving contracts with nothing behind
+  them. Only the matching share is sold now (`matchingShare` in `cashout.ts`).
+- **`npm run dev` dead-ended**: a bet on the local test exchange never settled unless someone knew to call
+  `/dev/resolve`. The practice ladder now runs in rounds that close, settle and reopen by themselves (five minutes;
+  `FAKE_ROUND_MINUTES`).
+- **The app said "real orders on Gemini" on a stand-in.** The nav now always says what it is talking to ("Test exchange",
+  "Sandbox · practice money", ...) and pages say where orders ran.
+- **Numbers that did not add up on one screen** (38% + 2% + 61%), chart handles whose percentage contradicted their
+  label, a stake box that ignored an empty value and misreported the cap, four names for the two halves of a parlay, two
+  time zones on one card, a stale landing page, touch targets under 44px. All fixed; the vocabulary is now "first level"
+  and "target".
+- Also new from that pass: what a basket pays at each finishing price, the expected-move line and column, per-page
+  titles, a link-preview image, an app manifest, a not-found page.
+Totals after it: 987 tests (executor 258, chain 126, web 551, scripts 52); `npm run e2e` 25 checks; `npm run rehearse`
+40 (41 with injected failures); `npm run e2e:replay` 7.
 
 **Verified by running** (599 tests across the four packages; the golden path and the three products were also driven in a
 real browser against the real executor handler and chain service): bet builder on the probability ladder, quote, place,

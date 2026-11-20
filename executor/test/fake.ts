@@ -111,11 +111,34 @@ export class FakeExchange implements Exchange {
     }
   }
 
-  resolve(strike: number, side: 'yes' | 'no'): void {
+  /**
+   * Opens the same ladder again for another round: every contract active and open with no result, new prices and a new
+   * close time. Cash, orders and the order log carry on; positions were closed out when the last round resolved. The
+   * local test exchange uses it so a practice market can run round after round and settle by itself.
+   */
+  relist(strikes: Array<{ strike: number; bid: number | null; ask: number | null; bidSize?: number; askSize?: number }>, meta: { title?: string; expiryDate: string }): void {
+    for (const s of strikes) {
+      const c = this.event.contracts.find((x) => x.instrumentSymbol === this.symbol(s.strike));
+      if (!c) continue;
+      c.status = 'active';
+      c.marketState = 'open';
+      c.resolutionSide = null;
+      c.settlementValue = null;
+      c.resolvedAt = null;
+      this.books.set(c.instrumentSymbol, { bid: s.bid, bidSize: s.bidSize ?? 1000, ask: s.ask, askSize: s.askSize ?? 1000 });
+    }
+    this.event.status = 'active';
+    this.event.expiryDate = meta.expiryDate;
+    if (meta.title) this.event.title = meta.title;
+  }
+
+  /** `finishedAt` is the reference price to report with the result, as Gemini does on a settled contract. */
+  resolve(strike: number, side: 'yes' | 'no', finishedAt?: number): void {
     const c = this.event.contracts.find((x) => x.instrumentSymbol === this.symbol(strike))!;
     c.status = 'settled';
     c.marketState = 'closed';
     c.resolutionSide = side;
+    if (finishedAt !== undefined) c.settlementValue = String(finishedAt);
     for (const outcome of ['yes', 'no'] as const) {
       const key = `${c.instrumentSymbol}|${outcome}`;
       const held = this.positions.get(key) ?? 0;

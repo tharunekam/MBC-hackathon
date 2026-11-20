@@ -108,23 +108,35 @@
   overflow-x: auto;
 }
 .expiry button {
+  /* The button is the touch target and the span inside it the chip that is drawn, so on a phone the target can be a
+     full 44px without the chip growing with it. */
   flex: none;
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+.expiry button span {
+  display: flex;
+  align-items: center;
   height: 28px;
   padding: 0 10px;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   background: var(--surface);
-  font: inherit;
   font-size: 13px;
   color: var(--soft);
   white-space: nowrap;
-  cursor: pointer;
   transition: border-color 160ms var(--ease), background 160ms var(--ease);
 }
-.expiry button:hover {
+.expiry button:hover span {
   border-color: var(--line-strong);
 }
-.expiry button.is-on {
+.expiry button.is-on span {
   border-color: var(--ink);
   background: var(--ink);
   color: var(--bg);
@@ -221,6 +233,51 @@
 .scen [data-kind='lose'] td:last-child {
   color: var(--bad);
 }
+/* The ladder table is folded away until asked for (components/LadderTable.tsx): the chart and the histogram above it
+   already draw the same prices. The summary is the card's own header, with a mark that turns when it opens. */
+.builder details.rungs > summary {
+  margin: -24px;
+  padding: 24px;
+  list-style: none;
+  cursor: pointer;
+  border-radius: var(--r-lg);
+}
+.builder details.rungs > summary::-webkit-details-marker {
+  display: none;
+}
+.builder details.rungs > summary .fine {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  text-align: right;
+}
+.builder details.rungs > summary .fine::after {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: -4px;
+  border-right: 1.5px solid var(--soft);
+  border-bottom: 1.5px solid var(--soft);
+  transform: rotate(45deg);
+  transition: transform 200ms var(--ease);
+}
+.builder details.rungs[open] > summary {
+  margin-bottom: -16px;
+}
+.builder details.rungs[open] > summary .fine::after {
+  margin-top: 4px;
+  transform: rotate(-135deg);
+}
+.builder details.rungs > summary:hover .h-card {
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 4px;
+}
+.builder details.rungs > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .rungs .scen td,
 .rungs .scen th {
   padding-left: 0;
@@ -248,6 +305,10 @@
 }
 .builder .q-title {
   gap: 8px;
+}
+/* A note's own margins doubled the gap around it; the ticket's grid already spaces its rows. */
+.builder .quote-card .note {
+  margin: 0;
 }
 .builder .q-sentence {
   font-size: 21px;
@@ -280,6 +341,10 @@
 .builder .field {
   border-radius: var(--r-md);
 }
+/* The box is as tall as its frame, so a tap anywhere in the frame lands in it. */
+.builder .field input {
+  align-self: stretch;
+}
 .builder .presets {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -299,6 +364,14 @@
 .builder .presets .chip:last-child {
   border-right: 0;
 }
+/* A quick amount above the venue's cap on one bet. */
+.builder .presets .chip:disabled {
+  color: var(--faint);
+  cursor: not-allowed;
+}
+.builder .presets .chip:disabled:hover {
+  background: none;
+}
 .builder .btn-wide {
   height: 48px;
   font-size: 15px;
@@ -313,12 +386,31 @@
   .builder .page-head {
     align-items: flex-start;
   }
+  /* A finger needs 44px. Each control below is made that tall, and the row it sits in gives back the height it can. */
+  .head-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    margin: -12px 0;
+  }
   .expiry-row {
     gap: 12px;
-    padding: 10px 16px;
+    padding: 2px 16px;
+  }
+  .expiry button {
+    height: 44px;
   }
   .expiry-note > span {
     display: none;
+  }
+  .expiry-note a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  .builder .more-markets {
+    min-height: 44px;
+    padding: 10px 16px;
   }
   /* The quote has to sit within a screen of the chart on a phone, so the ticket is set tighter here. */
   .builder .quote-card {
@@ -338,18 +430,41 @@
   .builder .nums dd {
     font-size: 20px;
   }
-  .builder .presets .chip {
-    height: 34px;
+  .builder .quote-card .note {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+  /* The amount and its quick amounts share one row: the chips are a full 44px tall and the ticket is shorter than when
+     they sat on a row of their own. */
+  .builder .quote-card .stake-row {
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 8px;
+    align-items: stretch;
+  }
+  .builder .quote-card .field {
+    height: auto;
+    min-height: 44px;
+  }
+  .builder .quote-card .presets .chip {
+    height: 44px;
+    padding: 0;
   }
   .builder .btn-wide {
     height: 46px;
+  }
+  .builder .chart-card {
+    padding-bottom: 16px;
   }
   .builder .chart-card > :not(.market-bar):not(.more-markets) {
     margin-left: 16px;
     margin-right: 16px;
   }
-  .builder .more-markets {
-    padding: 10px 16px;
+  .builder details.rungs > summary {
+    margin: -20px;
+    padding: 20px;
+  }
+  .builder details.rungs[open] > summary {
+    margin-bottom: -12px;
   }
 }
 
@@ -393,14 +508,39 @@
   cursor: not-allowed;
   opacity: 0.6;
 }
+/* The end of a hint that a phone leaves off: the chart's own labels say it, and the line costs height there. */
+@media (max-width: 720px) {
+  .builder .hint-more {
+    display: none;
+  }
+}
 @media (max-width: 720px) {
   /* The quote must sit within about a screen of the chart on a phone, so the chart's own furniture is set tighter. */
-  .builder .chart-hint {
+  .builder .direction {
     margin-top: 12px;
   }
+  .builder .chart-hint {
+    margin-top: 10px;
+    font-size: 13.5px;
+    line-height: 1.4;
+  }
+  /* The key in one row: the band of buy and sell prices is the least needed of its entries, and is left out here. */
   .builder .chart-foot {
-    gap: 14px;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    gap: 10px;
+    padding-top: 10px;
     font-size: 12px;
+    white-space: nowrap;
+  }
+  .builder .chart-foot span {
+    gap: 6px;
+  }
+  .builder .chart-foot .foot-band {
+    display: none;
+  }
+  .builder .chart-foot .lg {
+    width: 12px;
   }
   .builder .direction .eyebrow {
     display: none;
@@ -410,5 +550,6 @@
   }
   .builder .direction .switch button {
     flex: 1;
+    height: 44px;
   }
 }

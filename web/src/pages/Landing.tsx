@@ -1,22 +1,23 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useOutletContext } from 'react-router-dom';
 import ProbBar from '../components/ProbBar';
 import ProductShowcase from '../components/ProductShowcase';
 import Reveal from '../components/Reveal';
-import { PRODUCTS } from '../lib/nav';
+import { MY_BETS, PRODUCTS } from '../lib/nav';
+import { keepMode, type VenueNote } from '../lib/venue';
 import '../styles/landing.css';
 
-/** The product the page goes on to explain in detail; the three are introduced together just under the opening. */
+/** The product the page goes on to explain in detail; all four shapes are introduced together just under the opening. */
 const PARLAY = PRODUCTS[0]!;
 
 /** A fixed, labelled example: it explains the product without needing a live market. */
 function Example() {
   return (
-    <div className="card example" aria-label="Example bet">
+    <div className="card example" role="group" aria-label="Example bet">
       <span className="eyebrow">Example</span>
-      <h2 className="q-sentence">
+      <h3 className="q-sentence">
         Given <em>$62,500</em> or above, will BTC reach <em>$64,000</em>?
-      </h2>
+      </h3>
       <ProbBar chanceCondition={0.88} chanceBoth={0.4} />
       <ul className="outcomes">
         <li data-kind="win">
@@ -32,7 +33,7 @@ function Example() {
           <b>−$10.00</b>
         </li>
       </ul>
-      <p className="fine">A $10 stake at 51¢ per $1. The odds are the market’s own.</p>
+      <p className="fine">Illustrative: a $10 stake at 51¢ per $1. In the app the odds are the market’s own.</p>
     </div>
   );
 }
@@ -56,7 +57,7 @@ function Outcomes() {
     win: { label: 'You win', amount: '+$9.61', why: `BTC held ${dollars(FIRST)} and reached ${dollars(SECOND)}.` },
   }[zone];
   return (
-    <div className="card outcomes-demo" aria-label="Where the bet lands">
+    <div className="card outcomes-demo" role="group" aria-label="Where the bet lands">
       <span className="eyebrow">Where does BTC finish the hour?</span>
       <output className="od-price" htmlFor="od-range">
         {dollars(price)}
@@ -83,12 +84,57 @@ function Outcomes() {
           <span style={{ left: at(SECOND) }}>{dollars(SECOND)}</span>
         </div>
       </div>
-      <div className="od-result" data-kind={zone} role="status">
+      {/* Not a live region: the slider already speaks the price and the result as it moves, and saying both twice is noise. */}
+      <div className="od-result" data-kind={zone}>
         <b>{result.label}</b>
         <span className="od-amount">{result.amount}</span>
         <p>{result.why}</p>
       </div>
       <p className="fine">Illustrative: a $10 stake at 51¢ per $1, the same bet as the example above.</p>
+    </div>
+  );
+}
+
+// A made-up market and a made-up view of it, each adding to 100%. The view sits higher than the market and is surer of itself.
+const MARKET = [0.02, 0.05, 0.11, 0.19, 0.24, 0.19, 0.11, 0.06, 0.03];
+const VIEW = [0, 0.01, 0.03, 0.09, 0.2, 0.31, 0.23, 0.1, 0.03];
+
+/** Hunch in one picture, drawn the way the Hunch page draws it: bars for the market, a stepped line for your view. */
+function HunchFigure() {
+  const W = 360;
+  const left = 4;
+  const top = 10;
+  const base = 126;
+  const slot = (W - left * 2) / MARKET.length;
+  const yOf = (p: number) => base - (p / 0.34) * (base - top);
+  const xOf = (i: number) => left + i * slot;
+  const view = VIEW.map((p, i) => `${i === 0 ? 'M' : 'L'}${xOf(i).toFixed(1)},${yOf(p).toFixed(1)}H${xOf(i + 1).toFixed(1)}`).join('');
+  return (
+    <div className="card hunch-demo">
+      <span className="eyebrow">Your view against the market’s</span>
+      <div role="img" aria-label="Bars show the market’s chance of finishing in each price band. A line over them shows a view that the price finishes higher than the market thinks, and is surer of it.">
+        <svg className="hunch-fig" viewBox={`0 0 ${W} 132`} aria-hidden="true" focusable="false">
+          {MARKET.map((p, i) => (
+            <rect key={i} className="hf-bar" x={xOf(i) + 2} y={yOf(p)} width={slot - 4} height={base - yOf(p)} rx={2} />
+          ))}
+          <line className="hf-base" x1={left} x2={W - left} y1={base + 0.5} y2={base + 0.5} />
+          <path className="hf-view" pathLength={1} d={view} />
+        </svg>
+        <div className="hf-axis">
+          <span>Lower</span>
+          <span>Where the price finishes</span>
+          <span>Higher</span>
+        </div>
+      </div>
+      <div className="hf-keys">
+        <span>
+          <i /> The market
+        </span>
+        <span data-kind="view">
+          <i /> Your view
+        </span>
+      </div>
+      <p className="fine">Illustrative. On the Hunch page the bars come from the market’s own prices and the line follows your two dials.</p>
     </div>
   );
 }
@@ -125,28 +171,30 @@ function Ladder() {
 }
 
 export default function Landing() {
+  // What this copy of the app is really talking to, from the shell. The opening says it in so many words.
+  const venue = useOutletContext<VenueNote | undefined>();
   return (
     <>
       <section className="hero band-dark">
         <Ladder />
         <div className="hero-body">
           <h1 className="hero-title">
-            <span className="hero-mark">Given</span>
-            <span className="hero-tag">Bet on the second half of your hunch</span>
+            <span className="hero-mark">Given</span> <span className="hero-tag">Bet on the second half of your hunch</span>
           </h1>
           <p className="hero-sub">
-            If the first half doesn’t happen, <b>you get your money back</b>. Real orders on Gemini, every call fingerprinted on Solana.
+            If the first half doesn’t happen, <b>you get your money back</b>. You see the cost first. Every call is sealed on Solana.
           </p>
           <div className="row-actions">
-            <Link to={PARLAY.to} className="btn btn-primary btn-lg">
+            <Link to={keepMode(PARLAY.to)} className="btn btn-primary btn-lg">
               Build a bet
             </Link>
             <a href="#story" className="btn btn-ghost btn-lg">
               How it works
             </a>
           </div>
+          <p className="hero-note">{venue?.about} Not affiliated with Gemini.</p>
         </div>
-        <a href="#story" className="hero-scroll" aria-label="Scroll to how it works">
+        <a href="#products" className="hero-scroll" aria-label="Scroll to the four bets">
           <span>Scroll</span>
           <i aria-hidden="true" />
         </a>
@@ -156,14 +204,30 @@ export default function Landing() {
         <ProductShowcase />
       </section>
 
+      <section className="band band-follows" id="hunch">
+        <div className="wrap split flip">
+          <Reveal>
+            <span className="eyebrow">Hunch</span>
+            <h2 className="h-section">Start from what you think</h2>
+            <p className="lede">Not sure which shape fits? Say where you think the price finishes and how sure you are. Hunch lists the bets on offer that pay best if you are right, with what each one costs. Agree with the market and it lists nothing.</p>
+            <Link to={keepMode('/hunch')} className="btn btn-ghost">
+              Try a hunch
+            </Link>
+          </Reveal>
+          <Reveal delay={120}>
+            <HunchFigure />
+          </Reveal>
+        </div>
+      </section>
+
       <section className="band band-dark" id="story">
         <div className="wrap split">
           <Reveal className="hero-copy">
             <span className="eyebrow">{PARLAY.name}</span>
             <h2 className="h-section">Your stake comes back if the first half fails</h2>
-            <p className="lede">A bet has two halves: something that has to hold first, then the thing you are really betting on. You only lose when the first half is right and the second half isn’t.</p>
+            <p className="lede">A bet has two halves: something that has to hold first, then the thing you are really betting on. You only lose when the first half is right and the second half isn’t. It works for a fall as well as a rise.</p>
             <div className="row-actions">
-              <Link to={PARLAY.to} className="btn btn-primary">
+              <Link to={keepMode(PARLAY.to)} className="btn btn-primary">
                 Build a bet
               </Link>
             </div>
@@ -179,7 +243,7 @@ export default function Landing() {
           <Reveal>
             <span className="eyebrow">How it works</span>
             <h2 className="h-section">Two prices, three outcomes</h2>
-            <p className="lede">Every bet is two real orders on Gemini, in your own account. Nothing is held anywhere else.</p>
+            <p className="lede">A bet is nothing more than two ordinary orders on a prediction market, sent through Gemini’s API. We pool nothing and issue nothing.</p>
             <ol className="orders-list">
               <li>
                 <span>Order 1</span>
@@ -211,9 +275,12 @@ export default function Landing() {
               <li>What you pay, spread and fees included</li>
               <li>What you would get if you sold right away</li>
             </ul>
+            <p className="band-note">
+              That last number is a real way out. You can cash out an open bet from <Link to={keepMode(MY_BETS.to)}>{MY_BETS.name}</Link> before the market settles, for what the market pays at that moment. It can be less than you put in.
+            </p>
           </Reveal>
           <Reveal delay={120}>
-            <div className="card quad" aria-label="The four numbers on every quote">
+            <div className="card quad" role="group" aria-label="The four numbers on every quote">
               <dl className="nums">
                 <div>
                   <dt>Chance both happen</dt>
@@ -232,7 +299,7 @@ export default function Landing() {
                   <dd>$91</dd>
                 </div>
               </dl>
-              <p className="fine">Example quote.</p>
+              <p className="fine">Illustrative: an example quote for the bet above.</p>
             </div>
           </Reveal>
         </div>
@@ -243,24 +310,37 @@ export default function Landing() {
           <Reveal>
             <span className="eyebrow">The record</span>
             <h2 className="h-section">Every call is on the record</h2>
-            <p className="lede">Each call is fingerprinted on Solana the moment you bet, so nobody can claim afterwards that they saw it coming. You choose whether to reveal it.</p>
-            <Link to="/proof" className="btn btn-accent-line">
-              Open Proof
-            </Link>
+            <p className="lede">Each call is sealed on Solana the moment you bet, before the result is known, so nobody can claim afterwards that they saw it coming. You choose whether to reveal it.</p>
+            <div className="row-actions">
+              <Link to={keepMode('/leaderboard')} className="btn btn-ghost">
+                See the leaderboard
+              </Link>
+              <Link to={keepMode('/proof')} className="btn btn-ghost">
+                Open Proof
+              </Link>
+            </div>
           </Reveal>
           <Reveal delay={120}>
             <ul className="proof-list">
               <li>
-                <b>Committed</b>
+                <b>Sealed</b>
                 <span>A hash goes on chain when you bet. It shows nothing about the bet.</span>
               </li>
               <li>
                 <b>Revealed</b>
-                <span>After the result, show the call and it counts on the leaderboard.</span>
+                <span>After the result, show the call. The leaderboard ranks revealed calls by their edge over the market’s own odds.</span>
+              </li>
+              <li>
+                <b>Counted both ways</b>
+                <span>The board shows how many calls each player sealed beside how many they revealed, so a record cannot be built by revealing only the winners.</span>
+              </li>
+              <li>
+                <b>Read from Solana</b>
+                <span>Your own browser can re-read the board straight from the Solana program, without asking our server.</span>
               </li>
               <li>
                 <b>Reconciled</b>
-                <span>Our records are checked against Gemini’s orders and cash, to the cent.</span>
+                <span>Our records are checked against the exchange’s orders and cash, to the cent.</span>
               </li>
             </ul>
           </Reveal>
@@ -270,13 +350,13 @@ export default function Landing() {
       <section className="band band-dark closing">
         <Reveal className="wrap closing-in">
           <h2 className="closing-title">Bet on the half you believe in</h2>
-          <p className="lede">Pick two prices, see exactly what it costs, and place it. If the first half fails, your stake comes back.</p>
+          <p className="lede">Pick a shape and two prices, see every result and what it costs, then place it. On a {PARLAY.name}, your stake comes back if the first half fails.</p>
           <div className="row-actions">
-            <Link to={PARLAY.to} className="btn btn-primary btn-lg">
+            <Link to={keepMode(PARLAY.to)} className="btn btn-primary btn-lg">
               Build a bet
             </Link>
-            <Link to="/leaderboard" className="btn btn-ghost btn-lg">
-              See the leaderboard
+            <Link to={keepMode('/hunch')} className="btn btn-ghost btn-lg">
+              Start from a hunch
             </Link>
           </div>
         </Reveal>

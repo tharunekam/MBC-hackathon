@@ -1,8 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { api } from '../api';
 import type { MarketEvent, PlaceBasketResponse, Rung } from '../api/types';
 import BasketLeg from '../components/BasketLeg';
 import BasketResult, { type CallProgress } from '../components/BasketResult';
+import PayoffBars from '../components/PayoffBars';
 import StakeField from '../components/StakeField';
 import {
   MAX_LEGS,
@@ -10,33 +18,51 @@ import {
   NAME_MAX,
   basketButton,
   buildRequest,
+  costNote,
   cryptoLegs,
   defaultLevels,
   inOrder,
   kindOfLeg,
   levelsValid,
+  listed,
   makeLeg,
   pickMarket,
   refusedLeg,
   seedLegs,
   splitEvenly,
+  splitWords,
   stakeText,
   stripLegPrefix,
+  ticketTop,
   totals,
   withFirst,
   type LegDraft,
   type LegKind,
   type LegStatus,
 } from '../lib/basket';
+import {
+  curveWords,
+  extremes,
+  legPay,
+  paysIntro,
+  waitingOnLadder,
+  waitingWords,
+} from '../lib/basketPays';
 import { betSentence, productName } from '../lib/betKind';
 import { pct, usd, usdSigned } from '../lib/format';
 import { friendly } from '../lib/friendly';
 import { useResource } from '../lib/hooks';
 import { listLadders } from '../lib/ladders';
 import { execLive } from '../lib/liveClients';
-import { assetLabel } from '../lib/markets';
+import { assetLabel, closesLabel } from '../lib/markets';
+import {
+  payoffCurves,
+  type LadderCurve,
+  type LegPay,
+} from '../lib/payoffCurve';
 import {
   chanceWords,
+  neverAllWin,
   shapeOf,
   spanWords,
   together,
@@ -58,8 +84,32 @@ const parseStake = (txt: string): number | null => {
     : null;
 };
 
+/**
+ * The ticket's place while the legs scroll beside it (see `ticketTop`). Its height changes with every leg, chart and note,
+ * so it is measured as it changes rather than guessed.
+ */
+function useTicketTop(): [React.RefObject<HTMLElement>, number | undefined] {
+  const ref = useRef<HTMLElement>(null);
+  const [top, setTop] = useState<number>();
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setTop(ticketTop(el.offsetHeight, window.innerHeight));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    window.addEventListener('resize', measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, []);
+  return [ref, top];
+}
+
 export default function Basket() {
   const venue = useVenue();
+  const [ticketRef, ticketAt] = useTicketTop();
   const markets = useResource('markets', () => api.markets(), {
     live: [[execLive, 'markets']],
     pollMs: 4000,
@@ -244,6 +294,12 @@ export default function Basket() {
   const sum = totals(
     legs.map((l) => ({ stake: l.stake, status: statuses[l.key] })),
   );
+  const sized = costNote(
+    sum,
+    legs.flatMap((l, i) =>
+      (statuses[l.key]?.reducedTo ?? null) !== null ? [i] : [],
+    ),
+  );
   const crypto = cryptoLegs(legs.map((l) => eventOf(l.event)));
 
   // How the legs come out together, read from the same ladders the legs are built on, so it moves whenever the prices do.
@@ -258,8 +314,27 @@ export default function Basket() {
       rungs[ev.ticker] = ev.rungs;
       return { ticker: ev.ticker, shape: shapeOf(l.kind, a.strike, b.strike) };
     });
-    return { shapes, result: together(shapes, rungs) };
+    return {
+      shapes,
+      rungs,
+      result: together(shapes, rungs),
+      neverAll: neverAllWin(shapes),
+    };
   }, [legs, eventOf]);
+
+  // What the legs net at each finishing price, ladder by ladder, from the same shapes and each leg's own win and loss. The
+  // best and worst case come from the same legs: they are what a finishing price can really give, which is not always
+  // "every leg wins" and "every leg loses".
+  const pays = useMemo(() => {
+    const list = joint.shapes.map((shape, i) =>
+      legPay(shape, statuses[legs[i]?.key ?? '']),
+    );
+    return {
+      list,
+      ...payoffCurves(list, joint.rungs),
+      extremes: extremes(list),
+    };
+  }, [joint, statuses, legs]);
   // The tendency is only worth stating about a range, and a range only exists between separate ladders.
   const cryptoApart = cryptoLegs(
     Array.from(new Set(legs.map((l) => l.event)), eventOf),
@@ -269,7 +344,10 @@ export default function Basket() {
   // The short warning says the legs "can all win", which is wrong once two of them cannot both win, and is already said
   // at more length when the panel talks about the range.
   const warnTogether =
-    crypto >= 2 && !leaning && joint.result.impossible.length === 0;
+    crypto >= 2 &&
+    !leaning &&
+    joint.result.impossible.length === 0 &&
+    joint.neverAll.length === 0;
 
   async function place() {
     if (!button.canPlace) return;
@@ -369,8 +447,8 @@ export default function Basket() {
               presets={[20, 30, 50, 100]}
               note={
                 even
-                  ? `Shared evenly: ${usd(splitEvenly(amount, Math.max(1, legs.length))[0] ?? 0)} a leg. Change a leg's stake to set it yourself.`
-                  : 'Leg stakes are set by hand.'
+                  ? `${splitWords(amount, Math.max(1, legs.length))} Change a leg’s stake to set it yourself.`.trim()
+                  : `Leg stakes are set by hand and add up to ${usd(sum.stake)}.`
               }
             />
             <button
@@ -432,10 +510,25 @@ export default function Basket() {
               </span>
             </div>
           )}
+
+          {/* Beside the ticket, not in it: the charts need the width, and the ticket has to stay short enough to act on. */}
+          {events.length > 0 && legs.length >= MIN_LEGS && (
+            <PaysPanel
+              curves={pays.curves}
+              missing={pays.missing}
+              pays={pays.list}
+              eventOf={eventOf}
+              tickerOf={(i) =>
+                joint.shapes[i]?.ticker ?? legs[i]?.event ?? null
+              }
+            />
+          )}
         </div>
 
         <aside
+          ref={ticketRef}
           className="card quote-card basket-ticket"
+          style={ticketAt === undefined ? undefined : { top: ticketAt }}
           aria-live="polite"
           aria-label="Your basket"
         >
@@ -472,7 +565,6 @@ export default function Basket() {
                   const ev = eventOf(l.event);
                   const ra = ev?.rungs.find((r) => r.symbol === l.a);
                   const rb = ev?.rungs.find((r) => r.symbol === l.b);
-                  const s = statuses[l.key];
                   const k = kindOfLeg(l.kind);
                   return (
                     <li
@@ -495,7 +587,7 @@ export default function Basket() {
                             : 'Choose two levels'}
                         </span>
                       </div>
-                      <b>{usd(s?.cost ?? l.stake)}</b>
+                      <b>{usd(l.stake)}</b>
                     </li>
                   );
                 })}
@@ -506,13 +598,30 @@ export default function Basket() {
                   <dt>Total stake</dt>
                   <dd>{usd(sum.stake)}</dd>
                 </div>
+                <div>
+                  <dt>What the orders cost</dt>
+                  <dd>{usd(sum.cost)}</dd>
+                  {sized && <dd className="basket-cost">{sized}</dd>}
+                </div>
                 <div data-kind="win">
-                  <dt>Best case, every leg wins</dt>
-                  <dd>{sum.best !== null ? usdSigned(sum.best) : '–'}</dd>
+                  <dt>
+                    {pays.extremes && !pays.extremes.everyWin
+                      ? 'Best case'
+                      : 'Best case, every leg wins'}
+                  </dt>
+                  <dd>
+                    {pays.extremes ? usdSigned(pays.extremes.best) : '–'}
+                  </dd>
                 </div>
                 <div data-kind="lose">
-                  <dt>Worst case, every leg loses</dt>
-                  <dd>{sum.worst !== null ? usdSigned(sum.worst) : '–'}</dd>
+                  <dt>
+                    {pays.extremes && !pays.extremes.everyLose
+                      ? 'Worst case'
+                      : 'Worst case, every leg loses'}
+                  </dt>
+                  <dd>
+                    {pays.extremes ? usdSigned(pays.extremes.worst) : '–'}
+                  </dd>
                 </div>
               </dl>
 
@@ -520,30 +629,21 @@ export default function Basket() {
                 <TogetherPanel
                   joint={joint.result}
                   shapes={joint.shapes}
+                  neverAll={joint.neverAll}
                   assetOf={(ticker) => {
                     const ev = eventOf(ticker);
                     return ev ? assetLabel(ev) : 'the price';
                   }}
                   leaning={leaning}
+                  warn={warnTogether}
                 />
               )}
 
-              <div className="basket-notes">
-                <p className="fine">
-                  A Return Parlay leg gives its stake back if its first level
-                  fails. A Range leg always returns part of what it cost.
-                </p>
-                {warnTogether && (
-                  <p className="fine">
-                    Legs on assets that tend to move together can all win or all
-                    lose at once.
-                  </p>
-                )}
-                <p className="fine">
-                  Each leg is its own bet. If a leg cannot be completed, the
-                  legs before it stay placed and the rest are not sent.
-                </p>
-              </div>
+              <p className="fine basket-terms">
+                Each leg is its own bet, with its own result. If a leg cannot
+                be completed, the legs before it stay placed and the rest are
+                not sent.
+              </p>
 
               {basketError && (
                 <p className="note note-bad" role="alert">
@@ -569,12 +669,6 @@ export default function Basket() {
   );
 }
 
-/** "2", "2 and 3", "1, 2 and 4". */
-const listed = (ns: number[]): string =>
-  ns.length < 2
-    ? ns.join('')
-    : `${ns.slice(0, -1).join(', ')} and ${ns[ns.length - 1]}`;
-
 /**
  * How the legs come out together. Legs on one ladder get an exact figure, because one finishing price decides them. Legs on
  * separate ladders get the range that holds however the markets move together, with the figure for unrelated markets marked
@@ -583,15 +677,21 @@ const listed = (ns: number[]): string =>
 function TogetherPanel({
   joint,
   shapes,
+  neverAll,
   assetOf,
   leaning,
+  warn,
 }: {
   joint: Together;
   shapes: (JointLeg | null)[];
+  /** Three or more legs on one ladder that can win two by two but never all at once (see `neverAllWin`). */
+  neverAll: { legs: number[]; ticker: string }[];
   /** What a ladder's price is of, for a sentence: "Bitcoin". */
   assetOf: (ticker: string) => string;
   /** Whether to say which way legs on crypto assets tend to pull the range. */
   leaning: boolean;
+  /** Whether to say that the legs can move together while the figures that would show it are still missing. */
+  warn: boolean;
 }) {
   const { allWin, anyWin, missing, impossible } = joint;
   const ranged = !!allWin && !allWin.exact;
@@ -613,35 +713,29 @@ function TogetherPanel({
         Chance every leg wins: <b>{allWin ? spanWords(allWin) : '–'}</b>
       </p>
       {allWin && ranged && (
-        <>
-          <div className="together-meter">
-            <div
-              className="together-bar"
-              role="img"
-              aria-label={`A bar from 0% to 100%, shaded from ${pct(allWin.low)} to ${pct(allWin.high)} and marked at ${pct(allWin.ifUnrelated)}.`}
-            >
-              <span
-                className="together-range"
-                style={{
-                  left: `${allWin.low * 100}%`,
-                  width: `${(allWin.high - allWin.low) * 100}%`,
-                }}
-              />
-              <span
-                className="together-tick"
-                style={{ left: `${allWin.ifUnrelated * 100}%` }}
-              />
-            </div>
-            <div className="together-scale" aria-hidden="true">
-              <span>0%</span>
-              <span>100%</span>
-            </div>
+        <div className="together-meter">
+          <div
+            className="together-bar"
+            role="img"
+            aria-label={`A bar from 0% to 100%, shaded from ${pct(allWin.low)} to ${pct(allWin.high)} and marked at ${pct(allWin.ifUnrelated)}.`}
+          >
+            <span
+              className="together-range"
+              style={{
+                left: `${allWin.low * 100}%`,
+                width: `${(allWin.high - allWin.low) * 100}%`,
+              }}
+            />
+            <span
+              className="together-tick"
+              style={{ left: `${allWin.ifUnrelated * 100}%` }}
+            />
           </div>
-          <p className="fine">
-            If the markets had nothing to do with each other it would be{' '}
-            {chanceWords(allWin.ifUnrelated)} (the mark on the bar).
-          </p>
-        </>
+          <div className="together-scale" aria-hidden="true">
+            <span>0%</span>
+            <span>100%</span>
+          </div>
+        </div>
       )}
       <p className="together-line">
         At least one leg wins: <b>{anyWin ? spanWords(anyWin) : '–'}</b>
@@ -663,10 +757,23 @@ function TogetherPanel({
         </p>
       )}
 
+      {neverAll.map((n) => (
+        <p className="note note-warn" key={n.ticker}>
+          {n.legs.length === count
+            ? 'These legs'
+            : `Legs ${listed(n.legs.map((i) => i + 1))}`}{' '}
+          cannot all win: no finishing price for {assetOf(n.ticker)} wins every
+          one of them. A basket is not all-or-nothing, so each leg still has its
+          own result.
+        </p>
+      ))}
+
+      {/* One paragraph of small print, not three: whose chances these are, and what the bar's range and mark mean. */}
       {missing.length > 0 ? (
         <p className="fine">
-          Waiting for prices on {missing.length === 1 ? 'leg' : 'legs'}{' '}
-          {listed(missing.map((i) => i + 1))}.
+          {waitingWords(missing)}
+          {warn &&
+            ' Legs on assets that tend to move together can all win or all lose at once.'}
         </p>
       ) : (
         <p className="fine">
@@ -674,21 +781,145 @@ function TogetherPanel({
             (count === 2
               ? 'Both legs are on the same market, so one finishing price decides both. '
               : `All ${count} legs are on the same market, so one finishing price decides them all. `)}
-          These are the market’s chances, from the exchange’s prices right now.
+          These are the market’s chances, from its prices right now.
           {anyRange &&
-            ' Those prices do not say how separate markets move together, so a range is all that is certain.'}
+            ' Prices do not say how separate markets move together, so a range is all that is certain.'}
+          {allWin &&
+            ranged &&
+            ` The mark is where it would sit if they were unrelated: ${chanceWords(allWin.ifUnrelated)}.`}
           {joint.adjusted &&
             ' Some of the prices were out of order, so they were averaged first.'}
         </p>
       )}
       {leaning && (
         <p className="fine">
-          Crypto prices tend to move together, so legs on them can all win or
-          all lose at once. When the legs point the same way, the chance every
-          leg wins leans toward the top of its range; when they point opposite
-          ways, toward the bottom.
+          Crypto prices tend to move together: legs that point the same way
+          lean toward the top of the range, and legs that point opposite ways
+          toward the bottom.
         </p>
       )}
     </section>
+  );
+}
+
+/**
+ * A sentence with its figures set apart: each dollar amount and each percent is kept on one line, so "−$30.00" never breaks
+ * after its minus sign, and can be given weight where the figures are the point of the sentence.
+ */
+function Figures({ text }: { text: string }) {
+  const parts = text.split(/((?:[+−])?\$[\d,]+(?:\.\d+)?|(?:under |over )?\d+%)/);
+  return (
+    <>
+      {parts.map((part, i) => (i % 2 === 1 ? <b key={i}>{part}</b> : part))}
+    </>
+  );
+}
+
+/** A phone opens with the charts folded away, so the ticket and its button stay within reach; a wider window shows them. */
+const chartsStartOpen = (): boolean =>
+  typeof window === 'undefined' ||
+  typeof window.matchMedia !== 'function' ||
+  window.matchMedia('(min-width: 721px)').matches;
+
+/**
+ * What the basket pays: for each ladder it uses, the legs on that ladder added up at every price the ladder can finish at
+ * (see lib/payoffCurve.ts), with the same thing in a sentence. One finishing price decides every leg on a ladder, so each
+ * chart is exact for the exchange's prices. Ladders are never added to each other, and the sentence above the charts says so.
+ */
+function PaysPanel({
+  curves,
+  missing,
+  pays,
+  eventOf,
+  tickerOf,
+}: {
+  curves: LadderCurve[];
+  /** Legs that are in no chart yet, by their place in the basket. */
+  missing: number[];
+  /** The list the curves were made from: one per leg, null for a leg with no levels or no figures. */
+  pays: (LegPay | null)[];
+  eventOf: (ticker: string | null) => MarketEvent | undefined;
+  /** The ladder a leg is on, when it has one, so a leg that is left out is named under its own ladder's chart. */
+  tickerOf: (leg: number) => string | null;
+}) {
+  const [open, setOpen] = useState(chartsStartOpen);
+  const assetOf = (ticker: string) => {
+    const ev = eventOf(ticker);
+    return ev ? assetLabel(ev) : 'this market';
+  };
+  // Two ladders on one asset (Bitcoin at 3pm and at 4pm) are told apart by when they close.
+  const shared = (ticker: string) =>
+    curves.some(
+      (c) => c.ticker !== ticker && assetOf(c.ticker) === assetOf(ticker),
+    );
+  const closes = (ticker: string) =>
+    closesLabel(eventOf(ticker)?.expiry ?? null);
+  const elsewhere = missing.filter(
+    (i) => !curves.some((c) => c.ticker === tickerOf(i)),
+  );
+
+  return (
+    <details
+      className="card pays"
+      open={open}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+    >
+      <summary>
+        <h2 className="h-card">What this basket pays</h2>
+        <span className="pays-toggle">
+          {open ? 'Hide' : curves.length === 1 ? 'Show chart' : 'Show charts'}
+          <span className="pays-caret" aria-hidden="true" />
+        </span>
+      </summary>
+      <div className="pays-body">
+        <p className="pays-intro">
+          {paysIntro(curves, missing, pays.length)}
+        </p>
+        {curves.length > 0 && (
+          <div
+            className="pays-grid"
+            data-many={curves.length > 2 ? '' : undefined}
+          >
+            {curves.map((c) => {
+              const asset = assetOf(c.ticker);
+              const words = curveWords(
+                c,
+                pays,
+                shared(c.ticker) ? `${asset} (${closes(c.ticker)})` : asset,
+              );
+              const waiting = missing.filter((i) => tickerOf(i) === c.ticker);
+              return (
+                <article className="pays-ladder" key={c.ticker}>
+                  <h3 className="pays-name">
+                    <span>
+                      {asset} · {closes(c.ticker)}
+                    </span>
+                    <span>
+                      {c.legs.length === 1 ? 'Leg' : 'Legs'}{' '}
+                      {listed(c.legs.map((i) => i + 1))}
+                    </span>
+                  </h3>
+                  <PayoffBars curve={c} asset={asset} />
+                  <p className="pays-line">
+                    <Figures text={words.line} />
+                  </p>
+                  <p className="fine">
+                    <Figures text={words.average} />
+                    {c.adjusted &&
+                      ' Some of this ladder’s prices were out of order, so they were evened out first.'}
+                  </p>
+                  {waiting.length > 0 && (
+                    <p className="fine">{waitingOnLadder(waiting)}</p>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        )}
+        {elsewhere.length > 0 && (
+          <p className="fine">{waitingWords(elsewhere)}</p>
+        )}
+      </div>
+    </details>
   );
 }

@@ -25,7 +25,7 @@ async function setup() {
   const deps = { exchange: exchange as Exchange, ledger, newId: () => 't1', now: () => new Date('2026-11-17T23:10:00Z'), waiveMarkup: true };
   await ensureBaseline(exchange, ledger, 'primary');
   const bet = await placeConditionalBet(deps, { user: 'primary', eventTicker: 'ETHTEST', conditionSymbol: exchange.symbol(1800), targetSymbol: exchange.symbol(1820), stake: 10 });
-  assert.equal(bet.status, 'open'); // 12.9 YES on 1820 and 10.26 NO on 1800, for $10.05
+  assert.equal(bet.status, 'open'); // 12.83 YES on 1820 and 10.2 NO on 1800, for $9.99: sized so the two orders never cost more than the $10 asked for
   return { exchange, ledger, deps, bet };
 }
 
@@ -36,10 +36,10 @@ test('a sell whose answer never arrives is looked up by its tag, so a sale that 
   assert.equal(done.status, 'cashed_out', 'the sale went through, and the bet says so');
   const first = done.legs.find((l) => l.clientOrderId === 'gv-t1-cb1')!;
   assert.equal(first.status, 'filled');
-  assert.equal(first.quantityFilled, 12.9);
+  assert.equal(first.quantityFilled, 12.83);
   assert.match(first.note ?? '', /found on the exchange by its tag/);
   assert.equal(exchange.sent.filter((o) => o.clientOrderId === 'gv-t1-cb1').length, 1, 'never sent twice');
-  near(done.cashOut!.proceeds, 12.9 * 0.6 + 10.26 * 0.18);
+  near(done.cashOut!.proceeds, 12.83 * 0.6 + 10.2 * 0.18);
   const rec = await reconcile(exchange, ledger, 'primary');
   assert.equal(rec.ok, true);
 });
@@ -56,8 +56,8 @@ test('a sale interrupted between its two orders is finished from the ledger: rec
   exchange.findOrder = realFindOrder;
   assert.equal(part.cashOut?.complete, false, 'as far as the ledger knows, only the outcome leg was sold');
   assert.notEqual(part.status, 'cashed_out');
-  near(part.cashOut!.stake, 10.05);
-  near(holdings(part).hedge.quantity, 10.26);
+  near(part.cashOut!.stake, 9.9946);
+  near(holdings(part).hedge.quantity, 10.2);
   assert.equal(part.legs.at(-1)!.status, 'error');
 
   // What a restart sees after a crash at that moment: the order recorded as sent, its result unknown.
@@ -68,8 +68,8 @@ test('a sale interrupted between its two orders is finished from the ledger: rec
   const recovered = reloaded.bet('t1')!;
   assert.equal(recovered.status, 'cashed_out');
   assert.equal(recovered.cashOut?.complete, true);
-  near(recovered.cashOut!.stake, 10.05);
-  near(recovered.cashOut!.proceeds, 12.9 * 0.6 + 10.26 * 0.18);
+  near(recovered.cashOut!.stake, 9.9946);
+  near(recovered.cashOut!.proceeds, 12.83 * 0.6 + 10.2 * 0.18);
   assert.equal(exchange.sent.filter((o) => o.clientOrderId === 'gv-t1-ca1').length, 1, 'never sent twice');
   const rec = await reconcile(exchange, reloaded, 'primary');
   assert.equal(rec.ok, true);
@@ -87,7 +87,7 @@ test('a crash before the first sell was answered: if Gemini never had the order,
     side: 'sell',
     outcome: 'yes',
     limitPrice: 0.59,
-    quantityRequested: 12.9,
+    quantityRequested: 12.83,
     quantityFilled: 0,
     avgPrice: null,
     fee: 0,
@@ -101,6 +101,6 @@ test('a crash before the first sell was answered: if Gemini never had the order,
   assert.equal(recovered.status, 'open');
   assert.equal(recovered.cashOut, undefined);
   assert.equal(recovered.legs.at(-1)!.status, 'unfilled');
-  near(recovered.cost, 10.05);
+  near(recovered.cost, 9.9946);
   assert.equal(recovered.payoffs?.hedged, true);
 });

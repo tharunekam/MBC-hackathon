@@ -128,7 +128,7 @@ async function session(page, base, live) {
   const handle = (await page.locator('table tbody tr').first().locator('td').nth(1).innerText()).trim();
 
   await page.goto(`${base}/proof`);
-  await page.getByRole('button', { name: 'Check against Gemini' }).click();
+  await page.getByRole('button', { name: /^Check against / }).click();
   await page.waitForSelector('.recon .is-ok');
   const tied = await page.locator('.recon .is-ok').innerText();
 

@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from 'react';
+import { useStakeCap } from '../lib/stake';
 import { api } from '../api';
 import type { MarketEvent, Rung } from '../api/types';
 import {
@@ -16,18 +17,44 @@ import { cents, money, pct, usd } from '../lib/format';
 import { useDebounced, useResource } from '../lib/hooks';
 import { execLive } from '../lib/liveClients';
 import { assetLabel, closesLabel, groupByAsset } from '../lib/markets';
+import { cleanStakeText } from '../lib/stake';
 
-const KINDS: { kind: LegKind; label: string; full: string }[] = [
-  { kind: 'up', label: 'Parlay up', full: 'Return Parlay, rising' },
-  { kind: 'down', label: 'Parlay down', full: 'Return Parlay, falling' },
-  { kind: 'range', label: 'Range', full: 'Range' },
+/**
+ * The four kinds of leg. `label` is what the switch shows where there is room and `short` what it shows on a phone, where
+ * "Parlay down" would not fit beside the other three. `full` is the name a screen reader hears: it starts with the words on
+ * screen, so someone using voice control can say what they see, and then says which product it is.
+ */
+const KINDS: { kind: LegKind; label: string; short: string; full: string }[] = [
+  {
+    kind: 'up',
+    label: 'Parlay up',
+    short: 'Up',
+    full: 'Parlay up: Return Parlay, rising',
+  },
+  {
+    kind: 'down',
+    label: 'Parlay down',
+    short: 'Down',
+    full: 'Parlay down: Return Parlay, falling',
+  },
+  { kind: 'range', label: 'Range', short: 'Range', full: 'Range' },
+  { kind: 'breakout', label: 'Breakout', short: 'Breakout', full: 'Breakout' },
 ];
 
 /** The names of the two levels, by kind of leg. */
 const LEVELS: Record<LegKind, [string, string]> = {
   up: ['Given at or above', 'Reach'],
-  down: ['Given below', 'Fall below'],
+  down: ['Stays under', 'Falls below'],
   range: ['Floor', 'Ceiling'],
+  breakout: ['Win below', 'Win at or above'],
+};
+
+/** What the chance of winning is called for each kind of leg. */
+const CHANCE: Record<LegKind, string> = {
+  up: 'Chance to win',
+  down: 'Chance to win',
+  range: 'Chance inside',
+  breakout: 'Chance outside',
 };
 
 /**
@@ -52,6 +79,8 @@ export function useLegQuote(leg: LegDraft) {
       if (!event || !a || !b) return Promise.resolve(null);
       if (kind === 'range')
         return api.quoteRange({ event, low: a, high: b, stake: dStake });
+      if (kind === 'breakout')
+        return api.quoteBreakout({ event, low: a, high: b, stake: dStake });
       return api.quote({
         event,
         condition: a,
@@ -115,6 +144,8 @@ export default function BasketLeg(p: Props) {
 
   const quote = useLegQuote(leg);
   const { reload } = quote;
+  // The venue's own cap on one bet, once it is known; until then the basket's default applies.
+  const [maxStake] = useStakeCap();
   useEffect(() => {
     if (p.reloadSignal > 0) reload();
   }, [p.reloadSignal, reload]);
@@ -130,6 +161,7 @@ export default function BasketLeg(p: Props) {
     shown: quote.shown,
     answerError: quote.error,
     feeCoef: p.feeCoef,
+    maxStake,
   });
 
   // The ticket and the button read every leg's status. Reported only when it changes, so the page does not loop.
@@ -188,7 +220,8 @@ export default function BasketLeg(p: Props) {
             onClick={() => p.onKind(k.kind)}
             disabled={locked}
           >
-            {k.label}
+            <span className="kind-long">{k.label}</span>
+            <span className="kind-short">{k.short}</span>
           </button>
         ))}
       </div>
@@ -255,8 +288,9 @@ export default function BasketLeg(p: Props) {
             <span className="field-pre">$</span>
             <input
               inputMode="decimal"
+              autoComplete="off"
               value={leg.stakeText}
-              onChange={(e) => p.onStake(e.target.value.replace(/[^\d.]/g, ''))}
+              onChange={(e) => p.onStake(cleanStakeText(e.target.value))}
               disabled={locked}
               aria-describedby={`${id}-quote`}
             />
@@ -270,12 +304,10 @@ export default function BasketLeg(p: Props) {
         ) : (
           <dl className={`leg-nums${status.estimated ? ' is-est' : ''}`}>
             <div>
-              <dt>
-                {leg.kind === 'range' ? 'Chance inside' : 'Chance to win'}
-              </dt>
+              <dt>{CHANCE[leg.kind]}</dt>
               <dd>{status.chanceWin !== null ? pct(status.chanceWin) : '–'}</dd>
             </div>
-            {leg.kind !== 'range' && (
+            {(leg.kind === 'up' || leg.kind === 'down') && (
               <div>
                 <dt>Stake back</dt>
                 <dd>

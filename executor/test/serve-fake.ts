@@ -6,6 +6,7 @@
  *
  * Extra routes under /dev (this server only, never in the real executor):
  *   POST /dev/resolve?spot=63300   settle every contract of the ladder against that price, as Gemini would at expiry
+ *   GET  /dev/round                whether rounds are on (FAKE_ROUND_MINUTES), when this one closes, and how the last finished
  *   POST /dev/reset                new empty exchange and ledger
  *   POST /dev/state?strike=63500&state=post_only   put one rung in a market state (state=open restores it)
  *   POST /dev/churn?on=1&slowMs=2000&everyMs=800   wobbling prices, a rung that empties, a rung that goes post-only, slow fills
@@ -35,12 +36,26 @@ const nextHour = new Date();
 nextHour.setMinutes(0, 0, 0);
 nextHour.setHours(nextHour.getHours() + 1);
 const ticker = `BTC${nextHour.toISOString().slice(2, 13).replace(/[-T]/g, '')}00`;
-const label = new Intl.DateTimeFormat('en-US', { hour: 'numeric', timeZone: 'America/New_York' }).format(nextHour).replace(' ', '').toLowerCase();
 const STRIKES = Array.from({ length: 8 }, (_, i) => 61500 + i * 500);
 
-function build() {
-  const rungs = STRIKES.map((strike) => {
-    const mid = 1 - cdf(Math.log(strike / SPOT) / SIGMA);
+/**
+ * Rounds: with FAKE_ROUND_MINUTES set (as `npm run dev` does) the ladder closes by itself that many minutes after it
+ * opens, settles against a price drawn from its own odds, and opens again for the next round. Without it a bet placed here
+ * never settled unless someone knew to call /dev/resolve, so a person trying the app with no keys could not see a result, a
+ * reveal or a leaderboard row. Left unset (the tests and the browser checks), the ladder closes at the top of the hour and
+ * only /dev/resolve settles it, so a check is never interrupted by a round ending under it.
+ */
+const ROUND_MS = Math.max(0, Number(process.env.FAKE_ROUND_MINUTES ?? 0) || 0) * 60_000;
+/** How long after a round resolves before the ladder opens again: long enough for auto-settle (3 s) to have run. */
+const REOPEN_AFTER_MS = 8000;
+const round = { spot: SPOT, closesAt: ROUND_MS > 0 ? new Date(Date.now() + ROUND_MS) : nextHour, resolvedAt: null as number | null, finish: null as number | null };
+
+const titleFor = (closes: Date): string =>
+  `BTC price today at ${new Intl.DateTimeFormat('en-US', { hour: 'numeric', ...(closes.getMinutes() ? { minute: '2-digit' } : {}), timeZone: 'America/New_York' }).format(closes).replace(' ', '').toLowerCase()} EST`;
+
+function rungsAt(spot: number) {
+  return STRIKES.map((strike) => {
+    const mid = 1 - cdf(Math.log(strike / spot) / SIGMA);
     // A flat 2 cent spread: tighter than Gemini production (median about 4 cents) so most pairs pass the value rule.
     return {
       strike,
@@ -50,7 +65,16 @@ function build() {
       askSize: 400,
     };
   });
-  return new FakeExchange(ticker, rungs, { title: `BTC price today at ${label} EST`, expiryDate: nextHour.toISOString() });
+}
+
+function build() {
+  return new FakeExchange(ticker, rungsAt(round.spot), { title: titleFor(round.closesAt), expiryDate: round.closesAt.toISOString() });
+}
+
+/** A finishing price drawn from the same bell curve the ladder's prices come from, so the odds on screen are honest ones. */
+function drawFinish(): number {
+  const z = Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
+  return Math.round(round.spot * Math.exp(SIGMA * z) * 100) / 100;
 }
 
 const hub = createLiveHub();
@@ -114,14 +138,50 @@ const handler = () =>
   });
 let api = handler();
 
+/** Settles every contract of the ladder against a price, as Gemini would at expiry. */
+function resolveAt(price: number): void {
+  for (const strike of STRIKES) exchange.resolve(strike, price >= strike ? 'yes' : 'no', price);
+  round.resolvedAt = Date.now();
+  round.finish = price;
+  hub.publish('markets');
+}
+
+/** Opens the ladder for the next round, around a price a little off the last so the rounds are not all alike. */
+function reopen(): void {
+  round.spot = Math.round((SPOT + (Math.random() - 0.5) * 500) / 10) * 10;
+  round.closesAt = new Date(Date.now() + ROUND_MS);
+  round.resolvedAt = null;
+  round.finish = null;
+  exchange.relist(rungsAt(round.spot), { title: titleFor(round.closesAt), expiryDate: round.closesAt.toISOString() });
+  hub.publish('markets');
+}
+
+// The round clock. A round that has resolved (by the clock or by /dev/resolve) opens again once its bets have settled:
+// reopening under a bet that is still open would hand it the next round's result.
+const live = (status: string) => status === 'open' || status === 'unhedged' || status === 'placing';
+const roundClock =
+  ROUND_MS > 0
+    ? setInterval(() => {
+        if (round.resolvedAt === null) {
+          if (Date.now() >= round.closesAt.getTime()) resolveAt(drawFinish());
+        } else if (Date.now() - round.resolvedAt >= REOPEN_AFTER_MS && !ledger.data.bets.some((b) => live(b.status) || (b.status === 'cashed_out' && !b.called))) {
+          reopen();
+        }
+      }, 1000)
+    : null;
+roundClock?.unref();
 
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost');
   if (req.method === 'POST' && url.pathname === '/dev/resolve') {
     const spot = Number(url.searchParams.get('spot') ?? SPOT);
-    for (const strike of STRIKES) exchange.resolve(strike, spot >= strike ? 'yes' : 'no');
+    resolveAt(spot);
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return void res.end(JSON.stringify({ resolvedAt: spot, yes: STRIKES.filter((k) => spot >= k) }));
+    return void res.end(JSON.stringify({ resolvedAt: spot, yes: STRIKES.filter((k) => spot >= k), reopens: ROUND_MS > 0 }));
+  }
+  if (req.method === 'GET' && url.pathname === '/dev/round') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return void res.end(JSON.stringify({ rounds: ROUND_MS > 0, minutes: ROUND_MS / 60_000, spot: round.spot, closesAt: round.closesAt.toISOString(), resolved: round.resolvedAt !== null, finish: round.finish }));
   }
   if (req.method === 'POST' && url.pathname === '/dev/churn') {
     // /dev/churn?on=1&slowMs=2000   (on=0 stops it)
@@ -140,6 +200,7 @@ const server = createServer((req, res) => {
   }
   if (req.method === 'POST' && url.pathname === '/dev/reset') {
     api.close();
+    Object.assign(round, { spot: SPOT, closesAt: ROUND_MS > 0 ? new Date(Date.now() + ROUND_MS) : nextHour, resolvedAt: null, finish: null });
     exchange = decorate(build());
     ledger = new Ledger(join(mkdtempSync(join(tmpdir(), 'given-fake-')), 'ledger.json'));
     api = handler();
@@ -153,6 +214,11 @@ server.on('error', (err) => {
   console.error(`Could not start: ${err.message}`);
   process.exit(1);
 });
-server.listen(PORT, '127.0.0.1', () => console.log(`Local test exchange + executor API on http://127.0.0.1:${PORT}  (no Gemini; ${ticker}, spot ${SPOT})`));
+server.listen(PORT, '127.0.0.1', () =>
+  console.log(
+    `Local test exchange + executor API on http://127.0.0.1:${PORT}  (no Gemini; ${ticker}, spot ${SPOT}` +
+      (ROUND_MS > 0 ? `; a round closes and settles by itself every ${ROUND_MS / 60_000} min)` : '; settles only on POST /dev/resolve)'),
+  ),
+);
 process.on('SIGINT', () => server.close(() => process.exit(0)));
 process.on('SIGTERM', () => server.close(() => process.exit(0)));

@@ -8,13 +8,6 @@ import type { MarketEvent, Rung } from '../api/types';
  * cents (XRP at $0.88 to $1.02) was drawn squashed into the left edge of its chart.
  */
 
-/** A tab's name: "Oil (Brent) price on November 18?" becomes "Oil (Brent) · November 18". */
-export const shortTitle = (title: string): string =>
-  title
-    .replace(/ price today at /, ' · ')
-    .replace(/ price on /, ' · ')
-    .replace(/\s*\?\s*$/, '');
-
 const twoSided = (r: Rung): boolean => r.bid !== null && r.ask !== null;
 
 /** Enough to draw a curve and quote a pair: at least two rungs with both a buy and a sell price. */
@@ -49,6 +42,23 @@ export function listLadders(events: MarketEvent[], showUnpriced = false): Ladder
   const shown = priced.length === 0 ? ladders : showUnpriced ? [...priced, ...unpriced] : priced;
   const first = shown.reduce<MarketEvent | undefined>((best, e) => (best === undefined || rank(e) < rank(best) ? e : best), undefined);
   return { shown, unpriced, first };
+}
+
+/**
+ * A round step for a price read off a ladder, between its rungs: a hundredth of a rung's gap, as a power of ten ($10 on a
+ * $500 ladder, a tenth of a cent on a 2¢ one). A price worked out to the cent would claim more than the ladder knows.
+ */
+export function tickFor(gap: number): number {
+  return gap > 0 ? 10 ** (Math.floor(Math.log10(gap)) - 1) : 1;
+}
+
+/** A price rounded to that step. */
+export const snap = (x: number, tick: number): number => Math.round(x / tick) * tick;
+
+/** The usual gap between a ladder's rungs: its span shared out over the gaps. Zero for fewer than two rungs. */
+export function rungGap(strikes: number[]): number {
+  if (strikes.length < 2) return 0;
+  return (Math.max(...strikes) - Math.min(...strikes)) / (strikes.length - 1);
 }
 
 /**

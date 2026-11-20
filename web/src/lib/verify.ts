@@ -188,7 +188,7 @@ export interface CallQuestion {
 /**
  * The question a revealed call asked, from what is on Solana only: the bet id (which carries the product, see
  * `kindOfBetId`), the event and the two committed symbols. For a falling parlay the condition symbol is the higher strike;
- * for a range the condition is the lower strike and the target the higher one.
+ * for a range or a breakout the condition is the lower strike and the target the higher one.
  */
 export function callQuestion(call: { betId: string; event: string; condition: string; target: string; outcome: 0 | 1 }): CallQuestion {
   const kind = kindOfBetId(call.betId);
@@ -205,6 +205,9 @@ export function callQuestion(call: { betId: string; event: string; condition: st
   if (kind.product === 'range') {
     parts = [{ text: 'Will ' }, asset, { text: ' finish between ' }, c, { text: ' and ' }, t, { text: '?' }];
     result = won ? 'Finished inside' : 'Finished outside';
+  } else if (kind.product === 'breakout') {
+    parts = [{ text: 'Will ' }, asset, { text: ' finish outside ' }, c, { text: ' to ' }, t, { text: '?' }];
+    result = won ? 'Finished outside' : 'Finished inside';
   } else if (kind.direction === 'down') {
     parts = [{ text: 'Given ' }, asset, { text: ' stays below ' }, c, { text: ', will it fall below ' }, t, { text: '?' }];
     result = won ? 'Target reached' : 'Fell short';

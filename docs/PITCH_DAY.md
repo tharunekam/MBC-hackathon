@@ -39,7 +39,7 @@ be the evidence for the QuickNode bounty, so it is on for a short window only.
 | Problem | What to do |
 |---|---|
 | The sandbox has no bettable ladder (top of the hour) | Wait a few minutes, or present from a recorded session: `GIVEN_MODE=replay` plays back a real recorded bet with nothing behind it (`docs/DEPLOY.md`, "Replay"). Say it is a replay |
-| Gemini sandbox is down or slow | The same replay, or `GIVEN_MODE=fake` (it carries no label on screen: present it as the local test exchange, not Gemini) |
+| Gemini sandbox is down or slow | The same replay, or `GIVEN_MODE=fake` (the nav says "Test exchange"; present it as the local test exchange, not Gemini; set `FAKE_ROUND_MINUTES=5` so its ladder settles by itself) |
 | The Stream shows paused or failing | `npm run quicknode -- pitch-on` again. The leaderboard keeps filling from the minute-by-minute read, so nothing on screen breaks |
 | The public address changed (quick tunnel restarted) | Update `GIVEN_PUBLIC_URL`, restart the server, then `npm run quicknode -- pitch-on --recreate` so the Stream points at the new address |
 | The laptop sleeps | Keep it awake while presenting (`caffeinate -dimsu`), or use a host |
@@ -47,6 +47,13 @@ be the evidence for the QuickNode bounty, so it is on for a short window only.
 ## What to say, and not say
 
 - "Money back if…", never "risk-free" or "guaranteed". Show the cost: the app does.
+- What these are: **defined-outcome bets**. Every result is on screen before you bet. Not "structured products" (that
+  means something an issuer packages and stands behind; Given issues and holds nothing), and not "protected" or "buffer".
+- Range is "it stays put", Breakout is "a big move, either way". Say that, not "volatility". We found no venue listing
+  "finishes outside these two levels" as one contract; say "we found none", never "first".
+- The ladder as a histogram is not new (Kalshi shows one on some range markets). What is ours is setting a person's view
+  against it and listing the bets that pay for the difference.
+- The leaderboard: revealing is your choice, making the call is not hidden. It shows calls sealed beside calls revealed.
 - "Uses Gemini's API; not affiliated with Gemini." Say it is the **sandbox**, and say when a screen is a replay or the local test exchange.
 - The QuickNode Stream: network Solana devnet, dataset Programs + Logs, a filter that keeps successful transactions that logged
   a Given memo, delivered to a webhook that re-reads every transaction from Solana and verifies it, so a forged delivery cannot

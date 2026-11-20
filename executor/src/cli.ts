@@ -6,6 +6,7 @@
  *   node src/cli.ts pairs --down               ...for a parlay that a price falls (the condition is the HIGHER strike)
  *   node src/cli.ts bet <event> <conditionSymbol> <targetSymbol> <stake> [--down] [--max 0.60] [--leave]
  *   node src/cli.ts range <event> <lowSymbol> <highSymbol> <stake> [--max 0.60] [--leave]   win if it finishes between the two
+ *   node src/cli.ts breakout <event> <lowSymbol> <highSymbol> <stake> [--max 0.70] [--leave]   win if it finishes outside them
  *   node src/cli.ts cashout <bet>              what selling an open bet back would bring in now (sends nothing)
  *   node src/cli.ts cashout <bet> --sell [--min 3.10]   sell it back: one sell order per leg
  *   node src/cli.ts bets                       show the ledger
@@ -30,6 +31,7 @@ import { GeminiExchange } from './exchange.ts';
 import { GeminiPublic } from './gemini/rest.ts';
 import { Ledger } from './ledger.ts';
 import { linkedPairs, realRung } from './pairs.ts';
+import { placeBreakoutBet } from './breakout-bet.ts';
 import { placeRangeBet } from './range-bet.ts';
 import { ensureBaseline, reconcile } from './reconcile.ts';
 
@@ -46,7 +48,7 @@ const config = loadConfig();
 const ledger = new Ledger(resolve(config.dataDir, 'ledger.json'));
 const money = (x: number) => (x < 0 ? '-' : '') + '$' + Math.abs(x).toFixed(2);
 
-const kindOf = (bet: BetRecord): string => (bet.product === 'range' ? 'range' : bet.direction === 'down' ? 'falling parlay' : 'parlay');
+const kindOf = (bet: BetRecord): string => (bet.product === 'range' || bet.product === 'breakout' ? bet.product : bet.direction === 'down' ? 'falling parlay' : 'parlay');
 
 function printBet(bet: ReturnType<Ledger['bet']>): void {
   if (!bet) return;
@@ -64,7 +66,7 @@ function printBet(bet: ReturnType<Ledger['bet']>): void {
     console.log(`  stake ${money(p.stake)}   paid ${p.conditionalPrice?.toFixed(4) ?? '-'} per $1   hedged: ${p.hedged ? 'yes' : 'NO'}`);
     console.log(
       p.ifConditionFails === undefined
-        ? `  if inside the range: ${money(p.ifBothHit)}   if outside: ${money(p.ifConditionOnly)}`
+        ? `  if inside the range: ${money(p.ifInRange ?? p.ifBothHit)}   if outside: ${money(p.ifOutside ?? p.ifConditionOnly)}`
         : `  if condition fails: ${money(p.ifConditionFails)}   if both hit: ${money(p.ifBothHit)}   if condition only: ${money(p.ifConditionOnly)}`,
     );
   }
@@ -193,13 +195,13 @@ async function main(): Promise<void> {
         },
       );
       printBet(bet);
-    } else if (command === 'range') {
+    } else if (command === 'range' || command === 'breakout') {
       const [, eventTicker, lowSymbol, highSymbol, stake] = args;
       if (!eventTicker || !lowSymbol || !highSymbol || !stake) {
-        throw new Error('Usage: range <event> <lowSymbol> <highSymbol> <stake> [--max price] [--leave] [--slip ticks]');
+        throw new Error(`Usage: ${command} <event> <lowSymbol> <highSymbol> <stake> [--max price] [--leave] [--slip ticks]`);
       }
       await ensureBaseline(exchange, ledger, user);
-      const bet = await placeRangeBet(
+      const bet = await (command === 'breakout' ? placeBreakoutBet : placeRangeBet)(
         { exchange, ledger, feeCoef: config.takerFeeCoef, waiveMarkup: config.waiveMarkup },
         {
           user,
@@ -240,7 +242,7 @@ async function main(): Promise<void> {
     } else if (command === 'settle') {
       const done = await settleBets({ exchange, ledger, feeCoef: config.takerFeeCoef });
       for (const bet of [...done.settled, ...done.needsReview]) printBet(bet);
-      console.log(`\n${done.settled.length} bet(s) settled, ${done.needsReview.length} flagged for review.`);
+      console.log(`\n${done.settled.length} bet(s) settled, ${done.needsReview.length} flagged for review, ${done.called.length} sold-back bet(s) given their call's result.`);
     } else if (command === 'recover') {
       console.log(`${await recoverBets({ exchange, ledger, feeCoef: config.takerFeeCoef })} order(s) repaired.`);
     } else if (command === 'reconcile') {
@@ -249,7 +251,7 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(r, null, 2));
       process.exitCode = r.ok ? 0 : 1;
     } else {
-      console.log('Commands: pairs [event] [--all] [--down] | bet ... [--down] | range ... | cashout <bet> [--sell] | bets | settle | recover | reconcile | flow | review | resolve <bet> <paid> --note "..."');
+      console.log('Commands: pairs [event] [--all] [--down] | bet ... [--down] | range ... | breakout ... | cashout <bet> [--sell] | bets | settle | recover | reconcile | flow | review | resolve <bet> <paid> --note "..."');
       process.exitCode = 1;
     }
   } finally {

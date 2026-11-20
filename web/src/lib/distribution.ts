@@ -89,6 +89,37 @@ export function priceAtChance(levels: Level[], q: number): number | null {
   return null;
 }
 
+/**
+ * How far the market expects the price to travel, with no model: the band that holds the middle half of its view.
+ *
+ * `low` is the price it gives a 75% chance of finishing at or above and `high` the price it gives 25%, so it gives an even
+ * chance of finishing between the two and an even chance of finishing outside them. That makes it the yardstick for a bet
+ * on two levels: a band wider than this one is more likely than not to hold, and a narrower one more likely to break.
+ */
+export interface EvenBand {
+  low: number;
+  high: number;
+  /** Half the band's width as a fraction of its middle price: 0.006 reads as "±0.6%". */
+  halfWidth: number;
+}
+
+/** The band the market gives an even chance of holding. Null when the ladder does not reach a 75% or a 25% chance. */
+export function evenBand(levels: Level[]): EvenBand | null {
+  const low = priceAtChance(levels, 0.75);
+  const high = priceAtChance(levels, 0.25);
+  if (low === null || high === null || !(high > low)) return null;
+  const middle = (low + high) / 2;
+  if (!(middle > 0)) return null;
+  return { low, high, halfWidth: (high - low) / 2 / middle };
+}
+
+/** The expected move as a figure for a table: "±0.6%", to a whole percent once it reaches ten, and "–" when it is not known. */
+export function moveText(band: Pick<EvenBand, 'halfWidth'> | null): string {
+  if (!band || !Number.isFinite(band.halfWidth)) return '–';
+  const percent = band.halfWidth * 100;
+  return `±${percent.toFixed(percent < 9.95 ? 1 : 0)}%`;
+}
+
 /** A bar in words: "Below $61,500", "$63,000 to $63,500", "$64,500 or more". */
 export function bucketLabel(b: Bucket): string {
   if (b.from === null) return b.to === null ? 'Any price' : `Below ${money(b.to)}`;
@@ -178,18 +209,21 @@ export type Zone = 'win' | 'back' | 'lose';
 export type Shape =
   | { kind: 'up'; condition: number; target: number }
   | { kind: 'down'; condition: number; target: number }
-  | { kind: 'range'; low: number; high: number };
+  | { kind: 'range'; low: number; high: number }
+  | { kind: 'breakout'; low: number; high: number };
 
 /**
  * What a bet does if the price finishes in a bar. A rising parlay wins at or above its target, pays the stake back below its
- * condition and loses in between; a falling one is the mirror image; a range wins inside and loses outside. A bar is judged
- * by its lower edge, which is exact because every bar's edges are rungs and a bet's strikes are rungs too.
+ * condition and loses in between; a falling one is the mirror image; a range wins inside and loses outside; a breakout is the
+ * range turned inside out, winning outside and losing inside. A bar is judged by its lower edge, which is exact because every
+ * bar's edges are rungs and a bet's strikes are rungs too.
  */
 export function zoneOf(shape: Shape, bucket: Bucket): Zone {
   const from = bucket.from ?? -Infinity;
   if (shape.kind === 'up') return from >= shape.target ? 'win' : from >= shape.condition ? 'lose' : 'back';
   if (shape.kind === 'down') return from < shape.target ? 'win' : from < shape.condition ? 'lose' : 'back';
-  return from >= shape.low && from < shape.high ? 'win' : 'lose';
+  const inside = from >= shape.low && from < shape.high;
+  return inside === (shape.kind === 'range') ? 'win' : 'lose';
 }
 
 /** The chance of each result, by adding up the bars. They sum to 1. */
