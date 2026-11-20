@@ -439,6 +439,32 @@ await check('Basket: three bets of three kinds are placed in one step, and My be
   need(/falling/i.test(tags[2] ?? '') && /range/i.test(tags[1] ?? '') && !/falling|range/i.test(tags[0] ?? ''), `the legs are tagged ${tags.join(' / ').replace(/\n/g, ' ')}`);
 });
 
+await check('Cash out: an open bet is priced, then sold back from My bets as two sell orders, and the cash still ties out', async () => {
+  // My bets is showing the basket placed above. Its first leg is sold; the other two stay open.
+  const first = page.locator('.bl-basket [data-bet]').first();
+  const id = await first.getAttribute('data-bet');
+  await first.getByRole('button', { name: 'Cash out' }).click();
+  const sell = first.getByRole('button', { name: /^Sell for \$/ });
+  await sell.waitFor();
+  const offered = Number((await sell.innerText()).replace(/[^0-9.]/g, ''));
+  need(offered > 0, `the button offers ${offered}`);
+  need((await api('/api/bets')).bets.find((b) => b.id === id).status === 'open', 'reading the price must not sell anything');
+  await sell.click();
+  await until('the bet to read "Cashed out"', async () => /cashed out/i.test(await first.locator('.bl-chip').innerText()), 15_000);
+
+  const sold = (await api('/api/bets')).bets.find((b) => b.id === id);
+  const sells = sold.legs.filter((l) => l.role === 'cashout');
+  need(sold.status === 'cashed_out' && sold.cashOut?.complete === true, `the ledger has the bet as ${sold.status}`);
+  need(sells.length === 2 && sells.every((l) => l.side === 'sell' && l.status === 'filled'), `the sale was ${sells.map((l) => `${l.side} ${l.status}`).join(', ')}`);
+  need(Math.abs(sold.cashOut.proceeds - offered) < 0.011, `sold for ${sold.cashOut.proceeds}, offered ${offered}`);
+  const others = (await api('/api/bets')).bets.filter((b) => b.basket && b.id !== id);
+  need(others.length === 2 && others.every((b) => b.status === 'open'), 'the other two legs should still be open');
+  need((await first.getByRole('button', { name: 'Cash out' }).count()) === 0, 'a bet that was sold must not offer to be sold again');
+  const rec = await api('/api/reconcile');
+  need(rec.ok === true, `after the sale the cash is off by ${rec.cashDifference}`);
+  return `sold for $${sold.cashOut.proceeds.toFixed(2)}`;
+});
+
 // ---- 7. nothing broke quietly
 await check('no console errors or page errors during the whole run', async () => {
   const real = problems.filter((p) => !/Failed to load resource.*(422|409)/.test(p));

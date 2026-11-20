@@ -76,6 +76,20 @@ test('commit: if Solana fails, nothing is written to the chain, no call is shown
   assert.equal(store.data.calls.length, 1);
 });
 
+test('reveal: a bet that was sold back keeps its call sealed, and nothing more is written to the chain', async () => {
+  const { service, chain, bets } = setup();
+  bets.add();
+  const call = await service.commitCall('b1', 'primary');
+  const written = chain.txs.length;
+  bets.bets.get('b1')!.status = 'cashed_out'; // the executor sold both orders; the bet will never have a settlement
+  await rejects(service.revealCall(call.id, 'primary'), 'cashed_out');
+  assert.equal(service.listCalls('primary')[0]!.state, 'committed');
+  assert.equal(chain.txs.length, written);
+  // A bet that is already cashed out cannot have a call recorded for it afterwards either.
+  bets.add({ id: 'b2', status: 'cashed_out' });
+  await rejects(service.commitCall('b2', 'primary'), 'bet_not_eligible');
+});
+
 test('reveal: not before settlement; a refunded call is void and never scored', async () => {
   const { service, chain, bets } = setup();
   bets.add();

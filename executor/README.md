@@ -67,6 +67,8 @@ npm run start:demo                    # HTTP API with the sandbox demo switch on
 node src/cli.ts pairs                 # conditional bets on offer right now
 node src/cli.ts pairs ETH2611180000 --all   # one event, including refused pairs and why
 node src/cli.ts bet <event> <conditionSymbol> <targetSymbol> <stake> [--max 0.60] [--slip 2] [--leave]
+node src/cli.ts cashout <bet>         # what selling an open bet back would bring in now (sends nothing)
+node src/cli.ts cashout <bet> --sell [--min 3.10]   # sell it back: one sell order per leg
 node src/cli.ts bets                  # the ledger
 node src/cli.ts settle                # record results once Gemini resolves
 node src/cli.ts reconcile             # check the ledger against Gemini (orders and cash)
@@ -76,7 +78,7 @@ npm test                              # unit and API tests (no network)
 npm run typecheck
 ```
 
-Do not run `bet`, `settle` or `recover` from the CLI while the server is
+Do not run `bet`, `cashout --sell`, `settle` or `recover` from the CLI while the server is
 running: both keep the ledger in memory, and the last one to save wins.
 `pairs`, `bets`, `flow` and `reconcile` are safe.
 
@@ -193,6 +195,52 @@ placed in order with a shared `basket` tag on each bet; a leg that cannot be com
 
 **Ids.** A bet's id carries its product: `dn-` falling parlay, `rg-` range, nothing for a rising parlay. The id is committed
 on Solana with the call (see `docs/CONTRACTS.md`).
+
+## Cashing out (`src/cashout.ts`)
+
+Every quote says what a bet would fetch if it were sold straight back. Cash-out is the order path behind that number:
+an open bet is two ordinary positions, so leaving it early is two ordinary sells on the same contracts.
+
+1. **Price it.** Both books are read live. The outcome leg sells at its best bid and the hedge leg at its own best bid
+   (for a NO, 1 minus the YES ask), less the taker fee on each. `quoteCashOut` returns the proceeds, what that makes or
+   loses against what the bet cost, and the size wanted at each price. It sends nothing.
+2. **Refuse before any order** when the sale could not be done whole:
+
+   | Code | Why |
+   |---|---|
+   | `not_open` | The bet is settled, failed, already cashed out, or holds nothing |
+   | `market_closed` | One of its contracts is not taking orders (closed, finished, or post-only) |
+   | `no_bid` | Nobody is bidding for a leg, or the book could not be read |
+   | `insufficient_depth` | Less rests at the best price than the bet holds |
+   | `position_netted` | Another open bet holds the other side of one of these contracts. Gemini keeps one position per contract and has already paid $1 a pair for the overlap, so this bet's contracts are no longer there to sell on their own |
+   | `below_minimum` | The proceeds are under the `minProceeds` the caller set (the web app sets the price it showed, less 2 cents) |
+
+3. **Sell the outcome leg, then the hedge**, each as one immediate-or-cancel order that may reach one cent past the best
+   price (`slippageTicks`). If the first sell fills nothing the bet is exactly as it was (`nothing_sold`). If the first
+   sells and the second does not, what is left is the leg that pays the stake back when the condition fails, which is
+   the safer half to be left holding; the bet stays live, `cashOut.complete` is false, and it can be cashed out again
+   or left to settle on what it still holds.
+
+A bet sold in full becomes `cashed_out` with `cashOut: { at, stake, proceeds, pnl, complete: true }`. `stake` is what
+the bet had cost before the first sale; the bet's running `cost` nets the sale off, as it does for an unwind. Nothing
+else changes: the sells are ordinary legs (role `cashout`), so `reconcile` and the Flow totals count them without
+knowing what a cash-out is, and a cashed-out bet holds nothing, so it nets against nothing.
+
+**Run on the real Gemini sandbox, 2026-11-20 02:20 to 02:30 UTC**, one of each product, `reconcile` tied out after
+every step:
+
+| Bet | Product | Cost | Quoted | Sold for |
+|---|---|---|---|---|
+| `4f449ee5` | rising parlay, SOL $71 then $72 | $0.58 | $0.19 | $0.19 (3 YES at 3¢, 0.6 NO at 16¢) |
+| `dn-9adccf38` | falling parlay, SOL under $75 then under $71 | $1.00 | $0.55 | $0.55 |
+| `rg-9f1b661e` | range, SOL $70 to $74 | $2.99 | (sold without a separate quote) | $2.68 |
+| `702269af` | first leg of a basket, over HTTP (`GET` then `POST /cashout`) | $0.25 | $0.07 | $0.07 |
+
+Those prices are the sandbox's: its books are about 20 cents wide, so leaving a bet at once costs most of a small
+stake there. On a production-width book the same sale costs a few cents per dollar (`cashOutPer100` on every quote).
+
+Not handled: selling a bet whose position Gemini has netted against another bet (it is refused), and selling part of
+a bet on purpose.
 
 ## Settlement
 
@@ -351,6 +399,22 @@ with the `code` values listed under "How a bet executes" and the `quote`.
 ### `GET /bets?user=`
 
 The ledger's bets, newest first; all users when `user` is left out.
+
+### `GET /cashout?bet=` and `POST /cashout`
+
+See "Cashing out". The GET prices the sale and sends nothing:
+
+```json
+{ "venue": "Gemini sandbox", "betId": "4f449ee5", "asOf": "<when the books were read>", "available": true, "code": null, "reason": null,
+  "stake": 0.582, "proceeds": 0.19, "pnl": -0.392, "proceedsAtProductionFees": 0.17,
+  "legs": [ { "role": "outcome", "symbol": "GEMI-SOL2611200300-HI72", "outcome": "yes", "quantity": 3, "price": 0.03, "available": 76 },
+            { "role": "hedge", "symbol": "GEMI-SOL2611200300-HI71", "outcome": "no", "quantity": 0.6, "price": 0.16, "available": 15 } ] }
+```
+
+The POST takes `{ "bet": "4f449ee5", "minProceeds": 0.17 }` and answers `{ "bet": {...}, "cashOut": { "at", "stake",
+"proceeds", "pnl", "complete" } }`. A refusal is `422` (or `409` for `not_open`) with `code`, `error` and the `quote`
+it was refused on. It is queued with that account's bets, so its sells never interleave with another order, and it
+answers `503 paused` while the kill switch is on.
 
 ### `POST /settle`
 

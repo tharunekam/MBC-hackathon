@@ -119,7 +119,31 @@ Hosts: sandbox REST `https://api.sandbox.gemini.com`, sandbox WebSocket
   reconcile counts it (`nettedContracts`, `nettedCash`), and the test exchange
   nets the same way. **Not handled yet:** an unwind that tries to sell a leg
   Gemini has already netted away. It needs a second bet to share a strike
-  inside the few seconds between a bet's two orders; untested.
+  inside the few seconds between a bet's two orders; untested. A cash-out
+  (below) refuses such a bet up front with `position_netted`.
+- **[verified 2026-11-20]** **A bet can be sold back whole.** Four bets were
+  cashed out on the sandbox between 02:22 and 02:28 UTC, one of each product
+  and one over HTTP: each was two immediate-or-cancel `SELL` orders (a YES
+  sold at its bid, a NO sold at 1 minus the YES ask), every one filled at the
+  price just read from `@depth5`, and `reconcile` tied out after each. So
+  `SELL` with `eventOutcome: "NO"` closes a NO position, as the docs imply.
+- **[verified 2026-11-20]** **A fill can report a fractional average price.**
+  A 1.03-contract buy came back with `avgExecutionPrice` 0.1105 (it filled
+  across two levels). The reported average is rounded, so cash differed from
+  the ledger by $0.000085, far inside the half-cent tolerance of `reconcile`
+  but not zero. Do not assert an exact $0.00 on the live account.
+- **[verified 2026-11-20]** **The size at the best price flickers to zero.**
+  In the last 40 minutes of the SOL hourly ladder, two depth reads a fraction
+  of a second apart disagreed four times running (a basket's up-front check
+  saw size, the leg's own check saw 0), and "no two-sided market" came and
+  went on single rungs within seconds. The sandbox's quoting bot appears to
+  pull and replace its orders. Any check made before an order has to be made
+  again immediately before it, which the bet path does.
+- **[verified 2026-11-20]** **Our own order can put a thin ladder out of
+  order for the next one.** Twice a basket's first leg filled and its second,
+  on the same SOL ladder, was then refused because a neighbouring rung's ask
+  now sat below the one we had just lifted. Put a basket's legs on different
+  ladders in a demo.
 - **[verified 2026-11-18]** A contract's state can be `active/post_only`: the
   book is visible but taker orders are not accepted, so the offer rule refuses
   the pair as `market_closed`. What we saw on the sandbox's hourly ladders:
