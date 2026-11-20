@@ -11,6 +11,8 @@
  *   POST /bets            {product: "range", user, event, low, high, stake, maxPrice?, slippageTicks?}
  *   POST /baskets         {user, name?, legs: [{product, event, condition, target | low, high, stake, direction?}]}
  *   GET  /bets[?user=]
+ *   GET  /cashout?bet=ID                                     what selling an open bet back would bring in now
+ *   POST /cashout         {bet, minProceeds?, slippageTicks?}   sell it back: two sell orders
  *   POST /settle
  *   GET  /flow[?user=]
  *   GET  /reconcile[?user=]
@@ -20,6 +22,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { BasketRefused, MAX_BASKET_LEGS, MIN_BASKET_LEGS, placeBasket } from './basket.ts';
 import type { BasketLeg } from './basket.ts';
 import { BetRefused, ReviewError, isScorable, placeConditionalBet, recordReviewedPayout, settleBets } from './bets.ts';
+import { CashOutRefused, cashOutBet, quoteCashOut } from './cashout.ts';
 import type { Exchange } from './exchange.ts';
 import { betFlow, flowTotals } from './flow.ts';
 import type { GeminiEvent } from './gemini/types.ts';
@@ -629,6 +632,45 @@ export function createApi(deps: ApiDeps): ApiHandler {
     });
   }
 
+  /** The bet a cash-out names. A pinned demo account can only reach its own bets; nobody learns whether another's id exists. */
+  function betToCashOut(id: unknown): BetRecord {
+    const betId = text(id, 'bet');
+    const bet = deps.ledger.data.bets.find((b) => b.id === betId && (deps.pinnedUser === undefined || b.user === deps.pinnedUser));
+    if (!bet) throw new HttpError(404, 'unknown_bet', `No bet "${betId}".`);
+    requireUser(bet.user);
+    return bet;
+  }
+
+  /** What selling a bet back would bring in right now. Reads two live books and sends nothing. */
+  async function cashOutQuote(q: URLSearchParams) {
+    const bet = betToCashOut(q.get('bet'));
+    return { venue, ...(await quoteCashOut(betDeps(bet.user), bet)) };
+  }
+
+  /** Sells a bet back: one sell order per leg. A refusal is 422 with the quote it was refused on, like a refused bet. */
+  async function cashOut(body: Record<string, unknown>) {
+    if (deps.isPaused?.()) throw new HttpError(503, 'paused', 'Betting is paused for a moment. Try again soon.');
+    const bet = betToCashOut(body.bet);
+    const minProceeds = body.minProceeds === undefined || body.minProceeds === null ? undefined : Number(body.minProceeds);
+    if (minProceeds !== undefined && !(Number.isFinite(minProceeds) && minProceeds >= 0)) {
+      throw new HttpError(400, 'invalid_min_proceeds', '"minProceeds" must be a dollar amount of zero or more.');
+    }
+    const { slippageTicks } = limitsOf(body);
+    // Queued with that account's bets and settles, so its sells never interleave with another order.
+    return queued(bet.user, async () => {
+      try {
+        const done = await cashOutBet(betDeps(bet.user), bet, { minProceeds, slippageTicks });
+        return { status: 200, body: { bet: betView(done), cashOut: done.cashOut ?? null } };
+      } catch (err) {
+        if (err instanceof CashOutRefused) {
+          const status = err.code === 'not_open' ? 409 : 422;
+          return { status, body: { error: err.message, code: err.code, quote: err.quote ?? null } };
+        }
+        throw err;
+      }
+    });
+  }
+
   async function listBets(q: URLSearchParams) {
     const user = deps.pinnedUser ?? q.get('user');
     if (user !== null) requireUser(user);
@@ -775,6 +817,17 @@ export function createApi(deps: ApiDeps): ApiHandler {
         }
       },
     },
+    '/cashout': {
+      GET: (q) => cashOutQuote(q),
+      POST: async (_q, req) => {
+        refuseIfReadOnly();
+        try {
+          return await cashOut(await readJson(req));
+        } finally {
+          deps.live?.publish('bets'); // a sale that stopped part-way is recorded too
+        }
+      },
+    },
     '/settle': {
       POST: async () => {
         refuseIfReadOnly();
@@ -835,7 +888,7 @@ export function createApi(deps: ApiDeps): ApiHandler {
         const path = url.pathname.replace(/\/+$/, '') || '/';
         if (path === '/stream' && req.method === 'GET') return openStream(req, res, headers, url);
         const route = routes[path];
-        if (!route) throw new HttpError(404, 'not_found', `No such endpoint: ${path}. Try /health, /markets, /quote, /bets, /baskets, /settle, /flow or /reconcile.`);
+        if (!route) throw new HttpError(404, 'not_found', `No such endpoint: ${path}. Try /health, /markets, /quote, /bets, /baskets, /cashout, /settle, /flow or /reconcile.`);
         const handler = route[req.method as 'GET' | 'POST'];
         if (!handler) {
           headers.Allow = Object.keys(route).join(', ');

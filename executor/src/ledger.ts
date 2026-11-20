@@ -10,7 +10,7 @@ export type Product = 'parlay' | 'range';
 /** One order sent to Gemini, identified by the tag we attach (`clientOrderId`). */
 export interface LegRecord {
   clientOrderId: string;
-  role: 'outcome' | 'hedge' | 'unwind' | 'trigger';
+  role: 'outcome' | 'hedge' | 'unwind' | 'trigger' | 'cashout';
   symbol: string;
   side: 'buy' | 'sell';
   outcome: 'yes' | 'no';
@@ -58,8 +58,9 @@ export interface BetRecord {
    * needs_review  Gemini settled the event but NOT as a clean yes/no (void or
    *               fractional). What Gemini reported is in `review`; the payout is
    *               unknown to this service, so the bet is never scored.
+   * cashed_out  the user sold both legs back before the event finished; `cashOut` says for how much
    */
-  status: 'placing' | 'open' | 'unhedged' | 'unwound' | 'failed' | 'settled' | 'needs_review';
+  status: 'placing' | 'open' | 'unhedged' | 'unwound' | 'failed' | 'settled' | 'needs_review' | 'cashed_out';
   legs: LegRecord[];
   /** Net dollars spent (buys minus any unwind proceeds). */
   cost: number;
@@ -111,6 +112,12 @@ export interface BetRecord {
     pnl: number;
     settledAt: string;
   };
+  /**
+   * Present once the user has sold some or all of the bet back (`cashOutBet`). `stake` is what the bet had cost before
+   * the first sale, `proceeds` what the sell orders have brought in so far after fees, and `pnl` the difference.
+   * `complete` is false while part of the bet is still held; the bet is then still live and settles as usual.
+   */
+  cashOut?: { at: string; stake: number; proceeds: number; pnl: number; complete: boolean };
   note?: string;
 }
 
