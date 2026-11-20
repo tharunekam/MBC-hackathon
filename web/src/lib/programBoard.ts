@@ -27,6 +27,7 @@
  * The account is sized for the longest handle, so a shorter one leaves unused zero bytes after the bump.
  */
 import type { LeaderboardRow } from '../api/types';
+import { friendly } from './friendly';
 import type { Rpc } from './verify';
 
 /** Edge is kept per $1 in millionths, the same unit as `PRICE_ONE` in the program. */
@@ -292,8 +293,15 @@ export interface BoardComparison {
 }
 
 /**
- * Lines the program's rows up against the server's, by handle. The server rounds edge to four decimals and the
- * program keeps six, so edges within one unit of the server's last digit count as the same.
+ * How far apart two honest totals can be. The program adds exact millionths and the server adds in millionths too, then rounds
+ * the total once to four decimals, so they differ by at most half a unit of the fourth decimal, however many calls there are.
+ * A margin that grew with the number of calls would let a long record be inflated without the page noticing.
+ */
+export const edgeTolerance = (): number => 0.0001 + 1e-9;
+
+/**
+ * Lines the program's rows up against the server's, by handle. The server's edge is rounded to four decimals and the program
+ * keeps six, so edges within the rounding that many calls can add up to count as the same.
  */
 export function compareBoards(program: ProgramRow[], server: Pick<LeaderboardRow, 'handle' | 'calls' | 'hitRate' | 'edge'>[]): BoardComparison {
   const theirs = new Map(server.map((r) => [r.handle, r]));
@@ -302,7 +310,7 @@ export function compareBoards(program: ProgramRow[], server: Pick<LeaderboardRow
   for (const p of program) {
     const s = theirs.get(p.handle);
     theirs.delete(p.handle);
-    if (s && s.calls === p.calls && Math.round(s.hitRate * s.calls) === p.hits && Math.abs(s.edge - p.edge) <= 0.0001 + 1e-9) same++;
+    if (s && s.calls === p.calls && Math.round(s.hitRate * s.calls) === p.hits && Math.abs(s.edge - p.edge) <= edgeTolerance()) same++;
     else differing.push(p.handle);
   }
   differing.push(...theirs.keys());
@@ -318,13 +326,16 @@ export function comparisonLine(c: BoardComparison): string {
   return `${head} Different or on one side only: ${named}${more > 0 ? ` and ${more} more` : ''}.`;
 }
 
-/** What to tell a person when the read fails. Public devnet nodes often rate-limit this method, so that case is named. */
+/**
+ * What to tell a person when the read fails. Public devnet nodes often rate-limit this method, so that case is named, and so is
+ * a node that cannot be reached. Anything else is the app's own plain sentence: what a node said is never put on the page.
+ */
 export function readProblem(error: unknown): string {
   const message = error instanceof Error ? error.message : '';
   if (/\b429\b|too many requests|rate limit/i.test(message)) return 'The Solana node is turning requests away because it is busy. Wait a few seconds and try again.';
   // What fetch throws when the node cannot be reached at all.
   if (error instanceof TypeError) return 'Could not reach the Solana node. Check your connection and try again.';
-  return message ? `The Solana node could not answer: ${message}` : 'The Solana node could not answer. Try again.';
+  return friendly(error);
 }
 
 export const explorerAddress = (address: string, cluster: 'devnet' | 'mainnet-beta' = 'devnet') =>

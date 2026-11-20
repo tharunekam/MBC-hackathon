@@ -20,14 +20,33 @@ import type {
   ReconcileResponse,
 } from './types';
 
+/**
+ * One plain sentence for a failure that has no sentence of the executor's own worth showing: the connection dropped, the
+ * service is busy or broken, or the answer was not something a page can read. A server's own words are kept for a refusal
+ * (a 4xx with a code), where they name the bet's problem; they never stand in for these.
+ */
+function plainFor(status: number): string {
+  if (status === 0) return 'We could not reach the server. Check your connection and try again.';
+  if (status === 429) return 'Lots of people are betting right now. Wait a few seconds and try again.';
+  if (status >= 500) return 'Something went wrong on our side. Try again in a moment.';
+  if (status === 404) return 'We could not find that.';
+  if (status === 401 || status === 403) return 'You are not allowed to do that here.';
+  return 'That did not go through. Try again.';
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly body: ApiErrorBody | null;
-  constructor(status: number, body: ApiErrorBody | null, fallback: string) {
-    super(body?.error ?? fallback);
+  constructor(status: number, body: ApiErrorBody | null, fallback?: string) {
+    // A refusal's own sentence is kept (the stake cap and a basket's failed leg are read out of it); a busy or broken
+    // server, or a body that is not an error at all, gets a fixed sentence instead of whatever the server said. Only the
+    // executor's own refusals carry a `code`: an `error` string with none comes from a proxy or a firewall in between, and
+    // is never shown.
+    const refusal = status >= 400 && status < 500 && status !== 429 && typeof body?.code === 'string' && typeof body?.error === 'string' && body.error.trim() !== '';
+    super(refusal ? body!.error : (fallback ?? plainFor(status)));
     this.status = status;
-    this.code = body?.code ?? 'network_error';
+    this.code = typeof body?.code === 'string' ? body.code : status === 0 ? 'network_error' : 'unreadable';
     this.body = body;
   }
 }
@@ -67,16 +86,19 @@ async function request<T>(base: string, path: string, init?: RequestInit): Promi
   try {
     res = await fetch(`${base}${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) } });
   } catch {
-    throw new ApiError(0, null, 'Cannot reach the server. Check your connection and try again.');
+    throw new ApiError(0, null);
   }
-  const text = await res.text();
   let json: unknown = null;
   try {
+    const text = await res.text();
     json = text ? JSON.parse(text) : null;
   } catch {
-    /* non-JSON error page */
+    /* an empty or non-JSON body, or a body that was cut off: handled below */
   }
-  if (!res.ok) throw new ApiError(res.status, json as ApiErrorBody | null, `The server answered ${res.status}.`);
+  if (!res.ok) throw new ApiError(res.status, json && typeof json === 'object' ? (json as ApiErrorBody) : null);
+  // A 200 with nothing readable in it (a proxy's error page, a cut-off answer) is not data: a page would show it as
+  // "no bets" or "no markets" to someone who has both.
+  if (json === null && res.status !== 204) throw new ApiError(res.status, null, 'The server sent something we could not read. Try again in a moment.');
   return json as T;
 }
 

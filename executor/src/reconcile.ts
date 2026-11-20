@@ -84,7 +84,8 @@ export async function reconcile(exchange: Exchange, ledger: Ledger, user: string
 
   const mismatches: ReconcileReport['mismatches'] = [];
   for (const leg of legs) {
-    if (leg.status === 'error') continue;
+    // An order recorded as an error is checked like any other: an answer that was lost does not mean it did not fill, and a
+    // fill the ledger never recorded must be named here, not skipped.
     const seen = byTag.get(leg.clientOrderId);
     const ours = `${leg.quantityFilled} @ ${leg.avgPrice ?? '-'}`;
     if (!seen) {

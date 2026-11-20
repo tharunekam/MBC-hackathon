@@ -222,6 +222,8 @@ async function main(): Promise<void> {
     } else if (command === 'cashout') {
       const bet = ledger.bet(args[1] ?? '');
       if (!bet) throw new Error('Usage: cashout <bet> [--sell] [--min dollars] [--slip ticks]   (bet ids: node src/cli.ts bets)');
+      // The sells go through this command's account, so they must be the bet's own account's.
+      if (bet.user !== user) throw new Error(`Bet ${bet.id} belongs to "${bet.user}", not "${user}". Run it with --user ${bet.user}.`);
       const deps = { exchange, ledger, feeCoef: config.takerFeeCoef };
       if (!has('sell')) {
         const q = await quoteCashOut(deps, bet);

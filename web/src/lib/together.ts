@@ -269,12 +269,25 @@ export function chanceWords(x: number): string {
   return pct(x);
 }
 
+/**
+ * A span's ends as whole percents, rounded outward: the span is what can happen however the markets move together, so a
+ * printed range must hold all of it. Rounded to the nearest, 4.51% to 31.49% would read "5% to 31%" and leave out values that
+ * are possible.
+ */
+export function spanEnds(s: Pick<Span, 'low' | 'high'>): { low: number; high: number } {
+  // The small allowance keeps a figure like 0.29 (which is 28.999999999999996 per hundred) from falling to 28.
+  return { low: Math.floor(s.low * 100 + 1e-9), high: Math.ceil(s.high * 100 - 1e-9) };
+}
+
 /** A span in words: one figure when its ends meet, "between 4% and 31%" when they do not. */
 export function spanWords(s: Span): string {
   if (s.exact) return chanceWords(s.low);
   const low = pct(s.low);
   const high = pct(s.high);
-  if (low !== high) return `between ${low} and ${high}`;
+  if (low !== high) {
+    const ends = spanEnds(s);
+    return `between ${ends.low}% and ${ends.high}%`;
+  }
   // Ends that differ by less than a percent: one figure, marked as rounded.
   const one = chanceWords(s.high);
   return one === high ? `about ${one}` : one;

@@ -11,12 +11,16 @@ interface Props {
   className?: string;
 }
 
-/** A bet on two levels on one line: the market's chance of finishing inside them against the chance of finishing outside. */
+/**
+ * A bet on two levels on one line: the market's chance that the bet wins against the chance that it loses. A Range wins between
+ * its two levels and a Breakout outside them; the line under the question says which, so the bar uses the two result names
+ * every other part of the page uses.
+ */
 export default function RangeBar({ shares, side = 'in', className }: Props) {
   const out = side === 'out';
   const keys = [
-    { key: 'win', label: out ? 'Outside' : 'Inside the range', p: shares.win },
-    { key: 'lose', label: out ? 'Between the two levels' : 'Outside', p: shares.lose },
+    { key: 'win', label: 'Win', p: shares.win },
+    { key: 'lose', label: 'Lose', p: shares.lose },
   ];
   // The track is drawn as the price line is: below the lower level, between the two, above the higher. A breakout wins on
   // both sides of its loss, a range loses on both sides of its win.

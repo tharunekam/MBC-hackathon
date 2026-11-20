@@ -77,6 +77,10 @@ on one Gemini account with different ledgers is the failure that breaks the reco
 synthetic first row from `npm run smoke` (same authority key), so either use a fresh authority for the demo or set
 `GIVEN_LB_MIN_CALLS` above 1.
 
+## Deploy the app and the executor together
+
+The page sends a `requestId` with every bet and retries once under the same id after a lost answer. An executor older than this change ignores the id and would place the retry as a second bet, so build and deploy the web app and the executor from the same commit. A numeric setting that is not a number now stops the server at startup (see `executor/README.md`).
+
 ## Keeping it up through judging
 
 - **Sandbox ladders expire hourly.** A bet needs a live ladder; check one is open and not post-only before recording or presenting.
@@ -94,8 +98,8 @@ post-only first) and often fills only a few dollars. Two things keep a presentat
 - With `GIVEN_MODE=fake`, set `FAKE_ROUND_MINUTES=5` as well and the test exchange's ladder closes, settles and reopens by
   itself every five minutes, so a visitor's bet reaches a result, a reveal and the leaderboard with nobody stepping in.
 - If the sandbox is unusable, a second deployment with `GIVEN_MODE=fake` and `GIVEN_I_KNOW_THIS_IS_A_TEST=1` runs the
-  whole flow on the local test exchange with an in-memory chain. The nav says "Test exchange" and the footer says no order
-  reaches Gemini, and it **must be presented as exactly that**: it shows the product working, not Gemini. Say so on stage.
+  whole flow on the local test exchange with an in-memory chain. Nothing on screen says so, so it **must be presented as
+  exactly that**: it shows the product working, not Gemini. Say so on stage.
 
 ### Replay: a real session, played back with nothing behind it
 
@@ -112,7 +116,7 @@ GIVEN_MODE=replay GIVEN_REPLAY=executor/data/session.jsonl npm start
 ```
 
 - In replay no executor and no chain service run. Every answer the page gets is one that was recorded; nothing is made
-  up. The nav says **Replay**, the footer says what was recorded and when, and no order is placed. Say so on stage too.
+  up. The nav says **Replay** and no order is placed. Say so on stage too.
 - The steps that changed something (bet, check results, reveal) have to be repeated in the same order with the same
   choices: the same ladder, pair and stake. Anything else is refused with a message naming the recorded step, so
   rehearse the clicks once against the recording. `GET /healthz` shows how far through it you are.

@@ -143,7 +143,7 @@ function SketchChart({ dist, wanted, percents, onSet }: ChartProps) {
   );
 }
 
-const PRODUCT_NAME = { range: 'Range', breakout: 'Breakout', parlay: 'Return Parlay' } as const;
+const PRODUCT_NAME = { range: 'Range', breakout: 'Breakout', parlay: 'Stake Back' } as const;
 
 /** What can be done with the shape: open the builder that places it, or the plain reason no builder does. */
 function HandoverNote({ handover, link }: { handover: Handover; link: string | null }) {
@@ -163,11 +163,11 @@ function HandoverNote({ handover, link }: { handover: Handover; link: string | n
             </>
           ) : handover.direction === 'up' ? (
             <>
-              This shape is in the <b>Return Parlay</b> family: given <em>{money(handover.condition.strike)}</em> or above, reaches <em>{money(handover.target.strike)}</em>.
+              This shape is a <b>Stake Back</b>: given <em>{money(handover.condition.strike)}</em> or above, reaches <em>{money(handover.target.strike)}</em>.
             </>
           ) : (
             <>
-              This shape is in the <b>Return Parlay</b> family, falling: given it stays under <em>{money(handover.condition.strike)}</em>, falls below <em>{money(handover.target.strike)}</em>.
+              This shape is a falling <b>Stake Back</b>: given it stays under <em>{money(handover.condition.strike)}</em>, falls below <em>{money(handover.target.strike)}</em>.
             </>
           )}
         </p>
@@ -182,10 +182,10 @@ function HandoverNote({ handover, link }: { handover: Handover; link: string | n
     <div className="sk-hand">
       <p>
         {handover.kind === 'single'
-          ? 'This shape is one plain contract, which Given does not sell on its own. It is priced here and cannot be placed from Given.'
+          ? 'This shape is a single order, which Given does not sell on its own. It is priced here and cannot be placed from Given.'
           : handover.kind === 'other' && handover.orders > 2
             ? `Given places two-order shapes today; this one needs ${handover.orders} orders, so it is priced here and cannot be placed yet.`
-            : 'Given places three two-order shapes today: a Range, a Breakout and a Return Parlay. These two orders are not one of them, so this shape is priced here and cannot be placed yet.'}
+            : 'Given places three two-order shapes today: a Stake Back, a Range and a Breakout. These two orders are not one of them, so this shape is priced here and cannot be placed yet.'}
       </p>
     </div>
   );
@@ -252,7 +252,7 @@ export default function Sketch() {
     <div className="page builder sketch">
       <header className="page-head">
         <div>
-          <span className="eyebrow">Any shape, priced from the ladder</span>
+          <span className="eyebrow">Any shape, priced from the market</span>
           <h1 className="h-page">Sketch</h1>
           <p className="lede">Set what you want to receive at each finishing price. The page works out the orders that pay exactly that, and what they cost at the exchange’s prices.</p>
         </div>

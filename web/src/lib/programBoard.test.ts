@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import devnet from './fixtures/devnet-caller-stats.json';
 import devnetCalls from './fixtures/devnet-call-records.json';
-import { CALL_DISCRIMINATOR, base58, boardRows, callFilters, callsFromAnswer, compareBoards, comparisonLine, decodeCallRecord, decodeCallerStats, explorerAddress, readProblem, readProgramBoard, sealedByHandle, statsFilters, statsFromAnswer, STATS_DISCRIMINATOR } from './programBoard';
+import { CALL_DISCRIMINATOR, base58, boardRows, callFilters, callsFromAnswer, compareBoards, comparisonLine, decodeCallRecord, decodeCallerStats, edgeTolerance, explorerAddress, readProblem, readProgramBoard, sealedByHandle, statsFilters, statsFromAnswer, STATS_DISCRIMINATOR } from './programBoard';
 import type { CallerStats } from './programBoard';
 import type { Rpc } from './verify';
 
@@ -13,9 +13,9 @@ import type { Rpc } from './verify';
 // decoder (chain/src/program.ts, `decodeStatsAccount`) run over the same bytes, and each account's address was
 // re-derived from (program, authority, handle) and matched the address the node returned.
 const PROGRAM = devnet.program;
-const KEY_A = '2QfQ15Ha5VxvvwWqdsDdCyf6n8uxKfVDHh9GHZdFHeHz';
-const KEY_B = '9GVno5tV2moikfXqZyZAuxw2pmqGZ4nmU9DKXhiDhM4X';
-const KEY_C = '5fE6B5sFJQURtKiJJepzqvHshJZR9SkKSMgeKB3oaGsN';
+const KEY_A = '2QfQ15Ha5VxvvwWqdsDdCyf6n8uxKfVDHh9GHZdFHeHz'; // gitleaks:allow (a public Solana address)
+const KEY_B = '9GVno5tV2moikfXqZyZAuxw2pmqGZ4nmU9DKXhiDhM4X'; // gitleaks:allow (a public Solana address)
+const KEY_C = '5fE6B5sFJQURtKiJJepzqvHshJZR9SkKSMgeKB3oaGsN'; // gitleaks:allow (a public Solana address)
 const answers: Record<string, { pubkey: string; account: { data: string[]; owner: string } }[]> = devnet.answers;
 
 const ON_DEVNET: CallerStats[] = [
@@ -276,7 +276,7 @@ describe('readProgramBoard', () => {
 });
 
 describe('comparing with the server\'s table', () => {
-  const program = boardRows(ON_DEVNET.slice(1, 3)); // key B: steady-finch-56 and north-tern-98
+  const program = boardRows(ON_DEVNET.slice(1, 3)); // key B: steady-finch-56 and north-tern-98 gitleaks:allow
   const server = [
     { handle: 'north-tern-98', calls: 1, hitRate: 1, edge: 0.59 },
     // The server rounds edge to four decimals; the program keeps 0.780163.
@@ -289,10 +289,36 @@ describe('comparing with the server\'s table', () => {
     expect(comparisonLine(c)).toBe('Matches the table above for 2 of 2 players.');
   });
   it('names a player whose figures differ', () => {
-    for (const changed of [{ calls: 5, hitRate: 0.4 }, { hitRate: 0.75 }, { edge: 0.7804 }]) {
+    for (const changed of [{ calls: 5, hitRate: 0.4 }, { hitRate: 0.75 }, { edge: 0.7812 }]) {
       const c = compareBoards(program, [server[0]!, { ...server[1]!, ...changed }]);
       expect(c).toEqual({ total: 2, same: 1, differing: ['steady-finch-56'] });
     }
+  });
+  it('counts an honest player as matching however many calls they have, when the server adds in millionths and rounds the total once', () => {
+    // A call at a fair price of 0.123456 that hit: the program adds 876_544 millionths, and so does the server.
+    for (const calls of [1, 3, 5, 10, 20, 50, 100, 500]) {
+      const row = boardRows([{ authority: KEY_A, handle: 'honest-player-1', calls, hits: calls, edgeSum: calls * 876_544, lastRevealedAt: 1 }]);
+      const rounded = Math.round((calls * 876_544) / 100) / 1e4;
+      expect(compareBoards(row, [{ handle: 'honest-player-1', calls, hitRate: 1, edge: rounded }]), `${calls} calls`).toEqual({ total: 1, same: 1, differing: [] });
+    }
+  });
+  it('still names a player whose edge really differs, at any number of calls', () => {
+    for (const calls of [1, 10, 100]) {
+      const row = boardRows([{ authority: KEY_A, handle: 'honest-player-1', calls, hits: calls, edgeSum: calls * 876_544, lastRevealedAt: 1 }]);
+      const off = Math.round((calls * 0.876544 + 0.01 * (1 + calls / 100)) * 1e4) / 1e4; // a cent or so per $1 away: more than rounding can explain
+      expect(compareBoards(row, [{ handle: 'honest-player-1', calls, hitRate: 1, edge: off }]).differing, `${calls} calls`).toEqual(['honest-player-1']);
+    }
+  });
+  it('allows only the one rounding of the total, however many calls there are', () => {
+    expect(edgeTolerance()).toBeCloseTo(0.0001, 7);
+  });
+  it('does not let a long record be inflated unseen: 200 calls and a server edge 0.01 too high is named', () => {
+    const calls = 200;
+    const row = boardRows([{ authority: KEY_A, handle: 'long-record-1', calls, hits: calls, edgeSum: calls * 500_000, lastRevealedAt: 1 }]);
+    const honest = compareBoards(row, [{ handle: 'long-record-1', calls, hitRate: 1, edge: 100 }]);
+    const inflated = compareBoards(row, [{ handle: 'long-record-1', calls, hitRate: 1, edge: 100.01 }]);
+    expect(honest.differing).toEqual([]);
+    expect(inflated.differing).toEqual(['long-record-1']);
   });
   it('names a player who is on one table only: a Memo-only call on the server\'s, or a row the server has not indexed', () => {
     const c = compareBoards(program, [server[0]!, { handle: 'calm-fox-11', calls: 2, hitRate: 0.5, edge: 0.1 }]);
@@ -313,9 +339,10 @@ describe('readProblem', () => {
   it('says the node could not be reached when fetch itself failed', () => {
     expect(readProblem(new TypeError('Failed to fetch'))).toMatch(/Could not reach/);
   });
-  it('passes on what the node said otherwise', () => {
-    expect(readProblem(new Error('The Solana node answered 503.'))).toBe('The Solana node could not answer: The Solana node answered 503.');
-    expect(readProblem('nope')).toBe('The Solana node could not answer. Try again.');
+  it('never puts what the node said on the page: anything else is the app\'s own sentence', () => {
+    expect(readProblem(new Error('The Solana node answered 503.'))).toBe('Something went wrong. Try again in a moment.');
+    expect(readProblem(new Error('Transaction version (0) is not supported by the requesting client'))).toBe('Something went wrong. Try again in a moment.');
+    expect(readProblem('nope')).toBe('Something went wrong. Try again in a moment.');
   });
 });
 

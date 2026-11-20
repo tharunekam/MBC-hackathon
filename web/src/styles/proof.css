@@ -5,7 +5,37 @@
  * whichever file loads first.
  */
 
-/* Two columns under the three steps: your own calls, and the public record they are part of. */
+/* ------------------------------------------------------------ books and orders */
+/* The books check has four figures and reads as two rows of two, never three and one left over. The orders card has six, in
+   two rows of three. Both are two across on a phone. */
+.proof-grid .recon-4 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px 24px;
+}
+.proof-grid .recon-6 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px 24px;
+}
+.proof-grid .recon dd {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+/* Where focus lands when a check finishes: the figures, with the global ring around them and nothing else changed. */
+.proof-grid .pf-result {
+  outline-offset: 6px;
+}
+/* The verdict beside the difference, in the colour of the figure. */
+.proof-grid .recon dd small {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+/* Two columns under the three steps: your own calls, and the public record they are part of. With no public record to show,
+   the calls have the whole width. */
 .proof-grid .pf-check {
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
@@ -13,6 +43,9 @@
   margin: 8px 0 16px;
   padding-top: 20px;
   border-top: 1px solid var(--line);
+}
+.proof-grid .pf-check.pf-check-solo {
+  grid-template-columns: minmax(0, 1fr);
 }
 .pf-check > div {
   display: grid;
@@ -22,7 +55,7 @@
 }
 .pf-check .pf-text {
   max-width: 60ch;
-  font-size: 15px;
+  font-size: 16px;
   color: var(--soft);
 }
 .pf-check .pf-text a,
@@ -32,24 +65,32 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+/* A failed load: what went wrong, and the way to try again, side by side. */
+.pf-retry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
 
-/* One call a line: how it stands, what it is, and the thing to open. */
+/* One call a line: how it stands, which bet it is, and the thing to open. */
 .pf-check .pf-calls {
   display: grid;
   border-top: 1px solid var(--line);
 }
 .pf-calls li {
   display: grid;
-  grid-template-columns: 80px minmax(0, 1fr) auto;
+  grid-template-columns: 96px minmax(0, 1fr) auto;
   align-items: center;
   gap: 16px;
-  padding: 10px 0;
+  padding: 12px 0;
   border-bottom: 1px solid var(--line);
-  font-size: 15px;
+  font-size: 16px;
 }
-.pf-calls .status {
-  justify-content: center;
-  padding: 0 8px;
+/* The status is My bets' own chip (styles/bets.css): outlined, with a dot. Its column is as wide as the longest, "Stake back". */
+.pf-calls .bl-chip {
+  justify-self: start;
 }
 .pf-calls .pf-what {
   min-width: 0;
@@ -73,9 +114,19 @@
   margin-top: 0;
   white-space: nowrap;
 }
+/* The fingerprint is a button that copies it, dressed as the chip beside it. */
+.pf-calls button.mono-chip {
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+.pf-calls button.mono-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
 .pf-check .pf-links {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
 }
 
@@ -87,16 +138,29 @@
 }
 
 @media (max-width: 720px) {
-  /* A call stacks: how it stands beside what it is, then the thing to open on a line of its own. */
+  .proof-grid .recon-6 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  /* A call stacks in two rows: how it stands with the thing to open beside it (the row is as tall as a finger), then the bet,
+     full width. The status and the kind tag are never side by side, so they cannot read as two statuses. */
   .pf-calls li {
     grid-template-columns: auto minmax(0, 1fr);
-    align-items: start;
+    grid-template-areas:
+      'status act'
+      'what what';
+    align-items: center;
     gap: 4px 12px;
-    padding: 12px 0 4px;
+    padding: 8px 0 12px;
   }
-  .pf-calls li > :last-child {
-    grid-column: 1 / -1;
-    justify-self: start;
+  .pf-calls li > .bl-chip {
+    grid-area: status;
+  }
+  .pf-calls li > .pf-act {
+    grid-area: act;
+    justify-self: end;
+  }
+  .pf-calls li > .pf-what {
+    grid-area: what;
   }
   /* Fingers: every link on the proof pages is at least 44px tall. */
   .pf-calls .pf-open,
@@ -134,9 +198,54 @@
   gap: 8px;
 }
 .proofcard .pc-called {
-  font-size: 17px;
+  font-size: 18px;
   line-height: 1.4;
   color: var(--soft);
+}
+/* Three figures, each as wide as the others; the fourth cell the card once had is gone. */
+.proofcard .pc-nums {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.proofcard .pc-nums dt {
+  font-size: 12px;
+}
+.proofcard .pc-nums dd {
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+/* The one definition of edge on the page, close under the figure it explains. */
+.proofcard .pc-edge {
+  margin-top: -8px;
+}
+@media (max-width: 720px) {
+  /* On a phone the three figures are three lines: the name on the left, the number on the right, each on its own rule. */
+  .proofcard .pc-nums {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .proofcard .pc-nums > div,
+  .proofcard .pc-nums > div:nth-child(odd),
+  .proofcard .pc-nums > div:nth-child(n + 3) {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 16px;
+    padding: 12px 0;
+    border-left: 0;
+    border-top: 0;
+  }
+  .proofcard .pc-nums > div + div {
+    border-top: 1px solid var(--line);
+  }
+  .proofcard .pc-nums dt {
+    font-size: 14px;
+  }
+}
+/* A check's detail now carries clock times, slot numbers and a shortened key; none of it may push the card wider than a phone. */
+.verify .checks li > div {
+  min-width: 0;
+}
+.verify .checks p {
+  overflow-wrap: anywhere;
 }
 /* The two ways out of a call that did not load. */
 .pf-empty .pc-actions {
@@ -144,4 +253,28 @@
 }
 .pf-empty .pc-actions .btn {
   margin-top: 0;
+}
+/* While a call loads, blocks the size of the card and the check, so the page does not jump when it arrives. */
+.pf-skel-card {
+  height: 454px;
+}
+.pf-skel-check {
+  height: 304px;
+  margin-top: 24px;
+}
+@media (max-width: 720px) {
+  .pf-skel-card {
+    height: 570px;
+  }
+  .pf-skel-check {
+    height: 420px;
+  }
+}
+/* What stands where the check would be when the call is not on Solana. */
+.pf-only {
+  margin-top: 24px;
+  max-width: 60ch;
+}
+.verify .links .fine {
+  align-self: center;
 }

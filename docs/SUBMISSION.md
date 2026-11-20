@@ -21,7 +21,7 @@ the pitch. Items marked **FILL** need something that does not exist yet.*
 
 **What did you build?**
 Given is a consumer app for defined-outcome bets on Gemini prediction markets: every result is on screen before you bet.
-A **Return Parlay**: you pick a condition and a target on a live price ladder; if the target is reached you win, if the
+A **Stake Back**: you pick a condition and a target on a live price ladder; if the target is reached you win, if the
 condition fails you get your stake back, if it holds but the target is missed you lose the stake (and it works going down
 as well as up). A **Range**: win if a price finishes between two levels. A **Breakout**, its opposite: win if it finishes
 outside them, whichever way. A **Basket**: several of these bets on different assets, placed together. Each bet is two
@@ -96,6 +96,15 @@ devnet path are in place; it needs the hosted demo up and a ladder that has been
 Both teammates must be able to explain every component. Rehearse three times aloud, once with the network off using the
 recorded fallback.
 
+## Gemini facts for the pitch (re-checked against primary sources, 2026-11-19)
+
+| Say | Checked against | Mind |
+|---|---|---|
+| Gemini Titan was designated by the CFTC on **10 Dec 2025** | The CFTC's register of designated contract markets (`cftc.gov/IndustryOversight/IndustryFilings/TradingOrganizations/44472`), status date 2025-12-10; Gemini's blog post of the same day | Gemini's investor press release could not be opened (403); seen in search results only |
+| Gemini's prediction markets opened on **15 Dec 2025** | Gemini's blog post of that date (`gemini.com/blog/gemini-predictions-tm-is-now-live`) | Say "customers in the US". "All 50 states" appears only in news coverage, not in Gemini's own post |
+| Taker fee **0.07**, maker fee **0.0175** | Gemini's fee page (`gemini.com/fees/predictions`, dated 12 Mar 2026): fee = rate x contracts x price x (1 - price), rounded up to the cent | These are **coefficients, not percentages**: never "0.07%" or "7%". About 1.75 cents a contract for a taker at 50 cents. They apply to contracts listed on or after 18 Mar 2026; older listings use 0.05 and 0.01 on min(price, 1 - price). The page does not say whether rounding is per fill or per order |
+| Maker fees are waived **2 Sep to 31 Dec 2026** | Gemini's CFTC filing of 18 Aug 2026 (`cftc.gov/filings/orgrules/rules08182618219.pdf`); the firm 2 Sep start is from Gemini's developer docs (`developer.gemini.com/prediction-markets/maker-fee-free-trading-promo`, undated) | The filing says "on or after" 2 Sep. Takers still pay, and Gemini can change or end it early. Say "scheduled through 31 Dec 2026". No notice ending or extending it was found, but Gemini's notices page would not load, so one cannot be ruled out |
+
 ## Questions to expect
 
 - **Why would anyone pay more than fair?** The refund is the product, the way "draw no bet" costs more than a straight bet.
@@ -109,8 +118,9 @@ recorded fallback.
 - **Who can see my trades?** Nobody. The commit is a hash. A call becomes public only if the player reveals it, under an
   anonymous handle, never an account.
 - **Can't a player just reveal their winners?** They can keep a call sealed, but not hide that they made it: every call is
-  committed under their handle before the result, so the board shows calls sealed beside calls revealed, and anyone can
-  count the commits on chain. Refunded calls are shown separately, because they can never be revealed.
+  sealed under their handle before the result (the service refuses to seal one after its market has closed), so the board shows calls
+  sealed beside calls revealed, and anyone can count the commits on chain. The rank itself uses the revealed calls, so a hidden loser
+  shows in a player's sealed count, not in their rank. Refunded calls are shown separately, because they can never be revealed.
 - **Why should the leaderboard be trusted?** Every row is a verified commit-reveal pair, signed by our key, re-read from
   Solana. The one thing it takes on trust is the result, which our key attests with Gemini's order IDs as evidence.
 - **Why Solana, and what does the program do?** Cheap, fast records the app can pay for so users never touch a wallet.

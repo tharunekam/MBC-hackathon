@@ -6,6 +6,7 @@ import { MY_BETS, PRODUCTS, TOOLS } from '../lib/nav';
 import { titleFor } from '../lib/titles';
 import { keepMode, useVenue, type VenueNote } from '../lib/venue';
 import '../styles/header.css';
+import ErrorBoundary from './ErrorBoundary';
 
 const Sun = () => (
   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
@@ -43,6 +44,14 @@ function ThemeToggle() {
   );
 }
 
+/** The home page's sections, in reading order. The bar lists them there instead of the app's tabs. */
+const CONCEPT = [
+  { hash: '#how', name: 'How it works' },
+  { hash: '#cost', name: 'What it costs' },
+  { hash: '#proof', name: 'The record' },
+  { hash: '#products', name: 'Ways to bet' },
+];
+
 const tabClass = ({ isActive }: { isActive: boolean }) => `nav-link${isActive ? ' is-on' : ''}`;
 
 /** At 1080px and below the tabs fold into one sheet: the products with what each one is, then everything else. */
@@ -76,20 +85,43 @@ function MenuSheet({ onPick }: { onPick: () => void }) {
   );
 }
 
-/** What the app is talking to. The second half ("practice money") moves to a line of its own where the bar is short of room. */
+/**
+ * The one label in the bar: what, if anything, is unusual about where this copy of the app gets its prices and orders. It is a
+ * button, because what it means is worth reading and a hover tooltip cannot be reached with a finger.
+ */
 function VenueChip({ venue }: { venue: VenueNote }) {
+  const { pathname } = useLocation();
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLSpanElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  useEffect(() => setOpen(false), [pathname]);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => {
+      if (!wrap.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setOpen(false);
+      button.current?.focus();
+    };
+    document.addEventListener('pointerdown', away);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('pointerdown', away);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [open]);
   if (!venue.chip) return null;
-  const [what, more] = venue.chip.split(' · ');
   return (
-    <span className="chip chip-quiet venue" title={venue.about || undefined}>
-      <span>{what}</span>
-      {more && (
-        <>
-          <span className="venue-dot" aria-hidden="true">
-            ·
-          </span>
-          <span>{more}</span>
-        </>
+    <span className="venue-wrap" ref={wrap}>
+      <button ref={button} type="button" className="chip chip-quiet venue" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        {venue.chip}
+      </button>
+      {open && (
+        <p id="venue-hint" className="venue-hint">
+          {venue.hint}
+        </p>
       )}
     </span>
   );
@@ -132,39 +164,51 @@ export function Nav({ venue }: { venue: VenueNote }) {
     };
   }, [menu]);
   return (
-    // With the menu open the bar is drawn solid, so the sheet never sits under a transparent bar.
-    <header className="nav" data-home={home ? '' : undefined} data-over={home && top && !menu ? 'dark' : undefined}>
+    // At the top of a page the bar has no edge; once the page moves under it, it gets its rule and its blur.
+    <header className="nav" data-home={home ? '' : undefined} data-top={top && !menu ? '' : undefined}>
       <div className="nav-in">
         <Link to={keepMode('/')} className="brand" aria-label="Given home">
           Given
         </Link>
-        <nav className="nav-links" aria-label="Main">
-          {PRODUCTS.map((p) => (
-            <NavLink key={p.id} to={keepMode(p.to)} className={tabClass}>
-              {p.name}
-            </NavLink>
-          ))}
-          <span className="nav-sep" aria-hidden="true" />
-          {TOOLS.map((t) => (
-            <NavLink key={t.id} to={keepMode(t.to)} className={tabClass}>
-              {t.name}
-            </NavLink>
-          ))}
-        </nav>
+        {home ? (
+          // On the home page the bar is the page's own contents: the idea first, then the ways to bet.
+          <nav className="nav-links" aria-label="On this page">
+            {CONCEPT.map((c) => (
+              <Link key={c.hash} to={keepMode(`/${c.hash}`)} className="nav-link">
+                {c.name}
+              </Link>
+            ))}
+          </nav>
+        ) : (
+          <nav className="nav-links" aria-label="Main">
+            {PRODUCTS.map((p) => (
+              <NavLink key={p.id} to={keepMode(p.to)} className={tabClass}>
+                {p.name}
+              </NavLink>
+            ))}
+            <span className="nav-sep" aria-hidden="true" />
+            {TOOLS.map((t) => (
+              <NavLink key={t.id} to={keepMode(t.to)} className={tabClass}>
+                {t.name}
+              </NavLink>
+            ))}
+          </nav>
+        )}
         <div className="nav-right">
-          {!home && <LiveBadge />}
+          {/* A recorded session and made-up data are not connected to anything, so there is nothing to be live. */}
+          {!home && venue.kind === 'exchange' && <LiveBadge />}
           <VenueChip venue={venue} />
           <ThemeToggle />
           {home ? (
             <Link to={keepMode(PRODUCTS[0]!.to)} className="btn btn-primary btn-sm">
-              Enter app
+              Open the app
             </Link>
           ) : (
             <NavLink to={keepMode(MY_BETS.to)} className={({ isActive }) => `btn btn-ghost btn-sm bets-link${isActive ? ' is-on' : ''}`}>
               {MY_BETS.name}
             </NavLink>
           )}
-          <button ref={menuBtn} type="button" className="menu-btn" aria-expanded={menu} aria-controls="site-menu" onClick={() => setMenu((v) => !v)}>
+          <button ref={menuBtn} type="button" className="menu-btn" aria-expanded={menu} onClick={() => setMenu((v) => !v)}>
             {menu ? 'Close' : 'Menu'}
           </button>
         </div>
@@ -191,24 +235,18 @@ function LiveBadge() {
   );
 }
 
-const HOW = [
-  { hash: '#how', name: 'Two prices, three outcomes' },
-  { hash: '#cost', name: 'What it costs' },
-  { hash: '#proof', name: 'The record on Solana' },
-];
-
-export function Footer({ venue }: { venue: VenueNote }) {
+export function Footer() {
   return (
     <footer className="foot">
       <div className="wrap">
         <div className="foot-top">
           <div className="foot-brand">
             <div className="brand">Given</div>
-            <p>Bets on where a price finishes, with every result on screen before you bet.</p>
+            <p>Bet on where a price finishes. See every result before you bet.</p>
           </div>
           <nav className="foot-cols" aria-label="Footer">
             <div>
-              <h2>Products</h2>
+              <p className="foot-title">Products</p>
               {PRODUCTS.map((p) => (
                 <Link key={p.id} to={keepMode(p.to)}>
                   {p.name}
@@ -216,7 +254,7 @@ export function Footer({ venue }: { venue: VenueNote }) {
               ))}
             </div>
             <div>
-              <h2>Explore</h2>
+              <p className="foot-title">Explore</p>
               {[...TOOLS, MY_BETS].map((t) => (
                 <Link key={t.id} to={keepMode(t.to)}>
                   {t.name}
@@ -224,17 +262,16 @@ export function Footer({ venue }: { venue: VenueNote }) {
               ))}
             </div>
             <div>
-              <h2>How it works</h2>
-              {HOW.map((h) => (
-                <Link key={h.hash} to={keepMode(`/${h.hash}`)}>
-                  {h.name}
+              <p className="foot-title">About</p>
+              {CONCEPT.map((c) => (
+                <Link key={c.hash} to={keepMode(`/${c.hash}`)}>
+                  {c.name}
                 </Link>
               ))}
             </div>
           </nav>
         </div>
-        {/* What this copy of the app is really talking to comes first, then the two lines that never change. */}
-        <p className="foot-legal">{venue.about} Not affiliated with Gemini. Prediction markets carry risk, including the loss of your stake.</p>
+        <p className="foot-legal">Not affiliated with Gemini. Prediction markets carry risk, including the loss of your stake.</p>
       </div>
     </footer>
   );
@@ -244,25 +281,42 @@ export function Footer({ venue }: { venue: VenueNote }) {
  * The phone's bottom bar: the three builders, Hunch (another way to start a bet) and the place you come back to. Markets is an
  * index rather than a way in, so it sits in the Menu with Leaderboard and Proof.
  */
-const TABS = [
-  ...PRODUCTS.map((p) => ({ to: p.to, label: p.short })),
+const TABS: { to: string; label: string }[] = [
+  // Every tab shows its full name. On a phone under 350px wide "Stake Back" is wider than a fifth of the bar, so the bar gives each
+  // tab the room its own name needs (app.css) rather than shortening it to "Stake", which reads as the stake box.
+  ...PRODUCTS.map((p) => ({ to: p.to, label: p.name })),
   ...TOOLS.filter((t) => t.id === 'hunch').map((t) => ({ to: t.to, label: t.name })),
   { to: MY_BETS.to, label: MY_BETS.name },
 ];
 
-/** Layout for every route. Scrolls to the top on navigation. */
+/**
+ * Layout for every route. A new page starts at the top and takes keyboard focus; a link to a section of a page lands on it, and
+ * the same link clicked again lands on it again.
+ */
 export default function Shell() {
-  const { pathname, hash } = useLocation();
+  const { pathname, search, hash, key } = useLocation();
   const venue = useVenue();
+  const last = useRef<{ pathname: string; search: string; hash: string } | null>(null);
   useEffect(() => {
-    // A link to a section of a page lands on it; every other navigation starts at the top.
+    const prev = last.current;
+    last.current = { pathname, search, hash };
+    // A page changing its own query (a filter, the market in view) is not a move: the scroll and the focus stay where they are.
+    if (prev && prev.pathname === pathname && prev.hash === hash && prev.search !== search) return;
+    const arrived = prev === null || prev.pathname !== pathname;
+    // A new page appears at once. Moving about within one follows the page's own scroll-behavior, which is off for reduced motion.
+    const behavior: ScrollBehavior = arrived ? 'instant' : 'auto';
     const target = hash ? document.getElementById(hash.slice(1)) : null;
-    if (target) target.scrollIntoView();
-    else window.scrollTo(0, 0);
-  }, [pathname, hash]);
+    if (target) target.scrollIntoView({ behavior });
+    else window.scrollTo({ top: 0, left: 0, behavior });
+    // The link that was used is gone from view (or from the page), so the next Tab would start from the footer. Focus goes to the
+    // page itself, unless it is the first load or the page has already put focus on something of its own.
+    const main = document.getElementById('main');
+    if (prev !== null && arrived && !target && main && !main.contains(document.activeElement)) main.focus({ preventScroll: true });
+    // `key` is new for every navigation, including a click on the address already shown, which is how that click is told apart.
+  }, [pathname, search, hash, key]);
   useEffect(() => {
-    document.title = titleFor(pathname);
-  }, [pathname]);
+    document.title = titleFor(pathname, search);
+  }, [pathname, search]);
   return (
     <>
       {/* The first thing a keyboard reaches: past the bar, straight to the page. */}
@@ -270,6 +324,14 @@ export default function Shell() {
         Skip to content
       </a>
       <Nav venue={venue} />
+      {/* Keyed by page, so each page eases in as it arrives, and a failure on one page ends when the person moves to another.
+          Focusable only by the skip link and by a move to a new page, so focus (and a screen reader) really does move here. */}
+      <main id="main" key={pathname} tabIndex={-1}>
+        <ErrorBoundary>
+          <Outlet />
+        </ErrorBoundary>
+      </main>
+      {/* After the page in reading and tab order. It is fixed to the bottom of a phone's screen, so nothing is lost to the move. */}
       {pathname !== '/' && (
         <nav className="tabbar" aria-label="Primary">
           {TABS.map((l) => (
@@ -279,11 +341,7 @@ export default function Shell() {
           ))}
         </nav>
       )}
-      {/* Focusable only by the skip link, so focus (and a screen reader) really does move here. */}
-      <main id="main" tabIndex={-1}>
-        <Outlet context={venue} />
-      </main>
-      <Footer venue={venue} />
+      <Footer />
     </>
   );
 }

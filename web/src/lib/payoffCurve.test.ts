@@ -58,6 +58,45 @@ describe('several bets on one ladder, added up', () => {
     expect(c.behind).toBeCloseTo(0.82 - 0.41, 8);
   });
 
+  describe('a stake that comes back a few cents over or under', () => {
+    // The executor sizes the refund order a little over the stake (a tick of slip and the fee allowance): +$0.213 on a $10
+    // stake at a 7% fee rate. Zero-fee fixtures never show it, which is how it went unseen.
+    const real: LegPay = { ...parlay, win: 9.06, lose: -10, back: 0.213 };
+
+    it('is still level: a few cents over the stake is not a win', () => {
+      const c = payoffCurves([real], ladders).curves[0]!;
+      expect(c.level).toBeCloseTo(0.18, 8);
+      expect(c.ahead).toBeCloseTo(0.41, 8);
+      expect(c.behind).toBeCloseTo(0.41, 8);
+      expect(c.ahead + c.level + c.behind).toBeCloseTo(1, 8);
+    });
+
+    it('is still level a few cents under the stake, which is not a loss either', () => {
+      const c = payoffCurves([{ ...real, back: -0.03 }], ladders).curves[0]!;
+      expect([c.ahead, c.level, c.behind].map((x) => Math.round(x * 100))).toEqual([41, 18, 41]);
+    });
+
+    it('keeps the cents in the best, the worst and the average, which are the bets’ real figures', () => {
+      const c = payoffCurves([real], ladders).curves[0]!;
+      expect([c.best, c.worst]).toEqual([9.06, -10]);
+      expect(c.average).toBeCloseTo(0.18 * 0.213 + 0.41 * 9.06 + 0.41 * -10, 8);
+    });
+
+    it('is level only where every bet has its stake back: beside a range that loses there, it is a loss', () => {
+      const c = payoffCurves([real, range], ladders).curves[0]!;
+      expect(c.level).toBe(0);
+      expect(c.behind).toBeCloseTo(0.59, 8);
+      expect(c.ahead).toBeCloseTo(0.41, 8);
+    });
+
+    it('is level for a falling bet in the same way', () => {
+      const down: LegPay = { ticker: 'BTC', shape: { kind: 'down', condition: 63500, target: 62500 }, win: 9.06, lose: -10, back: 0.213 };
+      const c = payoffCurves([down], ladders).curves[0]!;
+      // Back at 63,500 or above (41%), wins below 62,500 (18%), loses between (41%).
+      expect([c.ahead, c.level, c.behind].map((x) => Math.round(x * 100))).toEqual([18, 41, 41]);
+    });
+  });
+
   it('a range and a breakout on the same two levels cannot both lose, and cannot both win', () => {
     const c = payoffCurves([range, breakout], ladders).curves[0]!;
     expect(new Set(c.bars.map((b) => b.net))).toEqual(new Set([6 - 8, -4 + 5]));

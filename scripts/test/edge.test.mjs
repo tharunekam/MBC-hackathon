@@ -85,8 +85,15 @@ describe('serving the built app', () => {
   });
 
   it('never serves dotfiles or source maps, or a malformed path', () => {
-    for (const p of ['/.env', '/assets/.hidden/a.js', '/assets/app-abc.js.map', '/a%00.js', '/%E0%A4%A']) {
+    for (const p of ['/.env', '/assets/.hidden/a.js', '/assets/app-abc.js.map', '/a%00.js', '/assets/app%E0%A4.js']) {
       assert.equal(resolveStatic(root, p), null, p);
+    }
+  });
+
+  it('a malformed escape in a page address gets the app shell, which has a not-found page of its own', () => {
+    for (const p of ['/%E0%A4%A', '/verify/%E0%A4%A', '/bets/%']) {
+      const r = resolveStatic(root, p);
+      assert.ok(r?.spa && r.file === join(root, 'index.html'), `${p} -> ${JSON.stringify(r)}`);
     }
   });
 

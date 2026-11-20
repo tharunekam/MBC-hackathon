@@ -157,8 +157,9 @@ $92.19 with no fees and $84.22 with production fees.
    (two cents past the best price by default) and usually fills at the best
    price, so a few more NO contracts are bought than the best price alone would
    need. `planForQuantity` and `contractsForStake` (`src/offer.ts`) take that
-   slip, so the plan on a quote is the bet that is placed and a bet never costs
-   more than the stake asked for; the refund is then the stake and a few cents
+   slip, so the plan on a quote is the bet that is placed and, at the quoted
+   prices, a bet never costs more than the stake asked for (a first order that
+   fills worse than quoted can take it over: `docs/PLAN.md`, known limit 3); the refund is then the stake and a few cents
    more, never less. (Before 2026-11-19 the quote counted the refund order at the
    best price and a "$10.00" bet came to $10.04.)
 6. If the hedge can't be completed within the price limit, the position is sold
@@ -461,6 +462,14 @@ A breakout's quote, in the range's shape: `quote` (`chanceOutside`, `fairPrice`,
 index, nothing is bought. Otherwise 201 with `{ "basket": { "id", "name", "size", "failed" }, "bets": [...] }`; `failed` is
 `null`, or `{ index, code, message }` for a leg that could not be completed, in which case the legs before it are placed, the
 failed leg is recorded, and the legs after it were not attempted.
+
+### Safe to repeat, and a lost answer
+
+`POST /bets` and `POST /baskets` take an optional `requestId` (8 to 64 characters of `A-Za-z0-9_-`). The executor stores it on the bet (`clientRequestId`, and on a basket record) in the ledger and looks for it inside the per-user queue before anything is sent: the same id from the same user answers with the bet or basket it placed the first time, HTTP 200 and `"repeated": true`, and places nothing. A client that times out, a proxy that replays a POST and a double click therefore cannot place a second real bet. Requests without an id behave as before; a refusal records nothing, so its id can be sent again.
+
+An order whose answer is lost (a timeout, a socket that closed mid-request) may still have reached the exchange and filled. `sendLeg` therefore looks it up by its tag (after 0, 0.5, 2 and 5 seconds) and records what the exchange says. An explicit refusal (`OrderNotSent`) is an error at once. When the exchange cannot say, the leg is `unknown`, the bet is held as `unhedged` with a plain note, and nothing more is sent for it: no second hedge, no unwind. `recoverBets` (at startup) and `/reconcile` resolve such legs by tag. Only an answer the exchange gave as a client error (a status from 400 to 499 on the order socket, or a socket that was not open) counts as a refusal that is known not to have placed the order; a 5xx or any other status is a lost answer and goes through the same look-up. A bet held as unhedged for an unknown order is looked up again by tag on the auto-settle timer (once it is 60 seconds old, at most every 5 minutes, reading only the named orders), and at start. A sale that cannot be confirmed answers 409 `sale_unconfirmed` (422 `nothing_sold` is a definite no-sale). A `requestId` reused with a different request answers 409 `request_id_reused`. Every 500 answers with a fixed body and logs the real error. A basket leg may carry its own `maxPrice`. Not covered: a recovery that finishes or unwinds a half-placed bet on its own; an unknown order that stays unknown waits for a person.
+
+Numeric settings (`GIVEN_PORT`, `GIVEN_TAKER_FEE_COEF`, `GIVEN_MAX_STAKE`, `GIVEN_RATE_LIMIT_PER_MIN`, `GIVEN_AUTO_SETTLE_MS`) must be plain numbers in range or the server refuses to start: `$25` or `20/min` used to become `NaN` and quietly switch the safeguard off.
 
 ### `POST /bets`
 

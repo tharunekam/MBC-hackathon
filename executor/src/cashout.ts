@@ -16,9 +16,8 @@
  * the sale was not checked against.
  */
 import type { Deps } from './bets.ts';
-import { applyResult, holdings, legMap, refreshCashOut, refreshTotals, sendLeg } from './bets.ts';
-import type { OrderRequest } from './exchange.ts';
-import type { BetRecord, LegRecord, Ledger } from './ledger.ts';
+import { UNKNOWN_NOTE, hasUnresolvedLeg, holdings, legMap, logUnreadableBook, refreshCashOut, refreshTotals, sendLeg } from './bets.ts';
+import type { BetRecord, Ledger } from './ledger.ts';
 import { viewFor } from './mirror.ts';
 import { PRODUCTION_TAKER_FEE_COEF } from './offer.ts';
 import { toRung } from './pairs.ts';
@@ -37,8 +36,10 @@ export type CashOutCode =
   | 'position_netted'
   /** The sale would bring in less than the floor the caller set. */
   | 'below_minimum'
-  /** The first sell order filled nothing, so the bet is unchanged. */
-  | 'nothing_sold';
+  /** The first sell order was sent and filled nothing, so the bet is unchanged. */
+  | 'nothing_sold'
+  /** The first sell order was sent and Gemini never said what became of it: the sale may have gone through. */
+  | 'sale_unconfirmed';
 
 export interface CashOutLegQuote {
   role: 'outcome' | 'hedge';
@@ -72,7 +73,7 @@ export interface CashOutQuote {
   legs: CashOutLegQuote[];
 }
 
-/** A cash-out turned down. Before any order unless the code is `nothing_sold`. */
+/** A cash-out turned down. Before any order unless the code is `nothing_sold` or `sale_unconfirmed`. */
 export class CashOutRefused extends Error {
   readonly code: CashOutCode;
   readonly quote?: CashOutQuote;
@@ -83,6 +84,9 @@ export class CashOutRefused extends Error {
     this.quote = quote;
   }
 }
+
+/** What a person is told when a sale may or may not have gone through. */
+export const SALE_UNCONFIRMED_MESSAGE = 'Gemini did not confirm whether the sale went through. Check My bets and your Gemini account before trying again.';
 
 const isLive = (bet: BetRecord): boolean => bet.status === 'open' || bet.status === 'unhedged';
 
@@ -141,6 +145,9 @@ export async function quoteCashOut(deps: Deps, bet: BetRecord): Promise<CashOutQ
 
   if (bet.status === 'cashed_out') return no('not_open', 'This bet has already been cashed out.');
   if (!isLive(bet)) return no('not_open', `This bet is "${bet.status}", so there is nothing to sell.`);
+  // An order whose result is not known may already hold (or have sold) contracts this bet does not show: selling now could
+  // sell too little or too much.
+  if (hasUnresolvedLeg(bet)) return no('not_open', 'One of this bet\'s orders has no confirmed result yet, so it cannot be sold until Gemini has been checked.');
   const held = legs.filter((l) => l.quantity > 0);
   if (held.length === 0) return no('not_open', 'This bet holds no contracts, so there is nothing to sell.');
 
@@ -173,7 +180,8 @@ export async function quoteCashOut(deps: Deps, bet: BetRecord): Promise<CashOutQ
     legs[1].price = hedgeBook.ask === null ? null : clean(1 - hedgeBook.ask);
     legs[1].available = hedgeBook.ask === null ? 0 : (hedgeBook.askSize ?? 0);
   } catch (err) {
-    return no('no_bid', `Could not read the live order book, so nothing was priced (${err instanceof Error ? err.message : String(err)}).`);
+    logUnreadableBook(err);
+    return no('no_bid', 'Could not read the live order book, so nothing was priced.');
   }
 
   if (held.some((l) => l.price === null || !(l.price > 0))) {
@@ -208,6 +216,8 @@ export interface CashOutRequest {
  *   everything sold      -> "cashed_out", with what it brought in and what that made or lost
  *   part sold            -> the bet stays live with what it still holds, flagged, and can be cashed out again
  *   first order unfilled -> CashOutRefused("nothing_sold"); the bet is as it was
+ *   first order unknown  -> CashOutRefused("sale_unconfirmed"); the sale may have gone through, so the bet is held as unhedged
+ *                           with its unknown note and nothing more is sent. Never "nothing_sold": that says the bet is unchanged.
  */
 export async function cashOutBet(deps: Deps, bet: BetRecord, req: CashOutRequest = {}): Promise<BetRecord> {
   const now = deps.now ?? (() => new Date());
@@ -235,7 +245,7 @@ export async function cashOutBet(deps: Deps, bet: BetRecord, req: CashOutRequest
   const [outcomeLeg, hedgeLeg] = quote.legs;
   let hedgeToSell = hedgeLeg.quantity;
   if (outcomeLeg.quantity > 0) {
-    const leg = await sellLeg(deps, bet, {
+    const leg = await sendLeg(deps, bet, 'cashout', {
       symbol: outcomeLeg.symbol,
       side: 'sell',
       outcome: outcomeLeg.outcome,
@@ -244,6 +254,15 @@ export async function cashOutBet(deps: Deps, bet: BetRecord, req: CashOutRequest
       tif: 'IOC',
       clientOrderId: `gv-${bet.id}-cb${attempt}`,
     });
+    if (leg.status === 'unknown') {
+      // The sale may have gone through. Nothing more is sent, and the bet says so instead of "unchanged".
+      refreshTotals(bet);
+      refreshCashOut(bet);
+      bet.status = 'unhedged';
+      bet.note = UNKNOWN_NOTE;
+      deps.ledger.save();
+      throw new CashOutRefused('sale_unconfirmed', SALE_UNCONFIRMED_MESSAGE, quote);
+    }
     if (leg.status === 'error' || leg.quantityFilled <= 0) {
       refreshTotals(bet);
       refreshCashOut(bet); // drops the record again unless an earlier attempt sold something
@@ -262,7 +281,7 @@ export async function cashOutBet(deps: Deps, bet: BetRecord, req: CashOutRequest
     }
   }
   if (hedgeToSell > 0) {
-    await sellLeg(deps, bet, {
+    await sendLeg(deps, bet, 'cashout', {
       symbol: hedgeLeg.symbol,
       side: 'sell',
       outcome: hedgeLeg.outcome,
@@ -275,6 +294,10 @@ export async function cashOutBet(deps: Deps, bet: BetRecord, req: CashOutRequest
 
   refreshTotals(bet);
   refreshCashOut(bet);
+  if (hasUnresolvedLeg(bet)) {
+    bet.status = 'unhedged';
+    bet.note = UNKNOWN_NOTE;
+  }
   deps.ledger.save();
   return bet;
 }
@@ -295,25 +318,4 @@ function matchingShare(bet: BetRecord, held: number, sold: number, hedgeHeld: nu
   const perContract = atPrice - feeRate(atPrice, feeCoef); // what selling one refund contract brings in, at worst
   const keepsRefundWhole = perContract < 1 ? floorToStep((h.hedge.quantity - h.outcome.spent - h.hedge.spent) / (1 - perContract)) : proportional;
   return Math.max(0, Math.min(proportional, keepsRefundWhole));
-}
-
-/**
- * Sends one sell. An order whose answer never arrived (the connection dropped after it was sent) may still have reached
- * Gemini and filled, so before it is treated as unsold it is looked up by its tag. If that lookup fails too the leg
- * stays marked as an error and `reconcile` will show the difference.
- */
-async function sellLeg(deps: Deps, bet: BetRecord, req: OrderRequest): Promise<LegRecord> {
-  const leg = await sendLeg(deps, bet, 'cashout', req);
-  if (leg.status !== 'error') return leg;
-  try {
-    const found = await deps.exchange.findOrder(req.clientOrderId);
-    if (found) {
-      applyResult(leg, found, deps.feeCoef ?? 0);
-      leg.note = `${leg.note ?? 'No answer came back'}; the order was then found on the exchange by its tag.`;
-      deps.ledger.save();
-    }
-  } catch {
-    /* still unknown */
-  }
-  return leg;
 }

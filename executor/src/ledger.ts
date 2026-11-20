@@ -21,8 +21,13 @@ export interface LegRecord {
   avgPrice: number | null;
   /** Fee charged on this order, from the fee model in force when it filled. */
   fee: number;
-  /** sent -> filled | partial | unfilled | resting | error */
-  status: 'sent' | 'filled' | 'partial' | 'unfilled' | 'resting' | 'error';
+  /**
+   * sent -> filled | partial | unfilled | resting | error | unknown
+   *   error    the exchange refused the order, or answered twice, 3 seconds apart, that it has no such order
+   *   unknown  the answer was lost and the exchange could not say what became of the order: it may have filled, so nothing
+   *            else is sent for the bet until `recoverBets` (or a person) has looked
+   */
+  status: 'sent' | 'filled' | 'partial' | 'unfilled' | 'resting' | 'error' | 'unknown';
   orderId?: string;
   sentAt: string;
   note?: string;
@@ -41,6 +46,10 @@ export interface BetRecord {
   direction?: Direction;
   /** Set when the bet was placed as one leg of a basket. */
   basket?: { id: string; name?: string; index: number; size: number };
+  /** The "requestId" the person's app sent with the request, so a repeat of that request finds this bet instead of placing another. */
+  clientRequestId?: string;
+  /** Fingerprint of what the request chose (see `requestKey` in api.ts): a repeat of the id with another choice is refused, not answered with this bet. */
+  requestKey?: string;
   /**
    * A parlay's condition is the strike that has to hold first and its target the strike it is really about; for a falling
    * parlay the condition is the HIGHER strike. A range has no condition: its "condition" is the lower strike (the YES leg)
@@ -53,7 +62,8 @@ export interface BetRecord {
   quotedPrice: number;
   /**
    * open      both legs in place; stake comes back if the condition fails
-   * unhedged  the hedge leg could not be completed and unwinding was not requested or failed
+   * unhedged  the hedge leg could not be completed and unwinding was not requested or failed, or an order has no confirmed
+   *            result (a leg is "unknown"): nothing more is sent for the bet and its note says to check the account
    * unwound   the hedge failed, so the position was sold back
    * failed    nothing was bought
    * settled   Gemini has resolved the event with a clean yes/no on both contracts
@@ -176,12 +186,33 @@ export interface IntentRecord {
   note?: string;
 }
 
+/**
+ * A basket placed with a request id, kept so a repeat of that request is answered with this basket and places nothing.
+ * Baskets sent without a request id leave no record: the bets carry their basket id and that is all there is.
+ */
+export interface BasketRecord {
+  id: string;
+  user: string;
+  clientRequestId: string;
+  /** As on a bet: the fingerprint of the legs that were asked for, in order. */
+  requestKey?: string;
+  name?: string;
+  size: number;
+  createdAt: string;
+  /** The leg that could not be completed, and why. Null while the basket is being placed and when every leg went through. */
+  failed: { index: number; code: string; message: string } | null;
+  /** False until placing has finished. A record still false after a restart is a basket that was interrupted part-way. */
+  done: boolean;
+}
+
 export interface LedgerData {
   version: 1;
   /** Cash snapshot per user, taken when that user's ledger was started. */
   baselines: Record<string, { cash: number; at: string }>;
   bets: BetRecord[];
   intents: IntentRecord[];
+  /** By basket id; only baskets that came with a request id. Absent until there is one. */
+  baskets?: Record<string, BasketRecord>;
 }
 
 const empty = (): LedgerData => ({ version: 1, baselines: {}, bets: [], intents: [] });

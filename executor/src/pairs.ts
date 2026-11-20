@@ -101,7 +101,7 @@ export function linkedPairs(
         a,
         b,
         conditionalPrice: price,
-        offer: assessPair(rungs, a, b, { feeCoef: opts.feeCoef ?? 0, waiveMarkup: opts.waiveMarkup }),
+        offer: assessPair(rungs, a, b, { feeCoef: opts.feeCoef ?? 0, waiveMarkup: opts.waiveMarkup, direction: opts.direction }),
       });
     }
   }

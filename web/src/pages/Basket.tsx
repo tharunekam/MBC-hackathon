@@ -6,9 +6,11 @@ import {
   useRef,
   useState,
 } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
-import type { MarketEvent, PlaceBasketResponse, Rung } from '../api/types';
-import BasketLeg from '../components/BasketLeg';
+import { ApiError } from '../api/client';
+import type { MarketEvent, PlaceBasketRequest, PlaceBasketResponse, Rung } from '../api/types';
+import BasketLeg, { kindLabel, legTitleId } from '../components/BasketLeg';
 import BasketResult, { type CallProgress } from '../components/BasketResult';
 import PayoffBars from '../components/PayoffBars';
 import StakeField from '../components/StakeField';
@@ -16,18 +18,22 @@ import {
   MAX_LEGS,
   MIN_LEGS,
   NAME_MAX,
+  basketAttemptKey,
   basketButton,
+  basketsFromBets,
   buildRequest,
   costNote,
   cryptoLegs,
   defaultLevels,
   inOrder,
   kindOfLeg,
+  legsPointAWay,
   levelsValid,
   listed,
   makeLeg,
   pickMarket,
   refusedLeg,
+  restFrom,
   seedLegs,
   sharedMarketNote,
   splitEvenly,
@@ -49,7 +55,8 @@ import {
   waitingOnLadder,
   waitingWords,
 } from '../lib/basketPays';
-import { betSentence, productName } from '../lib/betKind';
+import { betSentence } from '../lib/betKind';
+import { usableBets } from '../lib/betsView';
 import { pct, usd, usdSigned } from '../lib/format';
 import { friendly } from '../lib/friendly';
 import { useResource } from '../lib/hooks';
@@ -65,13 +72,17 @@ import {
   chanceWords,
   neverAllWin,
   shapeOf,
+  spanEnds,
   spanWords,
   together,
   winsAt,
   type JointLeg,
+  type Span,
   type Together,
 } from '../lib/together';
-import { useVenue } from '../lib/venue';
+import { useStakeCap } from '../lib/stake';
+import { mayHaveBeenPlaced, useAttempts, useUnconfirmedBet } from '../lib/unconfirmedBet';
+import { keepMode, useVenue } from '../lib/venue';
 import '../styles/builder.css';
 import '../styles/basket.css';
 
@@ -108,6 +119,73 @@ function useTicketTop(): [React.RefObject<HTMLElement>, number | undefined] {
   return [ref, top];
 }
 
+
+/** The kinds a new leg tries in turn: a rising Stake Back first, as every basket has opened with. */
+const KIND_ORDER: LegKind[] = ['up', 'range', 'down', 'breakout'];
+
+/**
+ * A market and kind for a new leg that no leg is already on: the market `pickMarket` prefers first (an asset not yet in the
+ * basket), then any other. A market that already has a leg gets a different kind of bet, so "Add a leg" never makes a copy of
+ * one. Null when every kind on every market is already in the basket.
+ */
+function freshLeg(
+  events: MarketEvent[],
+  legs: LegDraft[],
+): { ev: MarketEvent; kind: LegKind } | null {
+  const taken = new Set(legs.map((l) => `${l.event}|${l.kind}`));
+  const first = pickMarket(
+    events,
+    legs.map((l) => l.event),
+  );
+  const order = first ? [first, ...events.filter((e) => e !== first)] : events;
+  for (const ev of order) {
+    const kind = KIND_ORDER.find((k) => !taken.has(`${ev.ticker}|${k}`));
+    if (kind) return { ev, kind };
+  }
+  return null;
+}
+
+/** Whether the window is phone or tablet width, where the ticket follows the legs and the Place button rides along. */
+const NARROW = '(max-width: 960px)';
+function useNarrow(): boolean {
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(NARROW).matches,
+  );
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia(NARROW);
+    const on = () => setNarrow(mq.matches);
+    on();
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return narrow;
+}
+
+/** The phone's tab bar is fixed to the bottom of the window, so the Place bar rides just above it. Zero where there is none. */
+function useTabbarHeight(active: boolean): number {
+  const [h, setH] = useState(0);
+  useLayoutEffect(() => {
+    const el = active ? document.querySelector<HTMLElement>('.tabbar') : null;
+    if (!el) {
+      setH(0);
+      return;
+    }
+    const measure = () => setH(el.offsetHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    window.addEventListener('resize', measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [active]);
+  return h;
+}
+
+const round2 = (x: number) => Math.round(x * 100) / 100;
+
 export default function Basket() {
   const venue = useVenue();
   const [ticketRef, ticketAt] = useTicketTop();
@@ -122,6 +200,19 @@ export default function Basket() {
   );
   const events = ladders.shown;
   const feeCoef = markets.data?.feeCoefCharged ?? 0;
+  const [cap] = useStakeCap();
+  const attempts = useAttempts();
+  // A link may name a market (?market=TICKER). The basket opens on its own choice of markets either way, but a link to one the
+  // exchange no longer lists says so, until the person picks a market themselves.
+  const wanted = useSearchParams()[0].get('market');
+  const [chose, setChose] = useState(false);
+  const unlisted =
+    !!wanted &&
+    !chose &&
+    !!markets.data &&
+    !markets.data.events.some((e) => e.ticker === wanted);
+  const narrow = useNarrow();
+  const tabbarH = useTabbarHeight(narrow);
 
   const [amountText, setAmountText] = useState(String(DEFAULT_AMOUNT));
   const [amount, setAmount] = useState(DEFAULT_AMOUNT);
@@ -132,7 +223,12 @@ export default function Basket() {
   const [statuses, setStatuses] = useState<Record<string, LegStatus>>({});
   const [legErrors, setLegErrors] = useState<Record<string, string>>({});
   const [basketError, setBasketError] = useState<string | null>(null);
+  // An answer that does not say whether the basket was placed. The person is sent to My bets rather than to a retry. The note
+  // stays until they change the basket or press Place again; the button's own hold (see `useUnconfirmedBet`) is shorter.
+  const [unsure, setUnsure] = useState(false);
   const [reloadSignal, setReloadSignal] = useState(0);
+  // What a screen reader is told when something has happened; prices and typing are left silent.
+  const [announce, setAnnounce] = useState('');
 
   const [phase, setPhase] = useState<'idle' | 'placing' | 'placed'>('idle');
   const [placedLegs, setPlacedLegs] = useState<LegDraft[]>([]);
@@ -141,8 +237,30 @@ export default function Basket() {
     total: 0,
     done: 0,
     failed: 0,
-    error: null,
+    late: 0,
+    failedIds: [],
   });
+  const resultHead = useRef<HTMLHeadingElement>(null);
+  // Where keyboard focus goes after the control that had it is gone: a leg's heading after Remove, the amount after Make another.
+  const focusLeg = useRef<string | null>(null);
+  const focusAmount = useRef(false);
+
+  // The basket is placed: bring the result into view and hand it focus, because the button that had focus is gone and the
+  // result can be a screen below the legs on a phone.
+  useEffect(() => {
+    if (phase === 'placed' && result) resultHead.current?.focus();
+  }, [phase, result]);
+  useEffect(() => {
+    if (phase !== 'idle' || !focusAmount.current) return;
+    focusAmount.current = false;
+    document.getElementById('basket-amount')?.focus();
+  }, [phase]);
+  useEffect(() => {
+    const key = focusLeg.current;
+    if (!key) return;
+    focusLeg.current = null;
+    document.getElementById(legTitleId(key))?.focus();
+  }, [legs]);
 
   const eventOf = useCallback(
     (ticker: string | null): MarketEvent | undefined =>
@@ -150,7 +268,7 @@ export default function Basket() {
     [events],
   );
 
-  // Open on two legs on different assets once the markets arrive; afterwards, keep every leg on a ladder that still exists
+  // Open on two legs on different assets once the markets arrive; afterwards, keep every leg on a market that still exists
   // (the hour rolls over and tickers change) and on levels that are in order.
   useEffect(() => {
     if (events.length === 0 || phase !== 'idle') return;
@@ -192,6 +310,7 @@ export default function Basket() {
   /** Any change to a leg clears what the last refusal said about it. */
   const touch = (key: string) => {
     setBasketError(null);
+    setUnsure(false);
     setLegErrors((prev) => {
       if (!(key in prev)) return prev;
       const { [key]: _gone, ...rest } = prev;
@@ -212,15 +331,23 @@ export default function Basket() {
     }));
   };
 
+  // While the stakes are set by hand the amount box shows what they add up to, so it never says something the legs do not.
+  const showTotal = (list: LegDraft[]) => {
+    const total = round2(list.reduce((n, l) => n + l.stake, 0));
+    setAmount(total);
+    setAmountText(stakeText(total));
+  };
+
+  // Typing an amount shares it evenly again, which is what the box is for.
   function setAmountFrom(txt: string) {
     setAmountText(txt);
     const n = parseStake(txt);
     if (n === null) return;
     setAmount(n);
-    if (even) {
-      setBasketError(null);
-      setLegs((prev) => resplit(prev, n));
-    }
+    setEven(true);
+    setBasketError(null);
+    setUnsure(false);
+    setLegs((prev) => resplit(prev, n));
   }
 
   function splitNow() {
@@ -238,6 +365,7 @@ export default function Basket() {
     });
   }
   function setMarket(key: string, ticker: string) {
+    setChose(true);
     update(key, (l) => {
       const ev = eventOf(ticker);
       const lv = ev ? defaultLevels(ev, l.kind, feeCoef) : null;
@@ -252,38 +380,44 @@ export default function Basket() {
   }
   function setStake(key: string, txt: string) {
     setEven(false);
-    update(key, (l) => {
-      const n = parseStake(txt);
-      return { ...l, stakeText: txt, stake: n ?? 0 };
-    });
+    const n = parseStake(txt);
+    showTotal(
+      legs.map((l) => (l.key === key ? { ...l, stake: n ?? 0 } : l)),
+    );
+    update(key, (l) => ({ ...l, stakeText: txt, stake: n ?? 0 }));
   }
 
+  const fresh = useMemo(() => freshLeg(events, legs), [events, legs]);
   function addLeg() {
-    if (legs.length >= MAX_LEGS) return;
+    if (legs.length >= MAX_LEGS || !fresh) return;
     setBasketError(null);
-    const ev = pickMarket(
-      events,
-      legs.map((l) => l.event),
-    );
+    setUnsure(false);
     const n = legs.length + 1;
     const share = splitEvenly(amount, n)[n - 1] ?? 0;
-    const leg = makeLeg(ev, 'up', share, feeCoef);
-    setLegs((prev) =>
-      even ? resplit([...prev, leg], amount) : [...prev, leg],
-    );
+    const leg = makeLeg(fresh.ev, fresh.kind, share, feeCoef);
+    const next = even ? resplit([...legs, leg], amount) : [...legs, leg];
+    setLegs(next);
+    if (!even) showTotal(next);
   }
   function removeLeg(key: string) {
     if (legs.length <= MIN_LEGS) return;
     setBasketError(null);
-    setLegs((prev) => {
-      const next = prev.filter((l) => l.key !== key);
-      return even ? resplit(next, amount) : next;
-    });
+    setUnsure(false);
+    const at = legs.findIndex((l) => l.key === key);
+    focusLeg.current = (legs[at + 1] ?? legs[at - 1])?.key ?? null;
+    const rest = legs.filter((l) => l.key !== key);
+    const next = even ? resplit(rest, amount) : rest;
+    setLegs(next);
+    if (!even) showTotal(next);
     setStatuses((prev) => {
-      const { [key]: _gone, ...rest } = prev;
-      return rest;
+      const { [key]: _gone, ...others } = prev;
+      return others;
     });
   }
+
+  const loadingFirst = markets.loading && !markets.data;
+  const failedToLoad = !!markets.error && !markets.data;
+  const noMarkets = !loadingFirst && events.length === 0;
 
   const legStatuses = legs.map((l) => statuses[l.key]);
   const button = basketButton({
@@ -292,6 +426,7 @@ export default function Basket() {
     legs: legStatuses,
     placing: legs.length,
   });
+  const buttonLabel = loadingFirst ? 'Loading markets' : button.label;
   const sum = totals(
     legs.map((l) => ({ stake: l.stake, status: statuses[l.key] })),
   );
@@ -302,10 +437,24 @@ export default function Basket() {
     ),
   );
   const crypto = cryptoLegs(legs.map((l) => eventOf(l.event)));
-  // Legs may share a market (the picker allows it, and with one asset the page opens that way). Said once, on the ticket.
+  // Two legs on one market: the first one's orders can move the prices the next needs (seen on the sandbox, 2026-11-20).
   const sameMarket = sharedMarketNote(legs.map((l) => l.event));
 
-  // How the legs come out together, read from the same ladders the legs are built on, so it moves whenever the prices do.
+  // The same bet twice: the number of the earlier leg, for a leg that copies one.
+  const sameAs = legs.map((l, i) => {
+    if (!l.event || !l.a || !l.b) return null;
+    const j = legs.findIndex(
+      (o, at) =>
+        at < i &&
+        o.event === l.event &&
+        o.kind === l.kind &&
+        o.a === l.a &&
+        o.b === l.b,
+    );
+    return j < 0 ? null : j + 1;
+  });
+
+  // How the legs come out together, read from the same markets the legs are built on, so it moves whenever the prices do.
   // A leg with no market or levels yet goes in as null and is reported as left out.
   const joint = useMemo(() => {
     const rungs: Record<string, Rung[]> = {};
@@ -325,7 +474,7 @@ export default function Basket() {
     };
   }, [legs, eventOf]);
 
-  // What the legs net at each finishing price, ladder by ladder, from the same shapes and each leg's own win and loss. The
+  // What the legs net at each finishing price, market by market, from the same shapes and each leg's own win and loss. The
   // best and worst case come from the same legs: they are what a finishing price can really give, which is not always
   // "every leg wins" and "every leg loses".
   const pays = useMemo(() => {
@@ -338,12 +487,24 @@ export default function Basket() {
       extremes: extremes(list),
     };
   }, [joint, statuses, legs]);
-  // The tendency is only worth stating about a range, and a range only exists between separate ladders.
+  // The tendency is only worth stating about a range, and a range only exists between separate markets.
   const cryptoApart = cryptoLegs(
     Array.from(new Set(legs.map((l) => l.event)), eventOf),
   );
+  // "Legs that point the same way" means something only for a Stake Back, which points up or down. A Range or a Breakout on a
+  // crypto market points nowhere, and the joint chance of such a leg can sit below the mark for unrelated markets even though
+  // the prices move together, so the sentence is left out whenever one is in the basket.
+  const pointing = legsPointAWay(
+    legs.map((l) => ({
+      kind: l.kind,
+      crypto: cryptoLegs([eventOf(l.event)]) > 0,
+    })),
+  );
   const leaning =
-    !!joint.result.allWin && !joint.result.allWin.exact && cryptoApart >= 2;
+    !!joint.result.allWin &&
+    !joint.result.allWin.exact &&
+    cryptoApart >= 2 &&
+    pointing;
   // The short warning says the legs "can all win", which is wrong once two of them cannot both win, and is already said
   // at more length when the panel talks about the range.
   const warnTogether =
@@ -352,331 +513,514 @@ export default function Basket() {
     joint.result.impossible.length === 0 &&
     joint.neverAll.length === 0;
 
+  /** The calls are recorded one by one after the bets are placed; a call that fails is kept so it can be tried again. */
+  const commitCalls = useCallback((ids: string[]) => {
+    for (const id of ids) {
+      api.commitCall(id).then(
+        () => setCalls((c) => ({ ...c, done: c.done + 1 })),
+        (e) =>
+          // A call is refused for good once its market has closed: asking again cannot help, so it is counted apart.
+          setCalls((c) =>
+            e instanceof ApiError && e.code === 'too_late'
+              ? { ...c, late: c.late + 1 }
+              : { ...c, failed: c.failed + 1, failedIds: [...c.failedIds, id] },
+          ),
+      );
+    }
+  }, []);
+  function retryCalls() {
+    const ids = calls.failedIds;
+    setCalls((c) => ({ ...c, failed: 0, failedIds: [] }));
+    commitCalls(ids);
+  }
+
+  // What went out last: the request with its id and price limits, the legs as they were, and the prices they were placed at. Kept so
+  // that when the answer is lost the very same request can be sent again, and so that an answer found later is shown on the legs
+  // the person placed, whatever they have changed since.
+  const sent = useRef<{ req: PlaceBasketRequest; snapshot: LegDraft[]; prices: (number | null)[] } | null>(null);
+  // True while a placement is out: the button is disabled once the page has drawn, but clicks that arrive in one task all run before.
+  const inflight = useRef(false);
+
+  /** The executor's answer, or the basket found by the id it was sent under: the result, and the calls to seal. */
+  function adopt(res: PlaceBasketResponse, snapshot: LegDraft[]) {
+    attempts.spend();
+    setPlacedLegs(snapshot);
+    setResult(res);
+    setPhase('placed');
+    setUnsure(false);
+    const open = res.bets.filter((b) => b.status === 'open');
+    setCalls({ total: open.length, done: 0, failed: 0, late: 0, failedIds: [] });
+    setAnnounce(
+      res.basket.failed
+        ? `Basket placed in part. Leg ${res.basket.failed.index + 1} could not be completed.`
+        : `Basket placed. ${res.bets.length} bets.`,
+    );
+    commitCalls(open.map((b) => b.id));
+    markets.reload();
+  }
+
+  /** A refusal is the executor's answer: nothing was placed, and the next try is a new attempt. It names a leg when it can. */
+  function refuse(e: unknown, snapshot: LegDraft[], prices: (number | null)[]) {
+    attempts.spend();
+    const refused = refusedLeg(e);
+    const leg = refused ? snapshot[refused.index] : undefined;
+    if (refused && leg) {
+      setLegErrors({
+        [leg.key]: stripLegPrefix(
+          friendly(e, { ...kindOfLeg(leg.kind), shownPrice: prices[refused.index] ?? null, basket: true }),
+        ),
+      });
+      const text = `Leg ${refused.index + 1} was turned down, so nothing was placed.`;
+      setBasketError(text);
+      setAnnounce(text);
+    } else {
+      const text = friendly(e, { basket: true });
+      setBasketError(text);
+      setAnnounce(text);
+    }
+    setReloadSignal((n) => n + 1);
+    markets.reload();
+  }
+
+  // After a dropped connection or a server error the basket may have been placed anyway. The button is held while the list of
+  // bets is read for the basket (every bet of it carries the id it was sent under), and once the same request is sent again
+  // under the same id: the executor places nothing twice for one id, so that returns the basket that was placed, or places it
+  // now, but never two.
+  const [holding, setHolding] = useUnconfirmedBet<PlaceBasketResponse>(
+    () => api.bets('primary').then((r) => basketsFromBets(usableBets(r.bets))),
+    (r) => r.basket.clientRequestId !== undefined && r.basket.clientRequestId === sent.current?.req.requestId,
+    (r) => {
+      if (sent.current) adopt(r, sent.current.snapshot);
+    },
+    {
+      send: () => (sent.current ? api.placeBasket(sent.current.req) : Promise.reject(new Error('nothing was sent'))),
+      refused: (e) => {
+        if (sent.current) refuse(e, sent.current.snapshot, sent.current.prices);
+      },
+    },
+  );
+  const canPlace = button.canPlace && !holding;
+
   async function place() {
-    if (!button.canPlace) return;
+    if (!canPlace || inflight.current) return;
+    // The price per $1 each leg's quote showed: a leg may cost up to a little more than that, and no more.
+    const prices = legs.map((l) => statuses[l.key]?.pricePaid ?? null);
     let req;
     try {
-      req = buildRequest(name, legs);
-    } catch (e) {
-      setBasketError(
-        e instanceof Error
-          ? e.message
-          : 'Every leg needs a market and two levels.',
-      );
+      req = buildRequest(name, legs, 'primary', prices);
+    } catch {
+      // Whatever was thrown is a developer's sentence: the person is told the one thing that can be wrong here.
+      setBasketError('Every leg needs a market and two levels.');
       return;
     }
+    inflight.current = true;
+    // One id for each attempt: pressing Place basket again after an answer was lost sends the same id, so the executor places the
+    // basket once whichever of the two requests got through. Another basket, or an answered attempt, gets a new one. The id
+    // follows the bets chosen, not the price limits (which tick) or the name.
+    req = { ...req, requestId: attempts.idFor(basketAttemptKey(req)) };
     const snapshot = legs;
+    sent.current = { req, snapshot, prices };
+    setHolding(false);
     setPhase('placing');
     setBasketError(null);
+    setUnsure(false);
     setLegErrors({});
     try {
-      const res = await api.placeBasket(req);
-      setPlacedLegs(snapshot);
-      setResult(res);
-      setPhase('placed');
-      const open = res.bets.filter((b) => b.status === 'open');
-      setCalls({ total: open.length, done: 0, failed: 0, error: null });
-      for (const bet of open) {
-        api.commitCall(bet.id).then(
-          () => setCalls((c) => ({ ...c, done: c.done + 1 })),
-          (e) =>
-            setCalls((c) => ({
-              ...c,
-              failed: c.failed + 1,
-              error: friendly(e),
-            })),
-        );
-      }
-      markets.reload();
+      adopt(await api.placeBasket(req), snapshot);
     } catch (e) {
-      const refused = refusedLeg(e);
-      const leg = refused ? snapshot[refused.index] : undefined;
-      if (refused && leg) {
-        const k = kindOfLeg(leg.kind);
-        setLegErrors({ [leg.key]: stripLegPrefix(friendly(e, k)) });
-        setBasketError(
-          `Leg ${refused.index + 1} was turned down, so nothing was placed.`,
-        );
+      if (mayHaveBeenPlaced(e)) {
+        // The basket may have been placed: asking again could place it twice. Send the person to My bets and hold the button.
+        setUnsure(true);
+        setHolding(true);
+        setAnnounce('We could not confirm this basket. Check My bets before trying again.');
+        setReloadSignal((n) => n + 1);
+        markets.reload();
       } else {
-        setBasketError(friendly(e));
+        refuse(e, snapshot, prices);
       }
       setPhase('idle');
-      setReloadSignal((n) => n + 1);
-      markets.reload();
+    } finally {
+      inflight.current = false;
     }
   }
 
   function again() {
+    focusAmount.current = true;
     setPhase('idle');
     setResult(null);
     setName('');
-    setCalls({ total: 0, done: 0, failed: 0, error: null });
+    setAnnounce('');
+    setCalls({ total: 0, done: 0, failed: 0, late: 0, failedIds: [] });
   }
 
-  const loadingFirst = markets.loading && !markets.data;
+  // A basket placed in part: reopen the form on the legs that were not placed, with the stakes they had.
+  function placeRest() {
+    const from = result ? restFrom(result) : 0;
+    const next = legs.filter((_, i) => i >= from);
+    focusAmount.current = true;
+    setLegs(next);
+    setEven(false);
+    showTotal(next);
+    setPhase('idle');
+    setResult(null);
+    setAnnounce('');
+    setCalls({ total: 0, done: 0, failed: 0, late: 0, failedIds: [] });
+  }
+
+  const showBar = narrow && phase !== 'placed' && !loadingFirst && !noMarkets;
+  const cappedAll = cap !== null && legs.length > 0 ? cap * legs.length : null;
+  const capWords =
+    cap !== null && legs.length > 0
+      ? `Up to ${usd(cap, 0)} a bet, so up to ${usd(cap * legs.length, 0)} in total with ${legs.length} legs.`
+      : '';
+
+  const placeButton = (
+    <button type="button"
+      className="btn btn-primary btn-wide"
+      disabled={!canPlace}
+      onClick={place}
+    >
+      {phase === 'placing' ? <span className="spin" aria-hidden="true" /> : null}
+      {buttonLabel}
+    </button>
+  );
+  const buttonNotes = (
+    <>
+      {venue.readOnly && (
+        <p className="fine basket-off">
+          Prices only. Placing bets is switched off here.
+        </p>
+      )}
+      {basketError && (
+        <p className="note note-bad" role="alert">
+          {basketError}
+        </p>
+      )}
+      {unsure && (
+        <p className="note note-warn" role="alert">
+          We could not confirm this basket.{' '}
+          <Link to={keepMode('/bets')}>Check My bets</Link> before trying
+          again.
+        </p>
+      )}
+    </>
+  );
 
   return (
-    <div className="page builder basket">
+    <div className="page builder basket" data-phase={phase}>
       <header className="page-head">
         <div>
-          <span className="eyebrow">A view across several assets</span>
           <h1 className="h-page">Basket</h1>
           <p className="lede">
-            Up to {MAX_LEGS} bets on different markets, placed in one step. Each
-            keeps its own two orders and its own result.
+            Up to {MAX_LEGS} bets, placed in one step. Each keeps its own two
+            orders and its own result.
           </p>
         </div>
       </header>
 
-      {markets.error && !markets.data && (
+      <p className="sr-only" role="status">
+        {announce}
+      </p>
+
+      {unlisted && (
+        <p className="note note-info deep-link-note">
+          That market is no longer listed.{' '}
+          <Link to={keepMode('/markets')}>See all markets</Link>
+        </p>
+      )}
+
+      {failedToLoad && (
         <div className="card notice" role="alert">
-          <b>We could not load the markets.</b>
-          <span>{markets.error.message}</span>
-          <button className="btn btn-ghost" onClick={markets.reload}>
+          <span>We could not load the markets. Try again in a moment.</span>
+          <button type="button" className="btn btn-ghost" onClick={markets.reload}>
             Try again
           </button>
         </div>
       )}
 
-      <div className="build-grid">
-        <div className="left-col">
-          <section className="card basket-amount" aria-label="Amount to spread">
-            <StakeField
-              id="basket-amount"
-              label="Amount to spread"
-              text={amountText}
-              stake={amount}
-              onText={setAmountFrom}
-              presets={[20, 30, 50, 100]}
-              note={
-                even
-                  ? `${splitWords(amount, Math.max(1, legs.length))} Change a leg’s stake to set it yourself.`.trim()
-                  : `Leg stakes are set by hand and add up to ${usd(sum.stake)}.`
-              }
-            />
-            <button
-              type="button"
-              className="btn btn-ghost basket-split"
-              onClick={splitNow}
-              disabled={phase !== 'idle' || legs.length === 0}
-            >
-              Split evenly
-            </button>
-          </section>
+      {noMarkets && !failedToLoad && (
+        <div className="card notice">
+          <span>No markets have prices right now. Check back in a few minutes.</span>
+          <button type="button" className="btn btn-ghost" onClick={markets.reload}>
+            Try again
+          </button>
+        </div>
+      )}
 
-          {loadingFirst ? (
-            <div className="skeleton leg-skel" aria-hidden="true" />
-          ) : events.length === 0 ? (
-            <div className="card empty">
-              No ladders have prices right now. Check back in a few minutes.
+      {!noMarkets && (
+        <div className="build-grid">
+          <div className="left-col">
+            <section className="card basket-amount" aria-label="Total to share across legs">
+              <StakeField
+                id="basket-amount"
+                label="Total to share across legs"
+                text={amountText}
+                stake={amount}
+                max={cappedAll}
+                onText={setAmountFrom}
+                presets={[20, 30, 50, 100]}
+                note={
+                  legs.length === 0
+                    ? 'Shared evenly across the legs.'
+                    : even
+                      ? `${splitWords(amount, legs.length)} ${capWords}`.trim()
+                      : `Leg stakes are set by hand and add up to ${usd(sum.stake)}. ${capWords}`.trim()
+                }
+              />
+              {!even && (
+                <button
+                  type="button"
+                  className="btn btn-ghost basket-split"
+                  onClick={splitNow}
+                  disabled={phase !== 'idle' || legs.length === 0}
+                >
+                  Split evenly
+                </button>
+              )}
+            </section>
+
+            {loadingFirst ? (
+              <div className="legs-skel" aria-hidden="true">
+                <div className="skeleton leg-skel" />
+                <div className="skeleton leg-skel" />
+              </div>
+            ) : (
+              <ol className="legs" aria-label="Legs">
+                {legs.map((l, i) => (
+                  <BasketLeg
+                    key={l.key}
+                    index={i}
+                    leg={l}
+                    events={events}
+                    feeCoef={feeCoef}
+                    phase={phase}
+                    readOnly={venue.readOnly}
+                    canRemove={legs.length > MIN_LEGS}
+                    minNoteId="basket-min-note"
+                    sameAs={sameAs[i] ?? null}
+                    error={legErrors[l.key] ?? null}
+                    onKind={(k) => setKind(l.key, k)}
+                    onMarket={(t) => setMarket(l.key, t)}
+                    onFirst={(s) => setFirst(l.key, s)}
+                    onSecond={(s) => update(l.key, (x) => ({ ...x, b: s }))}
+                    onStake={(t) => setStake(l.key, t)}
+                    onRemove={() => removeLeg(l.key)}
+                    onStatus={onStatus}
+                    reloadSignal={reloadSignal}
+                  />
+                ))}
+              </ol>
+            )}
+
+            {!loadingFirst && (
+              <div className="add-leg">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={addLeg}
+                  disabled={legs.length >= MAX_LEGS || phase !== 'idle' || !fresh}
+                >
+                  Add a leg
+                </button>
+                <span className="fine" id="basket-min-note">
+                  {legs.length >= MAX_LEGS
+                    ? `A basket holds ${MAX_LEGS} legs at most.`
+                    : !fresh
+                      ? 'Every bet you can make here is already in your basket.'
+                      : legs.length <= MIN_LEGS
+                        ? `${legs.length} of ${MAX_LEGS} legs. A basket needs at least ${MIN_LEGS}.`
+                        : `${legs.length} of ${MAX_LEGS} legs`}
+                </span>
+              </div>
+            )}
+
+            {/* Beside the ticket, not in it: the charts need the width, and the ticket has to stay short enough to act on. */}
+            {!loadingFirst && legs.length >= MIN_LEGS && (
+              <PaysPanel
+                curves={pays.curves}
+                missing={pays.missing}
+                pays={pays.list}
+                eventOf={eventOf}
+                tickerOf={(i) =>
+                  joint.shapes[i]?.ticker ?? legs[i]?.event ?? null
+                }
+              />
+            )}
+          </div>
+
+          <aside
+            ref={ticketRef}
+            className="card quote-card basket-ticket"
+            style={ticketAt === undefined ? undefined : { top: ticketAt }}
+            aria-label="Your basket"
+          >
+            {phase === 'placed' && result ? (
+              <BasketResult
+                result={result}
+                legs={placedLegs}
+                events={events}
+                calls={calls}
+                headingRef={resultHead}
+                onAgain={again}
+                onRest={placeRest}
+                onRetryCalls={retryCalls}
+              />
+            ) : loadingFirst ? (
+              <>
+                <header className="card-head">
+                  <h2 className="h-card">Your basket</h2>
+                </header>
+                <div className="skeleton ticket-skel" aria-hidden="true" />
+                {placeButton}
+              </>
+            ) : (
+              <>
+                <header className="card-head">
+                  <h2 className="h-card">Your basket</h2>
+                  <span className="fine">
+                    {legs.length} {legs.length === 1 ? 'leg' : 'legs'}
+                  </span>
+                </header>
+
+                <label className="basket-name">
+                  <span className="leg-label">Name, optional</span>
+                  <input type="text"
+                    value={name}
+                    maxLength={NAME_MAX}
+                    onChange={(e) => setName(e.target.value.slice(0, NAME_MAX))}
+                    placeholder="Majors this hour"
+                    disabled={phase !== 'idle'}
+                  />
+                </label>
+
+                {/* The legs are already on screen above the ticket on a phone, so the recap is for the wide layout. */}
+                <ol className="ticket-legs">
+                  {legs.map((l, i) => {
+                    const ev = eventOf(l.event);
+                    const ra = ev?.rungs.find((r) => r.symbol === l.a);
+                    const rb = ev?.rungs.find((r) => r.symbol === l.b);
+                    const k = kindOfLeg(l.kind);
+                    return (
+                      <li
+                        key={l.key}
+                        className={
+                          button.blockedLeg === i ? 'is-blocking' : undefined
+                        }
+                      >
+                        <div>
+                          <span className="ticket-meta">
+                            {i + 1} · {kindLabel(k)} ·{' '}
+                            {ev ? assetLabel(ev) : '–'}
+                          </span>
+                          <span className="ticket-bet">
+                            {ra && rb
+                              ? betSentence(k, {
+                                  condition: ra.strike,
+                                  target: rb.strike,
+                                })
+                              : 'Choose two levels'}
+                          </span>
+                        </div>
+                        <b>{usd(l.stake)}</b>
+                      </li>
+                    );
+                  })}
+                </ol>
+
+                {legs.length > 0 && (
+                  <dl className="basket-totals">
+                    {/* The one figure the person pays, set above the rest. The stake follows as a quiet line: it is what the
+                        bets were sized from, and a cent or two apart from the cost, so the two are never shown as equals. */}
+                    <div data-kind="cost">
+                      <dt>What the orders cost</dt>
+                      <dd>{usd(sum.cost)}</dd>
+                      {sized && <dd className="basket-cost">{sized}</dd>}
+                    </div>
+                    <div data-kind="stake">
+                      <dt>Total stake</dt>
+                      <dd>{usd(sum.stake)}</dd>
+                    </div>
+                    {pays.extremes ? (
+                      <>
+                        <div data-kind="win">
+                          <dt>
+                            {!pays.extremes.everyWin
+                              ? 'Best case'
+                              : 'Best case, every leg wins'}
+                          </dt>
+                          <dd>{usdSigned(pays.extremes.best)}</dd>
+                        </div>
+                        <div data-kind="lose">
+                          <dt>
+                            {!pays.extremes.everyLose
+                              ? 'Worst case'
+                              : 'Worst case, every leg loses'}
+                          </dt>
+                          <dd>{usdSigned(pays.extremes.worst)}</dd>
+                        </div>
+                      </>
+                    ) : (
+                      <div>
+                        <dt>Best and worst case</dt>
+                        <dd className="basket-cost">
+                          Shown once every leg has a price.
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
+                )}
+
+                {legs.length >= MIN_LEGS && (
+                  <TogetherPanel
+                    joint={joint.result}
+                    shapes={joint.shapes}
+                    neverAll={joint.neverAll}
+                    assetOf={(ticker) => {
+                      const ev = eventOf(ticker);
+                      return ev ? assetLabel(ev) : 'the price';
+                    }}
+                    leaning={leaning}
+                    warn={warnTogether}
+                  />
+                )}
+
+                {/* Legs may share a market (the picker allows it). Said once, on the ticket; it stops nothing. */}
+                {sameMarket && <p className="note note-warn">{sameMarket}</p>}
+
+                {!showBar && buttonNotes}
+                {!showBar && placeButton}
+              </>
+            )}
+          </aside>
+
+          {/* On a phone the button rides above the tab bar, so it stays in reach while the legs are being edited. */}
+          {showBar && (
+            <div className="place-bar" style={{ bottom: tabbarH + 8 }}>
+              {(basketError || unsure || venue.readOnly) && (
+                <div className="place-bar-notes">{buttonNotes}</div>
+              )}
+              {/* The button says what the basket costs, so the bar says nothing else about money: a stake a cent away from it
+                  would be a second figure to weigh at the moment that matters. */}
+              <div className="place-bar-row">{placeButton}</div>
             </div>
-          ) : (
-            <ol className="legs" aria-label="Legs">
-              {legs.map((l, i) => (
-                <BasketLeg
-                  key={l.key}
-                  index={i}
-                  leg={l}
-                  events={events}
-                  feeCoef={feeCoef}
-                  phase={phase}
-                  readOnly={venue.readOnly}
-                  canRemove={legs.length > MIN_LEGS}
-                  error={legErrors[l.key] ?? null}
-                  onKind={(k) => setKind(l.key, k)}
-                  onMarket={(t) => setMarket(l.key, t)}
-                  onFirst={(s) => setFirst(l.key, s)}
-                  onSecond={(s) => update(l.key, (x) => ({ ...x, b: s }))}
-                  onStake={(t) => setStake(l.key, t)}
-                  onRemove={() => removeLeg(l.key)}
-                  onStatus={onStatus}
-                  reloadSignal={reloadSignal}
-                />
-              ))}
-            </ol>
-          )}
-
-          {events.length > 0 && (
-            <div className="add-leg">
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={addLeg}
-                disabled={legs.length >= MAX_LEGS || phase !== 'idle'}
-              >
-                Add a leg
-              </button>
-              <span className="fine">
-                {legs.length >= MAX_LEGS
-                  ? `A basket holds ${MAX_LEGS} legs at most.`
-                  : `${legs.length} of ${MAX_LEGS} legs`}
-              </span>
-            </div>
-          )}
-
-          {/* Beside the ticket, not in it: the charts need the width, and the ticket has to stay short enough to act on. */}
-          {events.length > 0 && legs.length >= MIN_LEGS && (
-            <PaysPanel
-              curves={pays.curves}
-              missing={pays.missing}
-              pays={pays.list}
-              eventOf={eventOf}
-              tickerOf={(i) =>
-                joint.shapes[i]?.ticker ?? legs[i]?.event ?? null
-              }
-            />
           )}
         </div>
-
-        <aside
-          ref={ticketRef}
-          className="card quote-card basket-ticket"
-          style={ticketAt === undefined ? undefined : { top: ticketAt }}
-          aria-live="polite"
-          aria-label="Your basket"
-        >
-          {phase === 'placed' && result ? (
-            <BasketResult
-              result={result}
-              legs={placedLegs}
-              events={events}
-              calls={calls}
-              onAgain={again}
-            />
-          ) : (
-            <>
-              <header className="card-head">
-                <h2 className="h-card">Your basket</h2>
-                <span className="fine">
-                  {legs.length} {legs.length === 1 ? 'leg' : 'legs'}
-                </span>
-              </header>
-
-              <label className="basket-name">
-                <span className="leg-label">Name, optional</span>
-                <input
-                  value={name}
-                  maxLength={NAME_MAX}
-                  onChange={(e) => setName(e.target.value.slice(0, NAME_MAX))}
-                  placeholder="Majors this hour"
-                  disabled={phase !== 'idle'}
-                />
-              </label>
-
-              <ol className="ticket-legs">
-                {legs.map((l, i) => {
-                  const ev = eventOf(l.event);
-                  const ra = ev?.rungs.find((r) => r.symbol === l.a);
-                  const rb = ev?.rungs.find((r) => r.symbol === l.b);
-                  const k = kindOfLeg(l.kind);
-                  return (
-                    <li
-                      key={l.key}
-                      className={
-                        button.blockedLeg === i ? 'is-blocking' : undefined
-                      }
-                    >
-                      <div>
-                        <span className="ticket-meta">
-                          {i + 1} · {productName(k)} ·{' '}
-                          {ev ? assetLabel(ev) : '…'}
-                        </span>
-                        <span className="ticket-bet">
-                          {ra && rb
-                            ? betSentence(k, {
-                                condition: ra.strike,
-                                target: rb.strike,
-                              })
-                            : 'Choose two levels'}
-                        </span>
-                      </div>
-                      <b>{usd(l.stake)}</b>
-                    </li>
-                  );
-                })}
-              </ol>
-
-              <dl className="basket-totals">
-                <div>
-                  <dt>Total stake</dt>
-                  <dd>{usd(sum.stake)}</dd>
-                </div>
-                <div>
-                  <dt>What the orders cost</dt>
-                  <dd>{usd(sum.cost)}</dd>
-                  {sized && <dd className="basket-cost">{sized}</dd>}
-                </div>
-                <div data-kind="win">
-                  <dt>
-                    {pays.extremes && !pays.extremes.everyWin
-                      ? 'Best case'
-                      : 'Best case, every leg wins'}
-                  </dt>
-                  <dd>
-                    {pays.extremes ? usdSigned(pays.extremes.best) : '–'}
-                  </dd>
-                </div>
-                <div data-kind="lose">
-                  <dt>
-                    {pays.extremes && !pays.extremes.everyLose
-                      ? 'Worst case'
-                      : 'Worst case, every leg loses'}
-                  </dt>
-                  <dd>
-                    {pays.extremes ? usdSigned(pays.extremes.worst) : '–'}
-                  </dd>
-                </div>
-              </dl>
-
-              {legs.length >= MIN_LEGS && (
-                <TogetherPanel
-                  joint={joint.result}
-                  shapes={joint.shapes}
-                  neverAll={joint.neverAll}
-                  assetOf={(ticker) => {
-                    const ev = eventOf(ticker);
-                    return ev ? assetLabel(ev) : 'the price';
-                  }}
-                  leaning={leaning}
-                  warn={warnTogether}
-                />
-              )}
-
-              {sameMarket && <p className="note note-warn">{sameMarket}</p>}
-
-              <p className="fine basket-terms">
-                Each leg is its own bet, with its own result. If a leg cannot
-                be completed, the legs before it stay placed and the rest are
-                not sent.
-              </p>
-
-              {basketError && (
-                <p className="note note-bad" role="alert">
-                  {basketError}
-                </p>
-              )}
-
-              <button
-                className="btn btn-primary btn-wide"
-                disabled={!button.canPlace}
-                onClick={place}
-              >
-                {phase === 'placing' ? (
-                  <span className="spin" aria-hidden="true" />
-                ) : null}
-                {button.label}
-              </button>
-            </>
-          )}
-        </aside>
-      </div>
+      )}
     </div>
   );
 }
 
+/** A span as "4% to 31%", one figure when its ends meet. */
+function spanText(s: Span): string {
+  if (s.exact) return chanceWords(s.low);
+  if (pct(s.low) === pct(s.high)) return spanWords(s);
+  const ends = spanEnds(s);
+  return `${ends.low}% to ${ends.high}%`;
+}
+
 /**
- * How the legs come out together. Legs on one ladder get an exact figure, because one finishing price decides them. Legs on
- * separate ladders get the range that holds however the markets move together, with the figure for unrelated markets marked
+ * How the legs come out together. Legs on one market get an exact figure, because one finishing price decides them. Legs on
+ * separate markets get the range that holds however the markets move together, with the figure for unrelated markets marked
  * inside it as a reference point. The figures are the market's, from the exchange's prices, and show "–" while a leg has none.
  */
 function TogetherPanel({
@@ -689,9 +1033,9 @@ function TogetherPanel({
 }: {
   joint: Together;
   shapes: (JointLeg | null)[];
-  /** Three or more legs on one ladder that can win two by two but never all at once (see `neverAllWin`). */
+  /** Three or more legs on one market that can win two by two but never all at once (see `neverAllWin`). */
   neverAll: { legs: number[]; ticker: string }[];
-  /** What a ladder's price is of, for a sentence: "Bitcoin". */
+  /** What a market's price is of, for a sentence: "Bitcoin". */
   assetOf: (ticker: string) => string;
   /** Whether to say which way legs on crypto assets tend to pull the range. */
   leaning: boolean;
@@ -703,7 +1047,7 @@ function TogetherPanel({
   const anyRange = ranged || (!!anyWin && !anyWin.exact);
   const count = shapes.length;
 
-  // Two legs on one ladder whose winning prices never overlap. The first pair is spelled out; any others are counted.
+  // Two legs on one market whose winning prices never overlap. The first pair is spelled out; any others are counted.
   const clash = impossible[0];
   const first = clash ? shapes[clash.legs[0]] : null;
   const second = clash ? shapes[clash.legs[1]] : null;
@@ -715,14 +1059,14 @@ function TogetherPanel({
       </h3>
 
       <p className="together-line">
-        Chance every leg wins: <b>{allWin ? spanWords(allWin) : '–'}</b>
+        Chance every leg wins: <b>{allWin ? spanText(allWin) : '–'}</b>
       </p>
       {allWin && ranged && (
         <div className="together-meter">
           <div
             className="together-bar"
             role="img"
-            aria-label={`A bar from 0% to 100%, shaded from ${pct(allWin.low)} to ${pct(allWin.high)} and marked at ${pct(allWin.ifUnrelated)}.`}
+            aria-label={`A bar from 0% to 100%, shaded from ${spanEnds(allWin).low}% to ${spanEnds(allWin).high}% and marked at ${pct(allWin.ifUnrelated)}.`}
           >
             <span
               className="together-range"
@@ -740,10 +1084,14 @@ function TogetherPanel({
             <span>0%</span>
             <span>100%</span>
           </div>
+          <p className="together-key">
+            Marker: if the markets were unrelated,{' '}
+            {chanceWords(allWin.ifUnrelated)}
+          </p>
         </div>
       )}
       <p className="together-line">
-        At least one leg wins: <b>{anyWin ? spanWords(anyWin) : '–'}</b>
+        At least one leg wins: <b>{anyWin ? spanText(anyWin) : '–'}</b>
       </p>
 
       {clash && first && second && (
@@ -757,8 +1105,7 @@ function TogetherPanel({
           {impossible.length === 2 &&
             ' One other pair of legs cannot both win either.'}
           {impossible.length > 2 &&
-            ` ${impossible.length - 1} other pairs of legs cannot both win either.`}{' '}
-          A basket is not all-or-nothing, so each leg still has its own result.
+            ` ${impossible.length - 1} other pairs of legs cannot both win either.`}
         </p>
       )}
 
@@ -768,12 +1115,10 @@ function TogetherPanel({
             ? 'These legs'
             : `Legs ${listed(n.legs.map((i) => i + 1))}`}{' '}
           cannot all win: no finishing price for {assetOf(n.ticker)} wins every
-          one of them. A basket is not all-or-nothing, so each leg still has its
-          own result.
+          one of them.
         </p>
       ))}
 
-      {/* One paragraph of small print, not three: whose chances these are, and what the bar's range and mark mean. */}
       {missing.length > 0 ? (
         <p className="fine">
           {waitingWords(missing)}
@@ -788,19 +1133,15 @@ function TogetherPanel({
               : `All ${count} legs are on the same market, so one finishing price decides them all. `)}
           These are the market’s chances, from its prices right now.
           {anyRange &&
-            ' Prices do not say how separate markets move together, so a range is all that is certain.'}
-          {allWin &&
-            ranged &&
-            ` The mark is where it would sit if they were unrelated: ${chanceWords(allWin.ifUnrelated)}.`}
+            ' Prices cannot show how separate markets move together, so these are a range.'}
           {joint.adjusted &&
             ' Some of the prices were out of order, so they were averaged first.'}
         </p>
       )}
       {leaning && (
         <p className="fine">
-          Crypto prices tend to move together: legs that point the same way
-          lean toward the top of the range, and legs that point opposite ways
-          toward the bottom.
+          Crypto prices often move together, so legs that point the same way
+          win together more often.
         </p>
       )}
     </section>
@@ -911,7 +1252,7 @@ function PaysPanel({
                   <p className="fine">
                     <Figures text={words.average} />
                     {c.adjusted &&
-                      ' Some of this ladder’s prices were out of order, so they were evened out first.'}
+                      ' Some of this market’s prices were out of order, so they were evened out first.'}
                   </p>
                   {waiting.length > 0 && (
                     <p className="fine">{waitingOnLadder(waiting)}</p>

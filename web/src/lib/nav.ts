@@ -6,13 +6,13 @@ export interface Destination {
 }
 
 export interface Product extends Destination {
-  /** The name on the phone's tab bar, where a full name does not fit. */
+  /** The name for a place with little room, such as the links in a row of a table. It is the name itself until a name proves too long. */
   short: string;
   tagline: string;
 }
 
 export const PRODUCTS: readonly Product[] = [
-  { id: 'parlay', name: 'Return Parlay', short: 'Parlay', tagline: 'A parlay that pays your stake back if the first leg misses', to: '/parlay' },
+  { id: 'parlay', name: 'Stake Back', short: 'Stake Back', tagline: 'A bet that pays your stake back if the first level fails', to: '/parlay' },
   { id: 'range', name: 'Range', short: 'Range', tagline: 'Bet that a price stays between two levels, or breaks out of them', to: '/range' },
   { id: 'basket', name: 'Basket', short: 'Basket', tagline: 'Several bets on different assets, placed in a single step', to: '/basket' },
 ];

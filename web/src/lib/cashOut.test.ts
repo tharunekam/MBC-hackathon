@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/client';
 import { mockApi } from '../api/mock';
 import type { Bet } from '../api/types';
-import { cashOutProblem, cashOutRefusal, cashOutWords, sellingMeans } from '../components/CashOut';
-import { isPlaced, isSettled, matches, orderLine, outcomeOf, realised, stakeOf, statusWords, summarize } from './betsView';
+import { cashOutIsFinal, cashOutProblem, cashOutRefusal, cashOutWords, sellingMeans } from '../components/CashOut';
+import { finishedWords, isPlaced, isSettled, matches, orderLine, outcomeOf, realised, stakeOf, statusWords, summarize } from './betsView';
 
 const flow = { bets: 1, ordersSent: 2, ordersFilled: 2, contracts: 0, premium: 0, feesAtProductionRates: 0, feesCharged: 0 };
 
@@ -44,7 +44,8 @@ describe('a bet that was cashed out', () => {
   it('shows what it first cost as its stake, and the sale as what it paid', () => {
     expect(stakeOf(cashed)).toBe(10);
     expect(stakeOf(bet({ id: 'a' }))).toBe(10);
-    expect(realised(cashed)).toEqual({ payout: 9.2, pnl: -0.8 });
+    expect(realised(cashed)).toMatchObject({ payout: 9.2 });
+    expect(realised(cashed)!.pnl).toBeCloseTo(-0.8, 10);
   });
 
   it('adds up with the other bets: staked at cost, returned at the sale price', () => {
@@ -72,7 +73,7 @@ describe('a bet that was cashed out', () => {
 
   it('describes its sell orders', () => {
     const line = orderLine(cashed, { role: 'cashout', symbol: 'GEMI-BTC-HI64000', outcome: 'yes', side: 'sell' });
-    expect(line.label).toBe('Cashed out');
+    expect(line.label).toBe('Sold');
     expect(line.side).toBe('YES');
     expect(line.strike).toBe(64000);
   });
@@ -95,6 +96,24 @@ describe('what a cash-out that did not go through says', () => {
     expect(cashOutProblem(refused(422, 'below_minimum', raw), 'selling')).toBe('The price moved, so nothing was sold. Check the price again.');
     expect(cashOutProblem(refused(422, 'nothing_sold', 'The sell order failed (HTTP 500). The bet is unchanged.'), 'selling')).toBe('The price moved before the order arrived, so nothing was sold. Your bet is unchanged.');
     expect(cashOutProblem(refused(409, 'not_open', 'This bet is "settled", so there is nothing to sell.'), 'selling')).toBe('This bet is no longer open, so there is nothing to sell.');
+  });
+
+  it('a sale with no confirmed result says so, in words of its own: it may have gone through, and nothing says it did not', () => {
+    // The first sell order was sent and nobody knows what became of it (the executor answers 409 sale_unconfirmed).
+    const unconfirmed = refused(409, 'sale_unconfirmed', 'Gemini did not confirm whether the sale went through. Check My bets and your Gemini account before trying again.');
+    const said = cashOutProblem(unconfirmed, 'selling');
+    expect(said).toBe('We could not confirm whether this sold. Check My bets and your Gemini account before trying again.');
+    // The fault this closes: the same answer used to read "The price moved ... so nothing was sold. Your bet is unchanged."
+    expect(said).not.toMatch(/nothing was sold|unchanged|price moved/i);
+    expect(cashOutProblem(unconfirmed, 'pricing')).toBe(said);
+    expect(cashOutRefusal({ code: 'sale_unconfirmed' })).toBe(said);
+  });
+
+  it('offers no second try for a sale that may have gone through: selling again could sell what is already sold', () => {
+    expect(cashOutIsFinal({ code: 'sale_unconfirmed' })).toBe(true);
+    // A sale that definitely sold nothing keeps its own sentence and may be tried again.
+    expect(cashOutIsFinal({ code: 'nothing_sold' })).toBe(false);
+    expect(cashOutProblem(refused(422, 'nothing_sold', 'The price moved before the order arrived and nothing was sold. The bet is unchanged.'), 'selling')).toBe('The price moved before the order arrived, so nothing was sold. Your bet is unchanged.');
   });
 
   it('says a sale was refused, never that a bet was', () => {
@@ -120,6 +139,13 @@ describe('what a cash-out that did not go through says', () => {
     expect(cashOutProblem(refused(502, 'bad_gateway', 'Bad gateway'), 'selling')).toMatch(/could not confirm the sale/);
   });
 
+  it('an answer it has no words for says the sale did not go through, never that a bet could not be placed, and prints nothing the server said', () => {
+    const odd = refused(422, 'something_new', 'Hedge order rejected: InsufficientFunds on GEMI-BTC-HI62500');
+    expect(cashOutProblem(odd, 'selling')).toBe('The sale did not go through. Nothing was sold. Try again in a moment.');
+    expect(cashOutProblem(odd, 'pricing')).toBe('We could not read the price just now. Nothing was sold. Try again in a moment.');
+    for (const doing of ['selling', 'pricing'] as const) expect(cashOutProblem(odd, doing)).not.toMatch(/place that bet|Insufficient|GEMI/);
+  });
+
   it('a paused server and a bet that is not there are named', () => {
     expect(cashOutProblem(refused(503, 'paused', 'Betting is paused for a moment. Try again soon.'), 'selling')).toBe('Selling is paused for a moment. Nothing was sold. Try again soon.');
     expect(cashOutProblem(refused(404, 'unknown_bet', 'No bet "x".'), 'pricing')).toBe('We could not find this bet. Reload the page and try again.');
@@ -129,30 +155,37 @@ describe('what a cash-out that did not go through says', () => {
     expect(cashOutRefusal({ code: 'no_bid' })).toBe('We could not find a buyer for this bet just now, so it cannot be sold. Try again in a moment.');
     expect(cashOutRefusal({ code: null })).toBe('This bet cannot be sold right now.');
   });
+
+  it('says a bet that shares prices with another cannot be sold on its own, and offers no second try', () => {
+    expect(cashOutRefusal({ code: 'position_netted' })).toBe('Another open bet of yours uses the same prices, so this one cannot be sold on its own. It pays out when the market closes.');
+    expect(cashOutIsFinal({ code: 'position_netted' })).toBe(true);
+    expect(cashOutIsFinal({ code: 'not_open' })).toBe(true);
+    // A quiet market or a moving price can change by itself, so those keep their "Check again".
+    for (const code of ['no_bid', 'insufficient_depth', 'market_closed', 'below_minimum', null] as const) expect(cashOutIsFinal({ code })).toBe(false);
+  });
 });
 
 describe('the sentence that says what selling means', () => {
   const two = { legs: [{ quantity: 12 }, { quantity: 30 }] } as Parameters<typeof sellingMeans>[1];
 
   it('a parlay gives up its win and its refund', () => {
-    expect(sellingMeans({}, two)).toBe('Selling sends two sell orders at the prices on offer now: you give up both the win and the stake coming back, and the call you made can still be revealed once the market settles.');
-    expect(sellingMeans({ product: 'parlay', direction: 'down' }, two)).toMatch(/both the win and the stake coming back/);
+    expect(sellingMeans({}, two)).toBe('You give up the win and the stake back. Your call can still be revealed.');
+    expect(sellingMeans({ product: 'parlay', direction: 'down' }, two)).toMatch(/the win and the stake back/);
   });
 
   it('a range or a breakout has no refund to give up', () => {
     for (const product of ['range', 'breakout'] as const) {
       const words = sellingMeans({ product }, two);
-      expect(words).toMatch(/two sell orders/);
-      expect(words).toMatch(/you give up what the bet could still pay/);
-      expect(words).not.toMatch(/stake coming back/);
+      expect(words).toMatch(/You give up what the bet could still pay/);
+      expect(words).not.toMatch(/stake back/);
     }
   });
 
   it('a bet holding one order says one, and promises no refund it does not have', () => {
     const one = { legs: [{ quantity: 12 }, { quantity: 0 }] } as Parameters<typeof sellingMeans>[1];
     const words = sellingMeans({ product: 'parlay' }, one);
-    expect(words).toMatch(/one sell order at the price on offer now/);
-    expect(words).not.toMatch(/stake coming back/);
+    expect(words).toMatch(/You give up what the bet could still pay/);
+    expect(words).not.toMatch(/stake back/);
   });
 
   it('never promises anything', () => {
@@ -271,7 +304,8 @@ describe('the demo data', () => {
     expect(seeded, 'the demo data has a settled breakout').toBeTruthy();
     expect(seeded!.settlement).toMatchObject({ conditionResolved: 'yes', targetResolved: 'no', payout: 0 });
     expect(seeded!.settlement!.pnl).toBeCloseTo(-seeded!.cost, 2);
-    expect(statusWords(seeded!)).toBe('Finished inside');
+    expect(statusWords(seeded!)).toBe('Lost');
+    expect(finishedWords(seeded!)).toMatch(/, inside the range$/);
     // Where it says the price ended agrees with the result: between the two levels.
     expect(seeded!.settlement!.finishedAt).toBeGreaterThanOrEqual(seeded!.condition.strike);
     expect(seeded!.settlement!.finishedAt).toBeLessThan(seeded!.target.strike);

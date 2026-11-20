@@ -68,7 +68,7 @@ export function mirrorExchange(ex: Exchange): Exchange {
   return {
     getEvent: async (ticker) => mirrorEvent(await ex.getEvent(ticker)),
     placeOrder: (req) => ex.placeOrder(req),
-    findOrder: (id) => ex.findOrder(id),
+    findOrder: (id, opts) => ex.findOrder(id, opts),
     cancelOrder: (id) => ex.cancelOrder(id),
     cash: () => ex.cash(),
     allOrders: () => ex.allOrders(),

@@ -1,6 +1,16 @@
 import type { Bet, Direction, Product } from '../api/types';
 import { money } from './format';
 
+/** The start of the executor's note for a bet with an order it could not confirm. */
+const UNCONFIRMED_NOTE = /did not confirm/i;
+
+/**
+ * A bet with an order that has no confirmed result: a leg of status `unknown`, or the executor's note that says so (a record
+ * the legs of which were read back by hand carries only the note). A bet that was looked up and settled carries neither.
+ */
+export const isUnconfirmed = (b: Partial<Pick<Bet, 'legs' | 'note'>>): boolean =>
+  (Array.isArray(b.legs) && b.legs.some((l) => l?.status === 'unknown')) || (typeof b.note === 'string' && UNCONFIRMED_NOTE.test(b.note));
+
 /** What kind of bet something is: a product, and for a parlay which way it looks. */
 export interface BetKind {
   product: Product;
@@ -22,7 +32,7 @@ export function kindOfBetId(id: string): BetKind {
 export const kindOf = (bet: Pick<Bet, 'product' | 'direction'>): BetKind => ({ product: bet.product ?? 'parlay', direction: bet.direction ?? 'up' });
 
 /** The product's name as it appears in the header. A falling parlay is the same product going the other way. */
-export const productName = (kind: BetKind): string => (kind.product === 'range' ? 'Range' : kind.product === 'breakout' ? 'Breakout' : 'Return Parlay');
+export const productName = (kind: BetKind): string => (kind.product === 'range' ? 'Range' : kind.product === 'breakout' ? 'Breakout' : 'Stake Back');
 
 /** The bet in one line, from the two strikes it was built on. For a range or a breakout these are its lower and higher strike. */
 export function betSentence(kind: BetKind, strikes: { condition: number; target: number }): string {
@@ -45,10 +55,11 @@ export function resultOf(bet: Pick<Bet, 'settlement'>): BetResult | null {
   return s.targetResolved === 'yes' ? 'won' : 'lost';
 }
 
-/** The words for a result: a range or a breakout is never refunded, and finishes inside or outside. Which of the two is the win depends on the bet. */
-export function resultWords(kind: BetKind, result: BetResult): string {
-  if (result === 'refunded') return 'Stake back';
-  if (kind.product === 'range') return result === 'won' ? 'Finished inside' : 'Finished outside';
-  if (kind.product === 'breakout') return result === 'won' ? 'Finished outside' : 'Finished inside';
-  return result === 'won' ? 'Won' : 'Lost';
+/**
+ * The words for a result, the same for every product: Won, Lost, or Stake back. Where the price ended (inside or outside the
+ * two levels of a range or a breakout) goes on the line under it, not in the word itself, because whether "inside" is a win
+ * depends on the bet and the same words in green and red read as a contradiction.
+ */
+export function resultWords(result: BetResult): string {
+  return result === 'refunded' ? 'Stake back' : result === 'won' ? 'Won' : 'Lost';
 }

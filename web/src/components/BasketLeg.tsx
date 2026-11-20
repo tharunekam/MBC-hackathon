@@ -13,49 +13,45 @@ import {
   type LegStatus,
 } from '../lib/basket';
 import type { Phase } from '../lib/betState';
+import type { BetKind } from '../lib/betKind';
 import { cents, money, pct, usd } from '../lib/format';
 import { useDebounced, useResource } from '../lib/hooks';
 import { execLive } from '../lib/liveClients';
-import { openingNote } from '../lib/marketPhase';
+import { useOpeningNote } from '../lib/marketPhase';
 import { assetLabel, closesLabel, groupByAsset } from '../lib/markets';
+import { rovingKeys, rovingTab } from '../lib/roving';
 import { cleanStakeText } from '../lib/stake';
 
 /**
- * The four kinds of leg. `label` is what the switch shows where there is room and `short` what it shows on a phone, where
- * "Parlay down" would not fit beside the other three. `full` is the name a screen reader hears: it starts with the words on
- * screen, so someone using voice control can say what they see, and then says which product it is.
+ * The four kinds of leg, named the way the rest of the app names them: the label on the switch is the same words as the
+ * ticket, the result and My bets use. On a phone the four sit in two rows, so no short names are needed.
  */
-const KINDS: { kind: LegKind; label: string; short: string; full: string }[] = [
-  {
-    kind: 'up',
-    label: 'Parlay up',
-    short: 'Up',
-    full: 'Parlay up: Return Parlay, rising',
-  },
-  {
-    kind: 'down',
-    label: 'Parlay down',
-    short: 'Down',
-    full: 'Parlay down: Return Parlay, falling',
-  },
-  { kind: 'range', label: 'Range', short: 'Range', full: 'Range' },
-  { kind: 'breakout', label: 'Breakout', short: 'Breakout', full: 'Breakout' },
+const KINDS: { kind: LegKind; label: string }[] = [
+  { kind: 'up', label: 'Stake Back up' },
+  { kind: 'down', label: 'Stake Back down' },
+  { kind: 'range', label: 'Range' },
+  { kind: 'breakout', label: 'Breakout' },
 ];
 
-/** The names of the two levels, by kind of leg. */
-const LEVELS: Record<LegKind, [string, string]> = {
-  up: ['Given at or above', 'Reach'],
-  down: ['Stays under', 'Falls below'],
-  range: ['Floor', 'Ceiling'],
-  breakout: ['Win below', 'Win at or above'],
-};
+/** What a bet is called wherever a person reads it: Stake Back goes up or down, a Range and a Breakout are one thing each. */
+export const kindLabel = (kind: BetKind): string =>
+  kind.product === 'range'
+    ? 'Range'
+    : kind.product === 'breakout'
+      ? 'Breakout'
+      : kind.direction === 'down'
+        ? 'Stake Back down'
+        : 'Stake Back up';
 
-/** What the chance of winning is called for each kind of leg. */
-const CHANCE: Record<LegKind, string> = {
-  up: 'Chance to win',
-  down: 'Chance to win',
-  range: 'Chance inside',
-  breakout: 'Chance outside',
+/**
+ * The names of the two levels, by kind of leg: a Stake Back has a first level and a target, the others a lower and a higher level.
+ * Which way a Stake Back goes is on the leg's bet-type switch above them, so the names do not repeat it.
+ */
+const LEVELS: Record<LegKind, [string, string]> = {
+  up: ['First level', 'Target'],
+  down: ['First level', 'Target'],
+  range: ['Lower level', 'Higher level'],
+  breakout: ['Lower level', 'Higher level'],
 };
 
 /**
@@ -112,12 +108,16 @@ export function useLegQuote(leg: LegDraft) {
 interface Props {
   index: number;
   leg: LegDraft;
-  /** The ladders a leg may be on: the ones with prices. */
+  /** The markets a leg may be on: the ones with prices. */
   events: MarketEvent[];
   feeCoef: number;
   phase: Phase;
   readOnly: boolean;
   canRemove: boolean;
+  /** The id of the line that says a basket needs at least two legs, so a Remove that is switched off can point at it. */
+  minNoteId: string;
+  /** The number of an earlier leg that is exactly this bet, when there is one. */
+  sameAs: number | null;
   /** Why the executor turned this leg down when the basket was placed, in plain words. */
   error: string | null;
   onKind: (kind: LegKind) => void;
@@ -133,6 +133,9 @@ interface Props {
 
 const optionText = (r: Rung) =>
   `${money(r.strike)}${r.bid === null || r.ask === null ? ' · no price' : ''}`;
+
+/** The id of a leg's heading, which the page moves focus to when the leg before it is removed. */
+export const legTitleId = (key: string): string => `leg-${key}-title`;
 
 export default function BasketLeg(p: Props) {
   const { leg, index } = p;
@@ -174,26 +177,38 @@ export default function BasketLeg(p: Props) {
 
   // A market that takes bets but is still opening gets a heads-up on the leg, until the basket is placed. It refuses
   // nothing: the leg's status and the basket's button are untouched by it.
-  const opening = event && p.phase !== 'placed' ? openingNote(event) : null;
+  const heldOpening = useOpeningNote(event, Date.now());
+  const opening = p.phase !== 'placed' ? heldOpening : null;
 
   const locked = p.phase !== 'idle';
   const id = `leg-${leg.key}`;
   const [l1, l2] = LEVELS[leg.kind];
   const notice = status.state.notice;
   const blocked =
+    p.phase === 'idle' &&
     !status.state.canPlace &&
     status.state.blockedBy !== 'checking' &&
     status.state.blockedBy !== 'loading' &&
     status.state.blockedBy !== 'placing';
+  const overCap = status.state.blockedBy === 'stake';
+
+  // The two figures the executor's answer carries and the status does not. Both are the answer's own, so they are "–" until
+  // there is one. A range's fair price is its chance, so a value of 1 or more is a missing one.
+  const answered = quote.shown?.quote ?? null;
+  const fair =
+    answered?.fairPrice != null && answered.fairPrice < 1
+      ? answered.fairPrice
+      : null;
+  const sellBack = answered?.cashOutPer100 ?? null;
+
+  // A radio group: only the chosen kind is a Tab stop, and the arrow keys move the choice and the focus together.
+  const chosenKind = KINDS.findIndex((k) => k.kind === leg.kind);
 
   return (
-    <li
-      className={`card leg${p.error ? ' is-refused' : ''}`}
-      aria-labelledby={`${id}-title`}
-    >
+    <li className={`card leg${p.error ? ' is-refused' : ''}`}>
       <header className="leg-head">
-        <h2 className="leg-title" id={`${id}-title`}>
-          <span className="leg-num">Leg {index + 1}</span>
+        <h2 className="leg-title" id={legTitleId(leg.key)} tabIndex={-1}>
+          <span className="leg-num">Leg {index + 1}</span>{' '}
           <span className="leg-asset">
             {event ? assetLabel(event) : 'Choose a market'}
           </span>
@@ -204,6 +219,8 @@ export default function BasketLeg(p: Props) {
           onClick={p.onRemove}
           disabled={!p.canRemove || locked}
           aria-label={`Remove leg ${index + 1}`}
+          aria-describedby={!p.canRemove ? p.minNoteId : undefined}
+          title={!p.canRemove ? 'A basket needs at least 2 legs' : undefined}
         >
           Remove
         </button>
@@ -213,20 +230,20 @@ export default function BasketLeg(p: Props) {
         className="switch leg-kind"
         role="radiogroup"
         aria-label={`Leg ${index + 1} bet type`}
+        onKeyDown={(e) => rovingKeys(e, { choose: true })}
       >
-        {KINDS.map((k) => (
+        {KINDS.map((k, at) => (
           <button
             key={k.kind}
             type="button"
             role="radio"
             aria-checked={leg.kind === k.kind}
-            aria-label={k.full}
+            tabIndex={rovingTab(at, chosenKind)}
             className={leg.kind === k.kind ? 'is-on' : ''}
             onClick={() => p.onKind(k.kind)}
             disabled={locked}
           >
-            <span className="kind-long">{k.label}</span>
-            <span className="kind-short">{k.short}</span>
+            {k.label}
           </button>
         ))}
       </div>
@@ -261,7 +278,7 @@ export default function BasketLeg(p: Props) {
               onChange={(e) => p.onFirst(e.target.value)}
               disabled={locked || !event}
             >
-              {!ra && <option value="">…</option>}
+              {!ra && <option value="">–</option>}
               {firsts.map((r) => (
                 <option key={r.symbol} value={r.symbol}>
                   {optionText(r)}
@@ -278,7 +295,7 @@ export default function BasketLeg(p: Props) {
               onChange={(e) => p.onSecond(e.target.value)}
               disabled={locked || !event}
             >
-              {!rb && <option value="">…</option>}
+              {!rb && <option value="">–</option>}
               {seconds.map((r) => (
                 <option key={r.symbol} value={r.symbol}>
                   {optionText(r)}
@@ -290,45 +307,60 @@ export default function BasketLeg(p: Props) {
         <label className="leg-field leg-stake">
           <span className="leg-label">Stake</span>
           <span className="field">
-            <span className="field-pre">$</span>
-            <input
+            {/* Outside the label's name: the field is "Stake", as on the other builders, not "Stake $". */}
+            <span className="field-pre" aria-hidden="true">
+              $
+            </span>
+            <input type="text"
               inputMode="decimal"
               autoComplete="off"
               value={leg.stakeText}
               onChange={(e) => p.onStake(cleanStakeText(e.target.value))}
               disabled={locked}
+              aria-invalid={overCap || undefined}
               aria-describedby={`${id}-quote`}
             />
           </span>
         </label>
       </div>
 
-      <div id={`${id}-quote`} className="leg-quote" aria-live="polite">
+      {/* Not a live region: a price that ticks or a stake being typed would be read out again and again. */}
+      <div id={`${id}-quote`} className="leg-quote">
         {blocked && notice ? (
           <p className={`leg-refusal tone-${notice.tone}`}>{notice.text}</p>
         ) : (
           <dl className={`leg-nums${status.estimated ? ' is-est' : ''}`}>
             <div>
-              <dt>{CHANCE[leg.kind]}</dt>
+              <dt>Chance of winning</dt>
               <dd>{status.chanceWin !== null ? pct(status.chanceWin) : '–'}</dd>
             </div>
             {(leg.kind === 'up' || leg.kind === 'down') && (
               <div>
-                <dt>Stake back</dt>
+                <dt>Chance of stake back</dt>
                 <dd>
                   {status.chanceBack !== null ? pct(status.chanceBack) : '–'}
                 </dd>
               </div>
             )}
             <div>
+              <dt>Fair price per $1</dt>
+              <dd>{fair !== null ? cents(fair) : '–'}</dd>
+            </div>
+            <div>
               <dt>You pay per $1</dt>
-              <dd>
-                {status.pricePaid !== null ? cents(status.pricePaid) : '–'}
-              </dd>
+              {status.pricePaid !== null ? (
+                <dd>{cents(status.pricePaid)}</dd>
+              ) : (
+                <dd className="is-none">No price yet</dd>
+              )}
+            </div>
+            <div>
+              <dt>Sell back now per $100</dt>
+              <dd>{sellBack !== null ? usd(sellBack, 0) : '–'}</dd>
             </div>
             {status.reducedTo !== null && (
               <div className="leg-reduced">
-                <dt>Fills about</dt>
+                <dt>Likely stake</dt>
                 <dd>{usd(status.reducedTo)}</dd>
               </div>
             )}
@@ -336,6 +368,9 @@ export default function BasketLeg(p: Props) {
         )}
       </div>
 
+      {p.sameAs !== null && !p.error && (
+        <p className="note note-warn leg-error">Same bet as leg {p.sameAs}.</p>
+      )}
       {/* The builders' caution, with the leg's own spacing for a note (`leg-error` only takes the note's margins off). */}
       {opening && <p className="note note-warn leg-error">{opening}</p>}
 

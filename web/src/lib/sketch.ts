@@ -232,11 +232,13 @@ export function sketchOf(rungs: Rung[], wanted: number[], feeCoef = 0): Sketch |
 /** A number of contracts: whole when it is whole, otherwise to the hundredth, which is the smallest the exchange trades. */
 export const contractsText = (n: number): string => (Number.isInteger(n) ? String(n) : n.toFixed(2));
 
-/** An order as one plain line, with the exchange's own name for the contract: "Buy 10 YES on $62,500 or above at 82¢". */
+/**
+ * An order as one plain line, in the receipts' words (lib/receiptWords.ts): "10 shares that it finishes at or above $62,500,
+ * at 82¢". A YES on a level is the price finishing at or above it; a NO is the price finishing below it.
+ */
 export function orderText(o: Pick<SketchOrder, 'contracts' | 'outcome' | 'label' | 'strike' | 'price'>): string {
-  // A contract the exchange gave no name is named by what every rung on a ladder is: its price level, or above.
-  const name = o.label.trim() || `${money(o.strike)} or above`;
-  return `Buy ${contractsText(o.contracts)} ${o.outcome === 'yes' ? 'YES' : 'NO'} on ${name} at ${cents(o.price)}`;
+  const what = o.outcome === 'yes' ? `at or above ${money(o.strike)}` : `below ${money(o.strike)}`;
+  return `${contractsText(o.contracts)} ${o.contracts === 1 ? 'share' : 'shares'} that it finishes ${what}, at ${cents(o.price)}`;
 }
 
 /**

@@ -1,54 +1,48 @@
 import { useEffect } from 'react';
 import { api } from '../api';
 import type { HealthResponse } from '../api/types';
-import { useAsync } from './hooks';
+import { useResource } from './hooks';
 import { tellStakeCap } from './stake';
 
 /**
- * What the app is really talking to, so it never implies more than it is. Every case is labelled: a bet on a stand-in must not
- * read as an order on Gemini, and a sandbox bet must not read as real money.
+ * The one label in the nav, for the few cases where what is behind a bet changes what a person should expect: demo data and a
+ * recording place nothing, "quotes only" has bets switched off, seeded prices include orders we placed ourselves, and real money
+ * is real. Gemini's sandbox and a local exchange are the ordinary cases and carry no label, so a bet reads the same wherever it
+ * is placed.
  */
 export interface VenueNote {
-  /** The label in the nav. Null only until the executor has said what it is. */
+  /** The label in the nav. Null in the ordinary case, and until the executor has said what it is. */
   chip: string | null;
+  /** What the label means, for its tooltip. */
+  hint: string;
+  /** Bets are switched off. */
   readOnly: boolean;
-  /** Where things here really happen, to finish a sentence such as "This is running on …" or "placed on …". */
-  place: string;
-  /** The same as a sentence of its own, for the footer and the landing page. Empty until the executor has answered. */
-  about: string;
+  /** What is behind the orders, for the pages that say how a count or a check was made. */
+  kind: 'demo' | 'replay' | 'exchange';
 }
 
-const SANDBOX = 'Gemini’s sandbox';
+const ORDINARY: VenueNote = { chip: null, hint: '', readOnly: false, kind: 'exchange' };
 
 /** The label for what the executor says it is. Kept apart from the hook so it can be tested. */
 export function describeVenue(mode: string, health: Pick<HealthResponse, 'venue' | 'readOnly' | 'seeded' | 'replay'> | null | undefined): VenueNote {
-  if (mode === 'mock') return { chip: 'Demo data', readOnly: false, place: 'demo data', about: 'This is demo data made in your browser: nothing is sent to Gemini or Solana, and no money moves.' };
+  if (mode === 'mock') return { chip: 'Demo data', hint: 'Made-up markets and bets in your browser. Nothing is sent anywhere.', readOnly: false, kind: 'demo' };
   const venue = health?.venue;
   // Not connected yet: say nothing we do not know.
-  if (!venue) return { chip: null, readOnly: false, place: 'the exchange', about: '' };
+  if (!venue) return ORDINARY;
   // A recorded session played back with nothing behind it (the stage fallback). It says so before anything else.
-  if (health?.replay) return { chip: 'Replay', readOnly: false, place: 'a recorded session', about: 'This is a recorded session played back: nothing here is live and no order is placed.' };
-
-  const sandbox = venue === 'Gemini sandbox';
-  // Anything the executor does not call Gemini is a stand-in for it. The one we ship is the local test exchange.
-  const standIn = !sandbox && venue !== 'Gemini';
-  const place = sandbox ? SANDBOX : venue === 'Local test exchange' ? 'the local test exchange' : venue;
-
-  if (health?.readOnly) {
-    return { chip: 'Quotes only', readOnly: true, place, about: sandbox ? 'Uses Gemini’s API for sandbox prices. Bets are switched off here.' : `Shows prices from ${place}. Bets are switched off here.` };
-  }
-  if (standIn) {
-    const chip = venue === 'Local test exchange' ? 'Test exchange' : venue;
-    return { chip, readOnly: false, place, about: `This is running on ${place}, which stands in for Gemini: no order reaches Gemini and no money moves.` };
-  }
-  if (!sandbox) return { chip: 'Gemini · real money', readOnly: false, place, about: 'Uses Gemini’s API, with real money.' };
+  if (health?.replay) return { chip: 'Replay', hint: 'A recorded session played back. No order is placed.', readOnly: false, kind: 'replay' };
+  if (health?.readOnly) return { chip: 'Quotes only', hint: 'You can look at prices here, but bets are switched off.', readOnly: true, kind: 'exchange' };
+  // Production is the one ordinary-looking case that is not ordinary, so it is the one that always says so.
+  if (venue === 'Gemini') return { chip: 'Real money', hint: 'Orders here are placed in a live exchange account.', readOnly: false, kind: 'exchange' };
   // Our own second account is resting quotes to make the sandbox's thin, wide market usable. Never shown as if it were not.
-  if (health?.seeded) return { chip: 'Seeded prices', readOnly: false, place, about: 'Uses Gemini’s API on the sandbox, with practice money. Some of the prices shown are our own quotes.' };
-  return { chip: 'Sandbox · practice money', readOnly: false, place, about: 'Uses Gemini’s API on the sandbox, with practice money.' };
+  if (venue === 'Gemini sandbox' && health?.seeded) return { chip: 'Seeded prices', hint: 'Some of the prices shown were placed by us, so the market has something to trade against.', readOnly: false, kind: 'exchange' };
+  return ORDINARY;
 }
 
 export function useVenue(): VenueNote {
-  const health = useAsync(() => api.health(), []);
+  // One shared answer for the shell and the page, asked again every so often: a single failed call at load must not leave a
+  // quotes-only copy looking like it takes bets until the page is reloaded.
+  const health = useResource('health', () => api.health(), { pollMs: 30_000 });
   // The same answer says the most one bet may stake here, so every stake box knows before it is refused.
   const cap = health.data?.maxStake;
   useEffect(() => tellStakeCap(cap), [cap]);

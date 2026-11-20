@@ -14,31 +14,38 @@
 .dc-bar {
   fill: color-mix(in srgb, var(--ink) 26%, transparent);
   transition:
-    y 260ms var(--ease),
-    height 260ms var(--ease),
-    fill 200ms var(--ease);
+    y var(--t-med) var(--ease),
+    height var(--t-med) var(--ease),
+    fill var(--t-fast) var(--ease);
 }
 .dc-slot:hover .dc-bar {
   fill: color-mix(in srgb, var(--ink) 40%, transparent);
 }
 .dc-slot[data-zone='win'] .dc-bar {
-  fill: var(--good);
+  fill: color-mix(in srgb, var(--good) 82%, var(--surface));
 }
 .dc-slot[data-zone='back'] .dc-bar {
-  fill: var(--accent);
+  fill: color-mix(in srgb, var(--accent) 88%, var(--surface));
 }
 .dc-slot[data-zone='lose'] .dc-bar {
-  fill: var(--bad);
+  fill: color-mix(in srgb, var(--bad) 80%, var(--surface));
 }
 .dc-slot[data-zone]:hover .dc-bar {
   filter: brightness(1.08);
 }
 .dc-value {
   font-family: var(--font-ui);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   fill: var(--soft);
-  transition: y 260ms var(--ease);
+  transition: y var(--t-med) var(--ease);
+}
+/* The price labels and the percent marks on the axes of these charts are 12px, the smallest size a person is asked to read. */
+.dc .lc-ytick,
+.dc .lc-xtick,
+.pv .lc-ytick,
+.pv .lc-xtick {
+  font-size: 12px;
 }
 .dc-edge {
   stroke: var(--line-strong);
@@ -65,11 +72,12 @@
   display: block;
   overflow: visible;
 }
+/* A bar that nets nothing is still data: dark enough to read against the card (3:1), where the faint grey was not. */
 .pv-bar {
-  fill: var(--faint);
+  fill: color-mix(in srgb, var(--ink) 45%, var(--surface));
   transition:
-    y 260ms var(--ease),
-    height 260ms var(--ease);
+    y var(--t-med) var(--ease),
+    height var(--t-med) var(--ease);
 }
 .pv-slot[data-kind='ahead'] .pv-bar {
   fill: var(--good);
@@ -117,9 +125,9 @@
 }
 .dist-keys i {
   display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-xs);
   background: color-mix(in srgb, var(--ink) 26%, transparent);
 }
 .dist-keys [data-kind='win'] i {
@@ -139,7 +147,7 @@
   border-top: 2.5px solid var(--accent);
 }
 .dist-keys b {
-  font-weight: 600;
+  font-weight: 500;
   color: var(--ink);
 }
 
@@ -170,7 +178,7 @@
   font-weight: 500;
   color: var(--muted);
 }
-.hunch-dial output {
+.hunch-dial .dial-value {
   font-family: var(--font-display);
   font-size: 20px;
   font-weight: 500;
@@ -178,11 +186,43 @@
   color: var(--ink);
   font-variant-numeric: lining-nums;
 }
+/* The two dials: a hairline track and an amber thumb with an ink edge, the same in both themes. The native track is a heavy bar in
+   the light theme and a bright one in the dark; the rest of the app is hairlines. */
 .hunch-dial input[type='range'] {
   width: 100%;
+  height: 28px;
   margin: 0;
-  accent-color: var(--accent);
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
   touch-action: pan-y;
+}
+.hunch-dial input[type='range']::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: var(--r-xs);
+  background: var(--faint);
+}
+.hunch-dial input[type='range']::-moz-range-track {
+  height: 2px;
+  border-radius: var(--r-xs);
+  background: var(--faint);
+}
+.hunch-dial input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -9px;
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+  background: var(--accent);
+}
+.hunch-dial input[type='range']::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+  background: var(--accent);
 }
 .hunch-dial .fine {
   display: flex;
@@ -199,7 +239,7 @@
   color: var(--soft);
 }
 .hunch-say b {
-  font-weight: 600;
+  font-weight: 500;
   color: var(--ink);
 }
 .hunch-reset {
@@ -253,7 +293,8 @@
 }
 .hunch-idea h3 em {
   font-style: normal;
-  color: var(--accent-text);
+  font-weight: 500;
+  color: var(--ink);
 }
 .hunch-idea .btn {
   flex: none;
@@ -264,49 +305,32 @@
   gap: 12px;
   margin: 0;
 }
+.hunch-figs > div {
+  /* A label that wraps to two lines must not lift its value: the three figures sit on one baseline. */
+  display: grid;
+  align-content: space-between;
+  gap: 4px;
+}
 .hunch-figs dt {
   font-size: 12px;
   font-weight: 500;
   color: var(--muted);
+  /* A label that needs two lines breaks in the middle, not after all but "$1". */
+  text-wrap: balance;
 }
 .hunch-figs dd {
-  margin: 2px 0 0;
+  margin: 0;
   font-family: var(--font-display);
   font-size: 20px;
   font-weight: 500;
   letter-spacing: -0.02em;
-  font-variant-numeric: lining-nums;
+  font-variant-numeric: lining-nums tabular-nums;
 }
-.hunch-figs .is-edge dd {
-  color: var(--good);
-}
-.hunch-odds {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 16px;
+/* The one figure of the person's own odds on a card, kept small: the three above it are prices. */
+.hunch-view {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--muted);
-}
-.hunch-odds b {
-  font-weight: 600;
-  color: var(--ink);
-}
-.hunch-odds [data-kind='win'] b {
-  color: var(--good);
-}
-.hunch-odds [data-kind='lose'] b {
-  color: var(--bad);
-}
-/* What the price pays on a small stake: a fact, set apart from the odds the person entered. */
-.hunch-wins {
-  margin: 0;
-  font-size: 13px;
-  color: var(--muted);
-}
-.hunch-wins b {
-  font-weight: 600;
-  color: var(--ink);
 }
 .hunch-list .hunch-long {
   margin: 0 0 16px;
@@ -315,7 +339,7 @@
   padding: 20px 0 4px;
   border-top: 1px solid var(--line);
   color: var(--soft);
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.5;
 }
 .hunch-foot {
@@ -324,6 +348,16 @@
   color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
+}
+
+/* On a wide, tall screen the chart and the dials stay in view while the list of bets scrolls past, instead of leaving an empty
+   column beside it. A short window keeps them in the page, since a card taller than the window could not be reached. */
+@media (min-width: 961px) and (min-height: 760px) {
+  .hunch .left-col {
+    position: sticky;
+    top: 84px;
+    align-self: start;
+  }
 }
 
 /* On a phone the builders lay their cards out by `order` (see app.css): chart, ticket, payoff table, ladder. The histogram
@@ -339,6 +373,12 @@
   }
 }
 @media (max-width: 720px) {
+  /* The card's title and its caption would be a cramped four-line cluster side by side: the caption goes under the title. */
+  .dist-card .card-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
   /* A finger needs 44px: the two dials, the link back to the market's view, and each bet's Open button. */
   .hunch-dial input[type='range'] {
     height: 44px;

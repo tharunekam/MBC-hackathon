@@ -219,9 +219,15 @@ for (const [name, aSide, bSide, expected] of [
 test('interrupted mid-bet: recovery finds the order by its tag instead of resending', async () => {
   const { exchange, ledger, deps } = setup(LADDER);
   exchange.failAfterSend = 'gv-t1-b'; // the outcome order reaches the venue, then the connection dies
-  const bet = await placeConditionalBet(deps, request(exchange));
-  assert.equal(bet.status, 'failed'); // we could not confirm it...
-  assert.equal(bet.legs[0]!.status, 'error');
+  const lookup = exchange.findOrder.bind(exchange);
+  exchange.findOrder = async () => {
+    throw new Error('fetch failed'); // and Gemini cannot be asked about it either, so the answer stays lost
+  };
+  const bet = await placeConditionalBet({ ...deps, lookupWaitsMs: [0, 0] }, request(exchange));
+  exchange.findOrder = lookup;
+  assert.equal(bet.status, 'unhedged'); // we could not confirm it, so the bet says so and sends nothing more...
+  assert.equal(bet.legs[0]!.status, 'unknown');
+  assert.equal(bet.legs.length, 1);
   assert.equal(exchange.orders.get('gv-t1-b')!.filledQuantity, 10.01); // ...but it did fill
 
   // Simulate the crash state a restart would see: order recorded as sent, bet still placing.

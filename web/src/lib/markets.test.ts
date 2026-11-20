@@ -25,6 +25,7 @@ describe('asset naming', () => {
     expect(assetName({ ticker: 'BRENT2611202200', title: 'Oil (Brent) price on November 20?' })).toBe('Oil (Brent)');
     expect(assetLabel({ ticker: 'BTC2611200100', title: 'BTC price today at 8pm EST' })).toBe('Bitcoin');
     expect(assetLabel({ ticker: 'COPPER2611202200', title: 'Copper price on November 20?' })).toBe('Copper');
+    expect(assetName({ ticker: 'BRENT2611202200', title: 'Oil (Brent) · Nov 20, 10 PM' })).toBe('Oil (Brent)');
   });
 });
 

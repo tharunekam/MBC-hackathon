@@ -47,14 +47,15 @@ export default function DistChart({ dist, shape, percents, view, label }: Props)
   const xOf = (i: number) => pad.left + i * slot;
 
   const edges = dist.levels.map((_, i) => xOf(i + 1));
-  const labelled = spacedLabels(edges, 64, 52);
+  // Price labels are 12px: a gap under about 72px would let two of them touch.
+  const labelled = spacedLabels(edges, 72, 60);
   const showValues = slot >= 34;
 
   // The view as one stepped line: flat across each bar, stepping at each edge.
   const steps = view && view.length === n ? view.map((b, i) => `${i === 0 ? 'M' : 'L'}${xOf(i).toFixed(1)},${yOf(b.chance).toFixed(1)}H${xOf(i + 1).toFixed(1)}`).join('') : '';
 
   const most = likeliest(bars);
-  const spoken = label ?? `The market's chance of finishing in each price band.${most ? ` Most likely: ${bucketLabel(most)}, ${shown[bars.indexOf(most)]}%.` : ''}`;
+  const spoken = label ?? `The market’s chance of finishing in each price band.${most ? ` Most likely: ${bucketLabel(most)}, ${shown[bars.indexOf(most)]}%.` : ''}`;
 
   return (
     <div className="dc" ref={wrapRef} role="img" aria-label={spoken}>

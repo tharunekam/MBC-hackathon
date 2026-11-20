@@ -65,7 +65,7 @@ export default function Outlook({ groups, now }: Props) {
         )}
       </div>
       <p className="ol-say">
-        Every closing time has its own ladder. Side by side they draw the market’s forecast: the line is the middle of its view, the darker band holds an even chance, and the lighter band four
+        Every closing time is its own market. Side by side they draw the market’s forecast: the line is the middle of its view, the darker band holds an even chance, and the lighter band four
         chances in five.
       </p>
 
@@ -118,8 +118,8 @@ export default function Outlook({ groups, now }: Props) {
       </div>
 
       <p className="fine ol-foot">
-        Read from the exchange’s own prices; nothing is modelled. The ladders give no price for this moment, so the fan opens from the middle of the soonest one. A band is missing where a
-        ladder’s prices do not reach that far.
+        Read from the exchange’s own prices; nothing is modelled. The markets give no price for this moment, so the fan opens from the middle of the soonest one. A band is missing where a
+        market’s prices do not reach that far.
       </p>
     </section>
   );

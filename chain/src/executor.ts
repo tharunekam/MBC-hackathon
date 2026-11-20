@@ -20,6 +20,8 @@ export interface ExecutorBet {
   createdAt: string;
   eventTicker: string;
   eventTitle: string;
+  /** When the market closes (ISO time), or null/absent when the exchange gave none. */
+  expiry?: string | null;
   condition: { symbol: string; label: string; strike: number };
   target: { symbol: string; label: string; strike: number };
   status: string;

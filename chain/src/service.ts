@@ -18,7 +18,7 @@ import { ServiceError } from './executor.ts';
 import type { BetSource, ExecutorBet } from './executor.ts';
 import { encode, fieldsOf, parseMemo, revealMatchesCommit } from './memo.ts';
 import type { RevealMemo } from './memo.ts';
-import type { CallRow, SeenReveal, Store } from './store.ts';
+import type { CallRow, SeenCommit, SeenReveal, Store } from './store.ts';
 
 export interface ServiceOptions {
   chain: Chain;
@@ -65,6 +65,22 @@ export type ChangeTopic = 'calls' | 'leaderboard';
 export type IngestResult = 'new' | 'duplicate' | 'ignored' | 'unverified';
 
 const r6 = (x: number) => Math.round(x * 1e6) / 1e6;
+
+/** A call is not sealed this close to the market's close (see `refuseIfTooLate`). */
+const SEAL_MARGIN_MS = 90_000;
+
+/**
+ * When a market closes, in unix seconds, from the end of its event code (YYMMDDHHMM in UTC: "BTC2611190100" closes
+ * 2026-11-19 01:00 UTC). The proof page reads the same code. Null for a code that does not end that way.
+ */
+function closeTimeOf(event: string): number | null {
+  const m = /^[A-Z]+(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/.exec(event);
+  if (!m) return null;
+  const [year, month, day, hour, minute] = m.slice(1).map(Number) as [number, number, number, number, number];
+  const at = new Date(Date.UTC(2000 + year, month - 1, day, hour, minute));
+  if (at.getUTCFullYear() !== 2000 + year || at.getUTCMonth() !== month - 1 || at.getUTCDate() !== day || at.getUTCHours() !== hour || at.getUTCMinutes() !== minute) return null;
+  return Math.floor(at.getTime() / 1000);
+}
 
 export class ChainService {
   readonly chain: Chain;
@@ -164,6 +180,7 @@ export class ChainService {
       if (!row) {
         const bet = await this.bets.getBet(betId);
         if (!bet || bet.user !== user) throw new ServiceError(404, 'unknown_bet', 'No such bet.');
+        this.refuseIfTooLate(bet);
         const fields = this.fieldsFromBet(bet);
         const salt = newSalt();
         const handle = handleFor(user, this.store.data.handleSecret);
@@ -190,6 +207,12 @@ export class ChainService {
         this.store.save();
       } else if (await this.promoteIfLanded(row)) {
         return this.view(row); // an earlier attempt landed on chain but was never recorded here: adopt it, do not write twice
+      } else {
+        // Nothing landed, so this retry is a new write, possibly long after the first try: the bet is checked again, because
+        // the result may be known by now and a call sealed after it proves nothing.
+        const bet = await this.bets.getBet(betId);
+        if (!bet || bet.user !== user) throw new ServiceError(404, 'unknown_bet', 'No such bet.');
+        this.refuseIfTooLate(bet);
       }
 
       // A failure leaves the row pending, with the same salt and time, so a retry produces the same hash.
@@ -197,7 +220,7 @@ export class ChainService {
       row.state = 'committed';
       row.commitSignature = sent.signature;
       row.commitSlot = sent.slot;
-      this.store.data.commits[sent.signature] = { signature: sent.signature, hash: row.hash, handle: row.handle, at: row.fields.at };
+      this.rememberCommit({ signature: sent.signature, hash: row.hash, handle: row.handle, at: row.fields.at, slot: sent.slot, signer: this.chain.authority });
       this.store.save();
       this.changed('calls');
       return this.view(row);
@@ -220,7 +243,7 @@ export class ChainService {
 
   /** The commit for this pending row is on chain already (a previous attempt landed). If so, mark it committed. */
   private async promoteIfLanded(row: CallRow): Promise<boolean> {
-    const find = () => Object.values(this.store.data.commits).find((c) => c.hash === row.hash && c.handle === row.handle);
+    const find = () => Object.values(this.store.data.commits).find((c) => c.hash === row.hash && c.handle === row.handle && !c.duplicateOf);
     let seen = find();
     if (!seen) {
       await this.readOwnRecord(row);
@@ -247,7 +270,7 @@ export class ChainService {
     let n = 0;
     for (const row of this.store.data.calls) {
       if (row.state !== 'pending') continue;
-      const seen = Object.values(this.store.data.commits).find((c) => c.hash === row.hash && c.handle === row.handle);
+      const seen = Object.values(this.store.data.commits).find((c) => c.hash === row.hash && c.handle === row.handle && !c.duplicateOf);
       if (!seen) continue;
       row.state = 'committed';
       row.commitSignature = seen.signature;
@@ -260,10 +283,50 @@ export class ChainService {
     return n;
   }
 
+  /**
+   * A call is sealed to show it was made before the result. Once the bet has settled, or the market has closed, sealing it
+   * would prove nothing (and sealing only the calls that already came off would flatter a record), so it is refused.
+   */
+  private refuseIfTooLate(bet: ExecutorBet): void {
+    if (bet.status === 'settled' || bet.settlement) throw new ServiceError(409, 'too_late', 'This bet has already settled, so its call can no longer be sealed ahead of the result.');
+    // The bet's own expiry, else the close written into the event code (the page checks the seal against that one). With
+    // neither, nothing is known about the close and the call is sealed as before.
+    const stated = bet.expiry ? Date.parse(bet.expiry) : NaN;
+    const closes = Number.isFinite(stated) ? stated : (closeTimeOf(bet.eventTicker) ?? NaN) * 1000;
+    if (!Number.isFinite(closes)) return;
+    const left = closes - this.now().getTime();
+    if (left <= 0) throw new ServiceError(409, 'too_late', 'This market has closed, so its call can no longer be sealed ahead of the result.');
+    // Solana can take a minute to confirm a write, and a seal that lands after the close proves nothing. So the last
+    // 90 seconds are refused too: this is the time the write is allowed to take.
+    if (left < SEAL_MARGIN_MS) throw new ServiceError(409, 'too_late', 'This market is about to close, so its call can no longer be sealed ahead of the result.');
+  }
+
+  /**
+   * Stores a commit seen on chain. One call is one commit: if this key has already sealed the same hash (a retry whose first
+   * try landed but could not be found again), the later record is marked a repeat and never counted as another call.
+   * Returns false for such a repeat.
+   */
+  private rememberCommit(commit: SeenCommit): boolean {
+    const commits = this.store.data.commits;
+    // The stream or the backfill can read this very transaction before commitCall stores it: that record is not an earlier
+    // commit of the same call, and it is kept as it is.
+    const stored = commits[commit.signature];
+    if (stored) return stored.duplicateOf === undefined;
+    const first = Object.values(commits).find((c) => c.signature !== commit.signature && c.hash === commit.hash && c.signer === commit.signer && c.duplicateOf === undefined);
+    commits[commit.signature] = first ? { ...commit, duplicateOf: first.signature } : commit;
+    return first === undefined;
+  }
+
+  /** What a commit stands for: the key and the hash, so a call written twice is one call. Without a record, the signature itself. */
+  private callKey(commitSignature: string): string {
+    const c = this.store.data.commits[commitSignature];
+    return c ? `${c.signer ?? ''}|${c.hash}` : commitSignature;
+  }
+
   private fieldsFromBet(bet: ExecutorBet): CallFields {
     const fair = bet.offer?.fairPrice;
     const price = bet.payoffs?.conditionalPrice ?? bet.quotedPrice;
-    const complete = (bet.status === 'open' || bet.status === 'settled') && bet.payoffs?.hedged === true;
+    const complete = bet.status === 'open' && bet.payoffs?.hedged === true;
     if (!complete || typeof fair !== 'number' || !(fair > 0 && fair < 1) || !Number.isFinite(price) || !(price > 0)) {
       throw new ServiceError(409, 'bet_not_eligible', 'This bet is not complete, so it cannot be recorded.');
     }
@@ -325,8 +388,21 @@ export class ChainService {
     });
   }
 
+  /**
+   * A reveal written twice (the first reply was lost and history could not be read) leaves the player's call showing the
+   * second signature, whose proof page is not served because only the one that counts is. Point the call at that one.
+   */
+  private pointCallAtCountedReveal(duplicate: string, commitSignature: string): void {
+    const counted = Object.values(this.store.data.reveals).find((r) => r.verified && this.callKey(r.commitSignature) === this.callKey(commitSignature));
+    if (!counted) return;
+    for (const row of this.store.data.calls) {
+      if (row.reveal?.signature !== duplicate) continue;
+      row.reveal = { signature: counted.signature, slot: counted.slot ?? 0, revealedAt: new Date(counted.revealedAt * 1000).toISOString(), outcome: counted.outcome, edge: counted.edge };
+    }
+  }
+
   private async adoptReveal(row: CallRow, checkChain: boolean): Promise<boolean> {
-    const find = () => Object.values(this.store.data.reveals).find((r) => r.commitSignature === row.commitSignature && r.verified);
+    const find = () => Object.values(this.store.data.reveals).find((r) => r.verified && this.callKey(r.commitSignature) === this.callKey(row.commitSignature));
     let seen = find();
     if (!seen && checkChain) {
       await this.readOwnRecord(row);
@@ -398,9 +474,9 @@ export class ChainService {
     }
 
     if (memo.t === 'c') {
-      commits[signature] = { signature, hash: memo.h, handle: memo.u, at: memo.at };
+      const first = this.rememberCommit({ signature, hash: memo.h, handle: memo.u, at: memo.at, slot: tx.slot, signer: tx.signer });
       this.store.save();
-      return 'new';
+      return first ? 'new' : 'duplicate';
     }
 
     // A reveal: find the commit it names, from our store or from the chain.
@@ -413,9 +489,13 @@ export class ChainService {
 
     let reason: string | undefined;
     if (!revealMatchesCommit({ g: 1, t: 'c', h: commit.hash, u: commit.handle, at: commit.at }, memo)) reason = 'hash_mismatch';
-    else if (Object.values(reveals).some((r) => r.commitSignature === memo.c && r.verified)) reason = 'duplicate_reveal';
+    // A call is sealed so it can be shown to predate its result: a reveal that is not in a later slot than its commit proves nothing.
+    else if (commit.slot !== undefined && commit.slot >= tx.slot) reason = 'commit_not_before_reveal';
+    // One call counts once, even if a second reveal names a repeat of its commit.
+    else if (Object.values(reveals).some((r) => r.verified && this.callKey(r.commitSignature) === this.callKey(memo.c))) reason = 'duplicate_reveal';
 
     const f = fieldsOf(memo);
+    if (reason === 'duplicate_reveal') this.pointCallAtCountedReveal(signature, memo.c);
     reveals[signature] = {
       signature,
       commitSignature: memo.c,
@@ -429,6 +509,7 @@ export class ChainService {
       outcome: memo.o,
       edge: edge(memo.o, f.fairPrice),
       revealedAt: tx.blockTime ?? Math.floor(this.now().getTime() / 1000),
+      slot: tx.slot,
       via,
       signer: tx.signer,
       verified: reason === undefined,
@@ -477,7 +558,7 @@ export class ChainService {
       try {
         bet = await this.bets.getBet(row.betId);
       } catch {
-        return found; // the executor is not answering: try again on the next pass
+        break; // the executor is not answering: try again on the next pass, keeping what this pass found
       }
       const result = bet?.settlement ?? (bet?.status === 'cashed_out' ? bet.called : undefined);
       if (result?.conditionResolved !== 'no') continue;
@@ -550,13 +631,15 @@ export class ChainService {
   }
 
   leaderboard() {
-    const by = new Map<string, { calls: number; wins: number; edge: number; last: number; recent: { signature: string; betId: string; event: string; condition: string; target: string; revealedAt: number; outcome: 0 | 1; edge: number }[] }>();
+    const by = new Map<string, { calls: number; wins: number; micro: number; last: number; recent: { signature: string; betId: string; event: string; condition: string; target: string; revealedAt: number; outcome: 0 | 1; edge: number }[] }>();
     for (const r of Object.values(this.store.data.reveals)) {
       if (!r.verified) continue;
-      const cur = by.get(r.handle) ?? { calls: 0, wins: 0, edge: 0, last: 0, recent: [] };
+      const cur = by.get(r.handle) ?? { calls: 0, wins: 0, micro: 0, last: 0, recent: [] };
       cur.calls++;
       cur.wins += r.outcome;
-      cur.edge += r.edge;
+      // Added in millionths, as the program adds them. Adding each call's four-decimal edge instead drifts from the program's
+      // total by up to half a unit of the fourth decimal per call, and the page's own check would call an honest board different.
+      cur.micro += Math.round((r.outcome - r.fairPrice) * 1e6);
       cur.last = Math.max(cur.last, r.revealedAt);
       cur.recent.push({ signature: r.signature, betId: r.betId, event: r.event, condition: r.condition, target: r.target, revealedAt: r.revealedAt, outcome: r.outcome, edge: r.edge });
       by.set(r.handle, cur);
@@ -565,7 +648,8 @@ export class ChainService {
     // public: anyone reading the chain can make it. It is what stops a record being built by revealing only the calls
     // that came off, because the ones kept sealed show as a gap beside the ones revealed.
     const sealed = new Map<string, number>();
-    for (const c of Object.values(this.store.data.commits)) sealed.set(c.handle, (sealed.get(c.handle) ?? 0) + 1);
+    // A call written twice (see `rememberCommit`) is one call.
+    for (const c of Object.values(this.store.data.commits)) if (!c.duplicateOf) sealed.set(c.handle, (sealed.get(c.handle) ?? 0) + 1);
     // Sealed calls this service knows can never be revealed: the first half failed, the stake came back, nothing to score.
     // Only known for calls made through this service; a verifier rebuilding from the chain alone cannot tell them apart.
     const refunded = new Map<string, number>();
@@ -577,7 +661,7 @@ export class ChainService {
         calls: v.calls,
         sealed: Math.max(v.calls, sealed.get(handle) ?? 0),
         refunded: refunded.get(handle) ?? 0,
-        edge: Math.round(v.edge * 10_000) / 10_000,
+        edge: Math.round(v.micro / 100) / 10_000,
         hitRate: v.wins / v.calls,
         lastRevealedAt: new Date(v.last * 1000).toISOString(),
         // Newest first, so a visitor can open any of a player's calls on the proof page and check it against Solana.

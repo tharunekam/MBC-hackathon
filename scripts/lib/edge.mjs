@@ -96,7 +96,11 @@ export function resolveStatic(root, urlPath) {
   try {
     decoded = decodeURIComponent(urlPath.split('?')[0]);
   } catch {
-    return null;
+    // A malformed escape in a PAGE address ("/verify/%E0%A4%A") is not a file: the app shows its own not-found page, with its header and
+    // a way back, instead of a bare 404. Anything that looks like an asset (it has an extension) is still a 404.
+    if (extname(urlPath.split('?')[0]) !== '') return null;
+    const shell = join(resolve(root), 'index.html');
+    return existsSync(shell) ? { file: shell, spa: true } : null;
   }
   if (decoded.includes('\0')) return null;
   const rel = normalize(decoded).replace(/^[/\\]+/, '');

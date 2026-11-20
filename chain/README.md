@@ -31,7 +31,7 @@ test in `test/memo.test.ts`, so a verifier written anywhere else can reproduce i
 ```bash
 cd chain && npm install
 npm test                     # 120 tests, no network
-GIVEN_CHAIN=fake npm start   # in-memory chain: no SOL needed; signatures are not real and are labelled "test chain"
+GIVEN_CHAIN=fake npm start   # in-memory chain: no SOL needed; signatures are not real
 ```
 
 From the repo root, `npm run dev` starts the executor (local test exchange), this service (fake chain) and the web app
@@ -163,6 +163,11 @@ solana-devnet", so a Stream cannot be resumed there once it has fallen far behin
 Anyone can write a memo, so only memos **signed by our authority key** count. A reveal counts only if it reproduces its
 commit's hash, names that commit, and is the first reveal for it. The outcome is attested by our authority, since it is
 unknown at commit time and no hash can cover it; the Gemini order IDs on the owner's bet are the evidence.
+
+**A call is sealed before its result, and the service enforces it.** `POST /calls` refuses a bet that has already settled or whose
+market has closed (HTTP 409 `too_late`); a retry of a pending seal checks again. The browser verifier then shows the real times of the seal and the
+reveal and checks that the seal landed in an earlier slot than the reveal and, where the market's code carries its close time, before the market
+closed. What it cannot show is the exchange's own clock: the seal time is Solana's, the close time is read from the market's code.
 
 With the program, the second rule is enforced by Solana instead of by whoever reads the records: a reveal that does
 not reproduce its commit, or repeats one, never lands. The outcome is still attested by our authority.

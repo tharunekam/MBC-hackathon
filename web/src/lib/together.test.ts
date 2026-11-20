@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Rung } from '../api/types';
 import { distributionOf, zoneChances, type Shape } from './distribution';
-import { canAllWin, canBothWin, chanceWords, neverAllWin, shapeOf, spanWords, together, winsAt, type JointLeg, type Span } from './together';
+import { canAllWin, canBothWin, chanceWords, neverAllWin, shapeOf, spanEnds, spanWords, together, winsAt, type JointLeg, type Span } from './together';
 
 const rung = (strike: number, chance: number | null, spread = 0.02): Rung => ({
   symbol: `S${strike}`,
@@ -386,5 +386,32 @@ describe('in words', () => {
     expect(spanWords({ low: 0, high: 0.31, ifUnrelated: 0.12, exact: false })).toBe('between 0% and 31%');
     expect(spanWords({ low: 0.121, high: 0.124, ifUnrelated: 0.122, exact: false })).toBe('about 12%');
     expect(spanWords({ low: 0, high: 0.003, ifUnrelated: 0.001, exact: false })).toBe('under 1%');
+  });
+
+  it('rounds the ends of a range outward, so what is printed holds everything that can happen', () => {
+    // Rounded to the nearest, 4.51% to 31.49% printed "between 5% and 31%" and left out 4.51 to 4.99 and 31.01 to 31.49.
+    expect(spanWords({ low: 0.0451, high: 0.3149, ifUnrelated: 0.12, exact: false })).toBe('between 4% and 32%');
+    expect(spanEnds({ low: 0.0451, high: 0.3149 })).toEqual({ low: 4, high: 32 });
+    expect(spanWords({ low: 0.049, high: 0.3101, ifUnrelated: 0.12, exact: false })).toBe('between 4% and 32%');
+    // A figure that is already whole stays where it is, whatever the arithmetic does to it: 0.29 is 28.999999999999996 per hundred.
+    expect(spanEnds({ low: 0.29, high: 0.57 })).toEqual({ low: 29, high: 57 });
+    expect(spanEnds({ low: 0.07, high: 0.31 })).toEqual({ low: 7, high: 31 });
+    expect(spanEnds({ low: 0, high: 1 })).toEqual({ low: 0, high: 100 });
+  });
+
+  it('never prints a range narrower than the one it describes', () => {
+    // A seeded sweep of spans: the printed ends always contain the true ends.
+    let seed = 12345;
+    const next = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+    for (let i = 0; i < 5000; i++) {
+      const a = next();
+      const b = next();
+      const [low, high] = a < b ? [a, b] : [b, a];
+      const text = spanWords({ low, high, ifUnrelated: (low + high) / 2, exact: false });
+      const m = /^between (\d+)% and (\d+)%$/.exec(text);
+      if (!m) continue; // ends that round to one whole percent print as one figure
+      expect(Number(m[1])).toBeLessThanOrEqual(low * 100 + 1e-9);
+      expect(Number(m[2])).toBeGreaterThanOrEqual(high * 100 - 1e-9);
+    }
   });
 });

@@ -140,7 +140,7 @@ await check('a bet is placed: two filled orders and a call recorded, shown on on
   await button().click();
   await page.waitForSelector('.receipt');
   const text = await page.locator('.receipt').innerText();
-  need(/Order 1 filled/.test(text) && /Order 2 filled/.test(text), 'both orders not shown as filled');
+  need(/Order 1 went through/.test(text) && /Order 2 went through/.test(text), 'both orders not shown as filled');
   await page.waitForSelector('.receipt .steps li.is-done >> text=Call recorded on Solana');
   need(/If it holds .* but stops short/.test(text), 'the losing outcome is missing from the receipt');
   need(posts.length === before + 1, `expected one POST /api/bets, saw ${posts.length - before}`);
@@ -200,7 +200,7 @@ await check('the result arrives on its own: bets flip to Won with no reload', as
 
 await check('revealing a call from the page records it and scores an edge', async () => {
   await page.getByRole('button', { name: 'Reveal on Solana' }).first().click();
-  await page.waitForSelector('text=Edge scored');
+  await page.getByText(/Revealed on Solana/).first().waitFor();
 });
 
 await check('the leaderboard shows the handle, and updates by itself when another call is revealed elsewhere', async () => {
@@ -225,8 +225,7 @@ await check('a revealed call has a proof page with the verdict and the verify co
   const revealed = (await api('/chain/calls')).calls.find((c) => c.state === 'revealed');
   await page.goto(`${base}/verify/${revealed.reveal?.signature ?? revealed.revealSignature}`);
   await page.waitForSelector('text=Proof of a call');
-  need(/Called it/.test(await page.locator('.proofcard').innerText()), 'no verdict on the card');
-  need(await page.getByRole('heading', { name: 'Check it on Solana' }).count(), 'no verify section');
+  need(/\b(Won|Lost)\b/.test(await page.locator('.proofcard').innerText()), 'no verdict on the card');
 });
 
 await check('the call can be saved as a picture to post', async () => {
@@ -364,7 +363,7 @@ await check('with dozens of ladders listed and most unpriced: the builder opens 
     need(shown.length >= 1 && shown.length < 10, `${shown.length} tabs shown`);
     need(!shown.some((t) => /Commodity|\?/.test(t)), `an unpriced ladder or a question mark is in the tabs: ${shown.join(' | ')}`);
     const more = page.locator('.more-markets');
-    need(/^30 more markets have no prices right now/.test(await more.innerText()), `the note reads "${await more.innerText()}"`);
+    need(/^Show 30 markets with no prices/.test(await more.innerText()), `the note reads "${await more.innerText()}"`);
     const inView = () =>
       page.evaluate(() => {
         const strip = document.querySelector('.seg').getBoundingClientRect();
@@ -388,19 +387,19 @@ await check('with dozens of ladders listed and most unpriced: the builder opens 
 });
 
 // ---- 6c. the other products, from their own pages
-await check('Return Parlay going down: the switch turns the bet round, and the placed bet is a NO on the lower strike and a YES on the higher', async () => {
+await check('Stake Back going down: the switch turns the bet round, and the placed bet is a NO on the lower strike and a YES on the higher', async () => {
   await dev('/dev/reset');
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`${base}/parlay`);
   await placeable();
-  await page.getByRole('radio', { name: 'Falls lower' }).click();
+  await page.getByRole('radio', { name: 'Goes down' }).click();
   await until('the question to read as a falling bet', async () => /stays under/.test(await page.locator('.q-sentence').first().innerText()), 8_000);
   await placeable();
   await button().click();
   await page.waitForSelector('.receipt');
   const text = await page.locator('.receipt').innerText();
   need(/Given it stays under .* fall below/.test(text), `the receipt does not describe a falling bet: ${text.slice(0, 120).replace(/\n/g, ' | ')}`);
-  need(/Order 1 filled/.test(text) && /Order 2 filled/.test(text), 'both orders not shown as filled');
+  need(/Order 1 went through/.test(text) && /Order 2 went through/.test(text), 'both orders not shown as filled');
   const placed = (await api('/api/bets')).bets[0];
   need(placed.direction === 'down' && /^dn-/.test(placed.id) && placed.status === 'open', `the ledger has ${placed.direction} ${placed.id} ${placed.status}`);
   need(placed.condition.strike > placed.target.strike, 'a falling bet should have its condition on the higher strike');
@@ -413,7 +412,7 @@ await check('Range: placed from its page as a YES on the lower strike and a NO o
   await button().click();
   await page.waitForSelector('.receipt');
   const text = await page.locator('.receipt').innerText();
-  need(/Finish between/.test(text) && /comes back either way/.test(text), `the receipt does not describe a range: ${text.slice(0, 120).replace(/\n/g, ' | ')}`);
+  need(/Finish between/.test(text) && /comes back when the market closes/.test(text), `the receipt does not describe a range: ${text.slice(0, 120).replace(/\n/g, ' | ')}`);
   const placed = (await api('/api/bets')).bets[0];
   need(placed.product === 'range' && /^rg-/.test(placed.id) && placed.status === 'open', `the ledger has ${placed.product} ${placed.id} ${placed.status}`);
   need(placed.legs[0].outcome === 'yes' && placed.legs[0].symbol === placed.condition.symbol && placed.legs[1].outcome === 'no' && placed.legs[1].symbol === placed.target.symbol, 'the two orders are on the wrong sides');
@@ -429,7 +428,7 @@ await check('Basket: three bets of three kinds are placed in one step, and My be
   await until('the basket to be ready to place', ready, 15_000);
   need((await page.locator('.legs > li').count()) === 2, 'the basket should open on two legs');
   await page.getByRole('button', { name: 'Add a leg' }).click();
-  await page.getByRole('radiogroup', { name: 'Leg 3 bet type' }).getByRole('radio', { name: 'Return Parlay, falling' }).click();
+  await page.getByRole('radiogroup', { name: 'Leg 3 bet type' }).getByRole('radio', { name: 'Stake Back down' }).click();
   await until('all three legs to be ready', ready, 15_000);
   await page.getByLabel('Name, optional').fill('Mixed bag');
   await place.click();
@@ -449,9 +448,9 @@ await check('Basket: three bets of three kinds are placed in one step, and My be
   need((await page.locator('.bl-basket').count()) === 1, 'the three bets should be one basket, not several');
   need((await page.locator('.bl-basket [data-bet]').count()) === 3, 'the basket should list its three bets');
   const head = await page.locator('.bl-basket .bl-bhead').innerText();
-  need(/Mixed bag/.test(head) && /3 legs/.test(head), `the basket header reads: ${head.replace(/\n/g, ' | ')}`);
+  need(/Mixed bag/.test(head) && /3 bets/.test(head), `the basket header reads: ${head.replace(/\n/g, ' | ')}`);
   const tags = await page.locator('.bl-basket .bl-tags').allInnerTexts();
-  need(/falling/i.test(tags[2] ?? '') && /range/i.test(tags[1] ?? '') && !/falling|range/i.test(tags[0] ?? ''), `the legs are tagged ${tags.join(' / ').replace(/\n/g, ' ')}`);
+  need(/Stake Back down/.test(tags[2] ?? '') && /Range/.test(tags[1] ?? '') && /Stake Back up/.test(tags[0] ?? ''), `the legs are tagged ${tags.join(' / ').replace(/\n/g, ' ')}`);
 });
 
 await check('Cash out: an open bet is priced, then sold back from My bets as two sell orders, and the cash still ties out', async () => {
@@ -500,8 +499,8 @@ await check('the builders show the ladder as a histogram coloured by the bet, wi
   const pctOf = (t) => Number(/(\d+)%/.exec(t)?.[1]);
   const keys = (await page.locator('.dist-card .dist-keys span').allInnerTexts()).map(pctOf);
   need(Math.abs(keys.reduce((a, b) => a + b, 0) - 100) <= 1, `the three chances add up to ${keys.join('+')}`);
-  const quoted = (await page.locator('.pb-key').allInnerTexts()).map(pctOf); // stake back, win, lose
-  need(Math.abs(keys[0] - quoted[1]) <= 1 && Math.abs(keys[1] - quoted[0]) <= 1, `the histogram says win ${keys[0]}% back ${keys[1]}%, the quote says win ${quoted[1]}% back ${quoted[0]}%`);
+  const quoted = (await page.locator('.pb-key').allInnerTexts()).map(pctOf); // win, stake back, lose
+  need(Math.abs(keys[0] - quoted[0]) <= 1 && Math.abs(keys[1] - quoted[1]) <= 1, `the histogram says win ${keys[0]}% back ${keys[1]}%, the quote says win ${quoted[0]}% back ${quoted[1]}%`);
   await page.goto(`${base}/range`);
   await placeable();
   await page.waitForSelector('.dist-card .dc-slot');
@@ -561,7 +560,7 @@ await check('Breakout: the Range switch turns the bet inside out; placed as a YE
   await dev(`/dev/resolve?spot=${finish}`);
   await page.goto(`${base}/bets`);
   const row = page.locator(`[data-bet="${placed.id}"]`);
-  await until('the breakout to read "Finished outside"', async () => /finished outside/i.test(await row.locator('.bl-chip').innerText()), 15_000);
+  await until('the breakout to read "Won"', async () => /^won$/i.test((await row.locator('.bl-chip').innerText()).trim()), 15_000);
   const done = (await api('/api/bets')).bets.find((b) => b.id === placed.id);
   need(done.settlement.targetResolved === 'yes' && Math.abs(done.settlement.payout - placed.legs[0].quantityFilled) < 0.011, `settled ${done.settlement.targetResolved}, paid ${done.settlement.payout}`);
   need(done.settlement.finishedAt === finish, `where it finished is recorded as ${done.settlement.finishedAt}`);
@@ -572,7 +571,8 @@ await check('Outlook: the Markets page reads the market’s middle and bands off
   await dev('/dev/reset');
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`${base}/markets`);
-  await page.waitForSelector('.ol .ol-chart path.ol-middle', { timeout: 8000 });
+  // Attached, not visible: with one closing time the middle line is flat, and a path with no height counts as hidden.
+  await page.waitForSelector('.ol .ol-chart path.ol-middle', { state: 'attached', timeout: 8000 });
   const words = (await page.locator('.ol-words').innerText()).replace(/\s+/g, ' ');
   need(/the middle of the market’s view is \$[\d,.]+\./.test(words), `the outlook says "${words}"`);
   need(/an even chance of finishing between \$[\d,.]+ and \$[\d,.]+/.test(words), `no even-chance band in "${words}"`);

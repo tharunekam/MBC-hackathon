@@ -64,6 +64,23 @@ export interface Config {
   secondLegWaitMs: number;
 }
 
+/**
+ * Reads a numeric setting. Unset or empty means "not set" (undefined). Anything else must be a plain finite number inside the
+ * limits, or this throws and the server does not start: a value like "$25" or "20/min" would otherwise become NaN, and every
+ * comparison with NaN is false, which silently switches the stake cap, the rate limit or the fee model off.
+ */
+export function numberSetting(name: string, raw: string | undefined, rule: { above?: number; atLeast?: number; atMost?: number; whole?: boolean } = {}): number | undefined {
+  if (raw === undefined || raw.trim() === '') return undefined;
+  const n = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(raw.trim()) ? Number(raw) : NaN;
+  const say = (what: string) => new Error(`${name} must be ${what}, but it is "${raw.slice(0, 40)}". Fix it in .env or the environment.`);
+  if (!Number.isFinite(n)) throw say('a plain number');
+  if (rule.whole && !Number.isInteger(n)) throw say('a whole number');
+  if (rule.above !== undefined && !(n > rule.above)) throw say(`a number above ${rule.above}`);
+  if (rule.atLeast !== undefined && !(n >= rule.atLeast)) throw say(`a number of ${rule.atLeast} or more`);
+  if (rule.atMost !== undefined && !(n <= rule.atMost)) throw say(`a number of ${rule.atMost} or less`);
+  return n;
+}
+
 /** True for loopback addresses: the only ones that may run without the hosted-demo protections. */
 export const isLoopback = (host: string): boolean => host === '127.0.0.1' || host === 'localhost' || host === '::1';
 
@@ -122,8 +139,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     isSandbox,
     users,
     dataDir: merged.GIVEN_DATA_DIR ? resolve(merged.GIVEN_DATA_DIR) : resolve(EXECUTOR_ROOT, 'data'),
-    port: Number(merged.GIVEN_PORT ?? 8787),
-    takerFeeCoef: merged.GIVEN_TAKER_FEE_COEF !== undefined ? Number(merged.GIVEN_TAKER_FEE_COEF) : isSandbox ? 0 : 0.07,
+    port: numberSetting('GIVEN_PORT', merged.GIVEN_PORT, { atLeast: 0, atMost: 65535, whole: true }) ?? 8787,
+    takerFeeCoef: numberSetting('GIVEN_TAKER_FEE_COEF', merged.GIVEN_TAKER_FEE_COEF, { atLeast: 0 }) ?? (isSandbox ? 0 : 0.07),
     waiveMarkup: isSandbox && merged.GIVEN_SANDBOX_WAIVE_MARKUP === '1',
     seeded: isSandbox && merged.GIVEN_SEEDED === '1',
     corsOrigins: (merged.GIVEN_CORS_ORIGINS ?? '')
@@ -133,11 +150,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     host: merged.GIVEN_HOST ?? '127.0.0.1',
     pinnedUser: merged.GIVEN_PINNED_USER ? merged.GIVEN_PINNED_USER : null,
     adminToken: merged.GIVEN_ADMIN_TOKEN ? merged.GIVEN_ADMIN_TOKEN : null,
-    maxStake: merged.GIVEN_MAX_STAKE ? Number(merged.GIVEN_MAX_STAKE) : null,
-    rateLimitPerMin: merged.GIVEN_RATE_LIMIT_PER_MIN ? Number(merged.GIVEN_RATE_LIMIT_PER_MIN) : null,
+    maxStake: numberSetting('GIVEN_MAX_STAKE', merged.GIVEN_MAX_STAKE, { above: 0 }) ?? null,
+    rateLimitPerMin: numberSetting('GIVEN_RATE_LIMIT_PER_MIN', merged.GIVEN_RATE_LIMIT_PER_MIN, { above: 0 }) ?? null,
     trustProxy: merged.GIVEN_TRUST_PROXY === '1',
     readOnly: merged.GIVEN_READONLY === '1',
-    autoSettleMs: merged.GIVEN_AUTO_SETTLE_MS !== undefined ? Number(merged.GIVEN_AUTO_SETTLE_MS) : 20_000,
+    autoSettleMs: numberSetting('GIVEN_AUTO_SETTLE_MS', merged.GIVEN_AUTO_SETTLE_MS, { atLeast: 0 }) ?? 20_000,
     secondLegWaitMs: clampSecondLegWaitMs(merged.GIVEN_SECOND_LEG_WAIT_MS),
   };
 }

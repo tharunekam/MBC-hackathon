@@ -8,6 +8,7 @@
  * at Gemini's PRODUCTION fee rate, even on the sandbox (which charges none),
  * so a pair is never shown as better value than it would be for real money.
  */
+import type { Direction } from './mirror.ts';
 import type { Rung } from './pairs.ts';
 import { PRICE_TICK, QTY_STEP, ceilToStep, clean, feeRate, floorToStep, hedgeQuantity, takerFee } from './pricing.ts';
 
@@ -87,6 +88,8 @@ export interface OfferOptions {
    * a price at or above the cap.
    */
   waiveMarkup?: boolean;
+  /** "down" when the rungs are the mirror of the real ladder (a falling bet): what is said about them is turned back for the reader. */
+  direction?: Direction;
 }
 
 /** Price of $1 "if B, given A" at a fee coefficient; unlike pricing.conditionalPrice it may return 1 or more. */
@@ -173,11 +176,17 @@ export function assessPair(rungs: Rung[], a: Rung, b: Rung, opts: OfferOptions =
   const inversions = ladderInversions(rungs);
   if (inversions.length > 0) {
     const first = inversions[0]!;
+    // A falling bet is assessed on the mirror of the ladder, where strikes are negated and each book is flipped. The sentence is
+    // for the person, so it names the real higher and lower strike, the real side of the book and the real prices.
+    const real = opts.direction === 'down';
+    const [higher, lower] = real ? [first.lower, first.higher] : [first.higher, first.lower];
+    const side = real ? (first.side === 'bid' ? 'ask' : 'bid') : first.side;
+    const shown = (r: Rung) => (real ? clean(1 - r[first.side]!) : r[first.side]);
     reasons.push({
       code: 'ladder_out_of_order',
       message:
-        `This market's prices are out of order: "${first.higher.label}" has a higher ${first.side} ` +
-        `(${first.higher[first.side]}) than "${first.lower.label}" (${first.lower[first.side]}), which cannot be right.`,
+        `This market's prices are out of order: "${higher.label}" has a higher ${side} ` +
+        `(${shown(higher)}) than "${lower.label}" (${shown(lower)}), which cannot be right.`,
     });
   }
 

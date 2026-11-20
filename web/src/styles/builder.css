@@ -12,11 +12,20 @@
   color: var(--soft);
   text-decoration: none;
   white-space: nowrap;
-  transition: color 160ms var(--ease), border-color 160ms var(--ease);
+  transition: color var(--t-fast) var(--ease-ui), border-color var(--t-fast) var(--ease-ui);
+}
+.head-link::after {
+  content: '→';
+  display: inline-block;
+  margin-left: 8px;
+  transition: transform var(--t-med) var(--ease);
 }
 .head-link:hover {
   color: var(--ink);
   border-color: var(--ink);
+}
+.head-link:hover::after {
+  transform: translateX(4px);
 }
 
 .builder .build-grid {
@@ -28,7 +37,6 @@
 }
 .builder .card {
   padding: 24px;
-  box-shadow: none;
 }
 .card-head {
   display: flex;
@@ -40,8 +48,17 @@
 .card-head .h-card {
   margin: 0;
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: -0.01em;
+}
+
+/* A link to a market that is no longer listed: said above the page, in the page's own calm voice. */
+.builder .deep-link-note {
+  margin: 0 0 20px;
+}
+.builder .deep-link-note a {
+  color: inherit;
+  text-underline-offset: 3px;
 }
 
 /* ------------------------------------------------------------ market bar */
@@ -55,11 +72,23 @@
 .market-bar {
   border-bottom: 1px solid var(--line);
 }
+/* The bar holds the height it will have, so the page does not jump when the first list of markets arrives. */
+.market-bar.is-loading {
+  min-height: 98px;
+  background: linear-gradient(var(--surface-2), var(--surface-2)) bottom / 100% 50px no-repeat;
+}
+/* A strip that runs past its card fades out at the edge, so a cut-off tab reads as "more this way", not as a mistake. The
+   padding keeps the last tab clear of the fade when the strip is scrolled to its end. */
+.market-bar .seg,
+.expiry {
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+}
 .market-bar .seg {
   display: flex;
   gap: 2px;
   max-width: none;
-  padding: 0 12px;
+  padding: 0 36px 0 12px;
   border: 0;
   border-radius: 0;
   background: none;
@@ -90,21 +119,35 @@
   right: 12px;
   bottom: 0;
   height: 2px;
-  background: var(--accent);
+  background: var(--ink);
+}
+/* Inside a strip that scrolls, a ring drawn outside the button would be cut off. */
+.market-bar .seg button:focus-visible,
+.expiry button:focus-visible {
+  outline-offset: -2px;
+}
+/* While a bet is on its way or placed, the choice of market is a record: the chosen tab stays plain, the others step back. */
+.market-bar button:disabled {
+  cursor: default;
+}
+.market-bar .seg button:disabled:not(.is-on),
+.expiry button:disabled:not(.is-on) {
+  opacity: 0.5;
 }
 .expiry-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 10px 24px;
+  padding: 12px 24px;
   border-top: 1px solid var(--line);
-  background: var(--bg-2);
+  background: var(--surface-2);
 }
 .expiry {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
+  padding-right: 32px;
   overflow-x: auto;
 }
 .expiry button {
@@ -113,7 +156,7 @@
   flex: none;
   display: flex;
   align-items: center;
-  height: 28px;
+  height: 32px;
   padding: 0;
   border: 0;
   background: none;
@@ -123,18 +166,24 @@
 .expiry button span {
   display: flex;
   align-items: center;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-ctl);
   background: var(--surface);
   font-size: 13px;
+  font-weight: 500;
   color: var(--soft);
   white-space: nowrap;
-  transition: border-color 160ms var(--ease), background 160ms var(--ease);
+  transition: border-color var(--t-fast) var(--ease-ui), background var(--t-fast) var(--ease-ui), color var(--t-fast) var(--ease-ui),
+    transform var(--t-fast) var(--ease-ui);
 }
 .expiry button:hover span {
-  border-color: var(--line-strong);
+  border-color: color-mix(in srgb, var(--ink) 38%, transparent);
+  color: var(--ink);
+}
+.expiry button:active span {
+  transform: scale(0.97);
 }
 .expiry button.is-on span {
   border-color: var(--ink);
@@ -146,8 +195,7 @@
   flex: none;
   align-items: center;
   gap: 16px;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
 }
@@ -161,7 +209,7 @@
 }
 .builder .more-markets {
   margin: 0;
-  padding: 10px 24px;
+  padding: 12px 24px;
   border-bottom: 1px solid var(--line);
   font-size: 13px;
 }
@@ -169,37 +217,40 @@
   margin-top: 20px;
   margin-bottom: 4px;
 }
+/* The axis labels are 12px, the smallest size a person is asked to read. */
+.builder .lc .lc-ytick,
+.builder .lc .lc-xtick {
+  font-size: 12px;
+}
 
 /* ------------------------------------------------------------ tables */
 .scen {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14.5px;
+  font-size: 14px;
 }
 .scen th {
-  padding: 10px 0 8px;
+  padding: 12px 0 8px;
   border-bottom: 1px solid var(--line);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 500;
-  letter-spacing: 0.1em;
   text-align: left;
-  text-transform: uppercase;
   color: var(--muted);
 }
 .scen td {
-  padding: 11px 0;
+  padding: 12px 0;
   border-bottom: 1px solid var(--line);
 }
 .scen tbody tr:last-child td {
   border-bottom: 0;
   padding-bottom: 4px;
 }
+/* Figures line up in their columns: same typeface as the rest of the table, with tabular digits. */
 .scen .n {
   padding-left: 12px;
   text-align: right;
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .scen th.n {
   text-align: right;
@@ -209,8 +260,19 @@
   width: 8px;
   height: 8px;
   margin-right: 12px;
-  border-radius: 2px;
+  border-radius: var(--r-xs);
   background: var(--faint);
+}
+/* In the table of results the colour mark hangs in the margin, so a result that wraps to a second line stays under its own words. */
+.payoff .scen td:first-child {
+  position: relative;
+  padding-left: 20px;
+}
+.payoff .scen td:first-child i {
+  position: absolute;
+  top: 18px;
+  left: 0;
+  margin: 0;
 }
 .scen [data-kind='win'] td:first-child i {
   background: var(--good);
@@ -222,7 +284,7 @@
   background: var(--bad);
 }
 .scen [data-kind] td:last-child {
-  font-weight: 600;
+  font-weight: 500;
 }
 .scen [data-kind='win'] td:last-child {
   color: var(--good);
@@ -233,7 +295,7 @@
 .scen [data-kind='lose'] td:last-child {
   color: var(--bad);
 }
-/* The ladder table is folded away until asked for (components/LadderTable.tsx): the chart and the histogram above it
+/* The table of every price is folded away until asked for (components/LadderTable.tsx): the chart and the histogram above it
    already draw the same prices. The summary is the card's own header, with a mark that turns when it opens. */
 .builder details.rungs > summary {
   margin: -24px;
@@ -260,7 +322,7 @@
   border-right: 1.5px solid var(--soft);
   border-bottom: 1.5px solid var(--soft);
   transform: rotate(45deg);
-  transition: transform 200ms var(--ease);
+  transition: transform var(--t-med) var(--ease);
 }
 .builder details.rungs[open] > summary {
   margin-bottom: -16px;
@@ -274,34 +336,65 @@
   text-decoration-color: var(--line-strong);
   text-underline-offset: 4px;
 }
+/* The summary fills the card, so the ring sits inside it. Its colour is the one global ring's. */
 .builder details.rungs > summary:focus-visible {
-  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-.rungs .scen td,
-.rungs .scen th {
+/* The columns keep their own gap (the first one starts flush); a table too wide for a narrow screen scrolls inside its card. */
+.rungs .table-scroll {
+  overflow-x: auto;
+}
+.rungs .scen td:first-child,
+.rungs .scen th:first-child {
   padding-left: 0;
 }
-.rungs .is-picked td {
-  background: var(--bg-2);
+/* The picked rows are inset by 8px on both sides; every row keeps the same right edge so the Sell column lines up. */
+.rungs .scen td:last-child,
+.rungs .scen th:last-child {
+  padding-right: 8px;
+}
+.scen tbody tr {
+  transition: background var(--t-fast) var(--ease-ui);
+}
+.rungs .scen tbody tr:hover td {
+  background: var(--surface-2);
+}
+.rungs .is-picked td,
+.rungs .scen tbody tr.is-picked:hover td {
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
 }
 .rungs .is-picked td:first-child {
-  padding-left: 10px;
-  font-weight: 600;
-}
-.rungs .is-picked td:last-child {
-  padding-right: 10px;
+  padding-left: 8px;
+  font-weight: 500;
 }
 .rungs .tag {
-  margin-left: 10px;
+  margin-left: 8px;
   vertical-align: 1px;
+  white-space: nowrap;
 }
 
 /* ------------------------------------------------------------ ticket */
 .builder .quote-card {
   top: 84px;
+  /* One column that may shrink: with the default `auto` track a row that could not wrap (a result's name beside its amount) made
+     the whole ticket wider than the card at 320px. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
   padding: 24px;
+}
+/* A bet that cannot be placed keeps its last figures on screen, grey, so they are not read as a price that is on offer. */
+.builder .quote-card.is-off .nums dd {
+  color: var(--muted);
+  opacity: 1;
+}
+.builder .quote-card.is-off .pb-track,
+.builder .quote-card.is-off .rb-track {
+  opacity: 0.5;
+}
+/* A receipt is taller than a laptop screen. Pinned to the top it would never show its own bottom, where the buttons are, so it
+   scrolls with the page like any other card. */
+.builder .quote-card:has(> .receipt) {
+  position: static;
 }
 .builder .q-title {
   gap: 8px;
@@ -311,60 +404,89 @@
   margin: 0;
 }
 .builder .q-sentence {
-  font-size: 21px;
+  font-size: 20px;
   line-height: 1.2;
 }
+/* Four tiles on a wash, with no rules between them: the numbers are the furniture. Every row is as tall as the tallest, so a
+   label that wraps to two lines on a narrow screen does not leave one row shorter than the other. */
 .builder .nums {
-  gap: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  grid-auto-rows: 1fr;
+  gap: 8px;
 }
 .builder .nums > div {
   display: grid;
-  gap: 6px;
-  padding: 14px 16px;
+  align-content: space-between;
+  gap: 8px;
+  padding: 12px 16px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
 }
-.builder .nums > div:nth-child(odd) {
-  border-right: 1px solid var(--line);
-}
-.builder .nums > div:nth-child(-n + 2) {
-  border-bottom: 1px solid var(--line);
+.builder .nums dt {
+  letter-spacing: 0;
 }
 .builder .nums dd {
-  font-size: 22px;
+  font-size: 24px;
+  font-weight: 500;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 .builder .stake-row {
   grid-template-columns: 1fr;
-  gap: 10px;
+  gap: 12px;
 }
 .builder .field {
+  height: 52px;
   border-radius: var(--r-md);
+  background: var(--surface);
 }
-/* The box is as tall as its frame, so a tap anywhere in the frame lands in it. */
 .builder .field input {
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  /* The box is as tall as its frame, so a tap anywhere in the frame lands in it. */
   align-self: stretch;
 }
+.builder .field:has(input:disabled) {
+  opacity: 0.6;
+}
+/* A stake above what one bet may be: the frame and the line under it say so, in words as well as colour. */
+.stake .field[data-over],
+.stake .field:has(input[aria-invalid='true']) {
+  border-color: var(--bad);
+}
+.stake .fine.is-bad {
+  color: var(--bad);
+}
+/* The quick amounts are one track with a raised thumb on the chosen one. */
 .builder .presets {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 0;
-  overflow: hidden;
+  gap: 2px;
+  padding: 4px;
   border: 1px solid var(--line-strong);
-  border-radius: var(--r-md);
+  border-radius: var(--r-ctl);
+  background: var(--surface);
 }
 .builder .presets .chip {
   justify-content: center;
-  height: 38px;
-  border: 0;
-  border-right: 1px solid var(--line);
-  border-radius: 0;
+  height: 36px;
+  /* The chosen amount is an amber fill, which on white is 1.4:1: its ink edge is what makes it read as chosen in the light. */
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: none;
+  font-weight: 500;
+  color: var(--muted);
+}
+.builder .presets .chip:hover:not(.is-on) {
+  color: var(--ink);
+}
+.builder .presets .chip.is-on {
+  background: var(--accent);
+  border-color: var(--ink);
+  color: var(--accent-ink);
   font-weight: 500;
 }
-.builder .presets .chip:last-child {
-  border-right: 0;
-}
-/* A quick amount above the venue's cap on one bet. */
+/* A quick amount above the venue's cap on one bet. The line under the box says what the cap is. */
 .builder .presets .chip:disabled {
   color: var(--faint);
   cursor: not-allowed;
@@ -374,7 +496,63 @@
 }
 .builder .btn-wide {
   height: 48px;
-  font-size: 15px;
+  font-size: 16px;
+}
+
+/* ------------------------------------------------------------ receipt */
+/* What was paid, as the receipt's headline figure. */
+.builder .receipt-paid {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  font-size: 14px;
+  color: var(--soft);
+}
+.builder .receipt-paid b {
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+/* An order's name and, beside it, the exchange's own ID for it: a detail, set apart from the "Order 1" and "Order 2" counting. */
+.builder .step-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+.builder .step-head .mono-chip {
+  margin-top: 0;
+}
+.builder .steps li:last-child {
+  padding-bottom: 0;
+}
+.builder .steps .btn,
+.builder .steps .mono-chip {
+  margin-top: 8px;
+}
+/* Each result is named in words as well as colour: Win, Stake back or Lose, then when it happens, then what it pays. */
+.builder .receipt .outcomes li {
+  align-items: baseline;
+}
+.builder .receipt .outcomes .kind {
+  flex: none;
+  width: 88px;
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 600;
+  color: var(--muted);
+}
+.builder .receipt .outcomes li span {
+  flex: 1;
+  min-width: 0;
 }
 
 @media (max-width: 960px) {
@@ -395,7 +573,7 @@
   }
   .expiry-row {
     gap: 12px;
-    padding: 2px 16px;
+    padding: 4px 16px;
   }
   .expiry button {
     height: 44px;
@@ -410,22 +588,25 @@
   }
   .builder .more-markets {
     min-height: 44px;
-    padding: 10px 16px;
+    padding: 12px 16px;
   }
   /* The quote has to sit within a screen of the chart on a phone, so the ticket is set tighter here. */
   .builder .quote-card {
-    gap: 14px;
+    gap: 12px;
     padding: 16px;
   }
   .builder .q-title .eyebrow {
     display: none;
   }
+  .builder .receipt .q-title .eyebrow {
+    display: block;
+  }
   .builder .q-sentence {
-    font-size: 19px;
+    font-size: 18px;
   }
   .builder .nums > div {
     gap: 4px;
-    padding: 10px 12px;
+    padding: 12px;
   }
   .builder .nums dd {
     font-size: 20px;
@@ -434,23 +615,31 @@
     padding: 8px 12px;
     font-size: 13px;
   }
-  /* The amount and its quick amounts share one row: the chips are a full 44px tall and the ticket is shorter than when
-     they sat on a row of their own. */
+  /* The amount and its quick amounts share one row, so the ticket is shorter than when they sat on a row of their own.
+     The track is as tall as the box beside it, and each quick amount fills it. */
   .builder .quote-card .stake-row {
     grid-template-columns: 96px minmax(0, 1fr);
     gap: 8px;
     align-items: stretch;
   }
-  .builder .quote-card .field {
-    height: auto;
-    min-height: 44px;
+  .builder .field {
+    height: 48px;
   }
-  .builder .quote-card .presets .chip {
+  .builder .field input {
+    font-size: 18px;
+  }
+  .builder .presets {
+    padding: 1px;
+  }
+  .builder .presets .chip {
     height: 44px;
     padding: 0;
   }
+  .builder .direction {
+    margin-top: 12px;
+  }
   .builder .btn-wide {
-    height: 46px;
+    height: 48px;
   }
   .builder .chart-card {
     padding-bottom: 16px;
@@ -467,6 +656,18 @@
     margin-bottom: -12px;
   }
 }
+/* Narrower than any current phone, such as a slim side pane: four quick amounts no longer fit beside the box, so they go
+   back to a row of their own under it. */
+@media (max-width: 360px) {
+  .builder .quote-card .stake-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* The tag that names a level sits under its price, not squeezed into the pill beside it. */
+  .rungs .tag {
+    display: table;
+    margin: 4px 0 0;
+  }
+}
 
 /* ------------------------------------------------------------ direction */
 .builder .direction {
@@ -476,33 +677,40 @@
   gap: 16px;
   margin-top: 16px;
 }
+/* A two-way switch: a wash track, and the chosen side is a raised white thumb. */
 .switch {
   display: inline-flex;
-  overflow: hidden;
+  gap: 2px;
+  padding: 4px;
   border: 1px solid var(--line-strong);
-  border-radius: var(--r-md);
+  border-radius: var(--r-ctl);
+  background: var(--surface);
 }
 .switch button {
-  height: 34px;
-  padding: 0 14px;
-  border: 0;
+  height: 32px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
   background: none;
   font: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--muted);
   cursor: pointer;
-  transition: color 160ms var(--ease), background 160ms var(--ease);
-}
-.switch button + button {
-  border-left: 1px solid var(--line);
+  transition: color var(--t-fast) var(--ease-ui), background var(--t-fast) var(--ease-ui), transform var(--t-fast) var(--ease-ui);
 }
 .switch button:hover:not(.is-on):not(:disabled) {
   color: var(--ink);
 }
+.switch button:active:not(:disabled) {
+  transform: scale(0.97);
+}
 .switch button.is-on {
-  background: var(--ink);
-  color: var(--bg);
+  background: var(--accent);
+  /* An amber fill alone is 1.4:1 against a white card, so the chosen side also has an ink edge: flat, and the same in both themes. */
+  border-color: var(--ink);
+  color: var(--accent-ink);
+  font-weight: 500;
 }
 .switch button:disabled {
   cursor: not-allowed;
@@ -520,21 +728,20 @@
     margin-top: 12px;
   }
   .builder .chart-hint {
-    margin-top: 10px;
-    font-size: 13.5px;
+    margin-top: 12px;
+    font-size: 14px;
     line-height: 1.4;
   }
-  /* The key in one row: the band of buy and sell prices is the least needed of its entries, and is left out here. */
+  /* The key wraps rather than running off a narrow card, and the band of buy and sell prices, the least needed of its
+     entries, is left out. */
   .builder .chart-foot {
-    flex-wrap: nowrap;
-    justify-content: space-between;
-    gap: 10px;
-    padding-top: 10px;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    padding-top: 12px;
     font-size: 12px;
-    white-space: nowrap;
   }
   .builder .chart-foot span {
-    gap: 6px;
+    gap: 8px;
   }
   .builder .chart-foot .foot-band {
     display: none;
@@ -551,5 +758,60 @@
   .builder .direction .switch button {
     flex: 1;
     height: 44px;
+  }
+}
+
+/* ------------------------------------------------------------ the place bar (phones) */
+/* The ticket is a long way below the chart on a phone, so its one button rides along the bottom of the window above the tab bar, with
+   the chance of winning beside it (components/PlaceBar). It follows the ticket and the tables in the grid, so at the end of the page
+   it is simply the last thing. Named apart from the Basket's own bar, which has its own sheet. */
+.builder .bet-bar {
+  order: 5;
+  position: sticky;
+  z-index: 25;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+.bet-bar-sum {
+  display: grid;
+}
+.bet-bar-sum span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.bet-bar-sum b {
+  font-size: 18px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+/* A refusal can be a sentence, so the button may take two lines. */
+.builder .bet-bar .btn-wide {
+  height: auto;
+  min-height: 48px;
+  padding: 8px 12px;
+  font-size: 16px;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
+}
+/* A field or a note that takes focus is scrolled clear of the bar. */
+html:has(.bet-bar) {
+  scroll-padding-bottom: 160px;
+}
+/* On the narrowest phones the label's room is the button's: a smaller button keeps "Place bet · $10.00" on one line. */
+@media (max-width: 360px) {
+  .builder .bet-bar {
+    gap: 8px;
+    padding: 8px;
+  }
+  .builder .bet-bar .btn-wide {
+    padding: 8px;
+    font-size: 14px;
   }
 }

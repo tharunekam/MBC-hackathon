@@ -52,13 +52,14 @@ test('a sale interrupted between its two orders is finished from the ledger: rec
   exchange.findOrder = async () => {
     throw new Error('fetch failed');
   };
-  const part = await cashOutBet(deps, bet);
+  const part = await cashOutBet({ ...deps, lookupWaitsMs: [0, 0] }, bet);
   exchange.findOrder = realFindOrder;
   assert.equal(part.cashOut?.complete, false, 'as far as the ledger knows, only the outcome leg was sold');
   assert.notEqual(part.status, 'cashed_out');
+  assert.equal(part.status, 'unhedged', 'and it says so: one sell has no confirmed result, so the bet is flagged, not shown as part sold');
   near(part.cashOut!.stake, 9.9946);
   near(holdings(part).hedge.quantity, 10.2);
-  assert.equal(part.legs.at(-1)!.status, 'error');
+  assert.equal(part.legs.at(-1)!.status, 'unknown');
 
   // What a restart sees after a crash at that moment: the order recorded as sent, its result unknown.
   part.legs.at(-1)!.status = 'sent';

@@ -25,6 +25,10 @@ export class FakeExchange implements Exchange {
   private nextOrderId = 1;
   /** When set, the next placeOrder for a matching tag throws after "sending". */
   failAfterSend: string | null = null;
+  /** When set, the next placeOrder for a matching tag throws BEFORE the venue sees the order: the answer is lost and so is the order. */
+  failBeforeSend: string | null = null;
+  /** The venue's order history trails a fresh order: the next this-many findOrder calls answer "no such order" whatever it holds. */
+  findLag = 0;
   /** Taker fee coefficient the venue charges (0.07 mimics Gemini production). */
   feeCoef = 0;
   /**
@@ -172,6 +176,10 @@ export class FakeExchange implements Exchange {
   }
 
   async placeOrder(req: OrderRequest): Promise<OrderResult> {
+    if (this.failBeforeSend === req.clientOrderId) {
+      this.failBeforeSend = null;
+      throw new Error('connection dropped before the order reached the venue');
+    }
     if (this.orders.has(req.clientOrderId)) throw new Error(`duplicate clientOrderId ${req.clientOrderId}`);
     this.sent.push(req);
     const book = this.books.get(req.symbol);
@@ -212,7 +220,11 @@ export class FakeExchange implements Exchange {
     return result;
   }
 
-  async findOrder(clientOrderId: string): Promise<OrderResult | null> {
+  async findOrder(clientOrderId: string, _opts?: { recent?: boolean }): Promise<OrderResult | null> {
+    if (this.findLag > 0) {
+      this.findLag--;
+      return null;
+    }
     return this.orders.get(clientOrderId) ?? null;
   }
 

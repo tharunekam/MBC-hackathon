@@ -94,6 +94,10 @@ export async function startFakeRpc(): Promise<FakeRpc> {
   let skipped = 0;
   const currentHeight = () => height + skipped + Math.floor((Date.now() - startedAt) / 400);
   const slot = () => currentHeight() + 100;
+  // Each transaction lands in a slot of its own, later than the one before, as two records written one after the other do on
+  // a real node. Without this, two sent within the same 400 ms would share a slot and a reveal could not be told from its commit.
+  let lastSlot = 0;
+  const nextSlot = () => (lastSlot = Math.max(slot(), lastSlot + 1));
 
   const context = () => ({ slot: slot(), apiVersion: '2.1.0' });
 
@@ -158,7 +162,7 @@ export async function startFakeRpc(): Promise<FakeRpc> {
     balances.set(feePayer, bal - FEE);
     const stored: StoredTx = {
       signature,
-      slot: slot(),
+      slot: nextSlot(),
       blockTime: Math.floor(Date.now() / 1000),
       signer: feePayer,
       keys: [

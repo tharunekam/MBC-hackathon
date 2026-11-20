@@ -22,7 +22,10 @@ type BookEvent = Pick<MarketEvent, 'ticker' | 'title' | 'expiry' | 'rungs'>;
  * The bets that are still running: placed, and not settled, sold back, failed or unwound. A bet whose orders are still on
  * their way is not counted until they have filled, since it has no figures to add up before then.
  */
-export const openBets = <B extends Pick<Bet, 'status' | 'settlement'>>(bets: readonly B[]): B[] => bets.filter((b) => outcomeOf(b) === 'open' && b.status !== 'placing');
+export const openBets = <B extends Pick<Bet, 'status' | 'settlement'>>(bets: readonly B[]): B[] =>
+  // A bet left with one order ('unprotected') still pays at each finishing price, so it counts. One whose second order may or
+  // may not have gone through ('unconfirmed') is left out until the exchange says which.
+  bets.filter((b) => b.status !== 'placing' && ['open', 'unprotected'].includes(outcomeOf(b)));
 
 export interface BookMarket<B = Bet, E = MarketEvent> {
   /** The market as the exchange lists it now. */

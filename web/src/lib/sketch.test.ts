@@ -144,7 +144,7 @@ describe('a sketch on the README ladder', () => {
     expect(s.orders.every((o) => o.fee === 0)).toBe(true);
   });
 
-  it('prices a Return Parlay drawn by hand as its builder would, rising and falling', () => {
+  it('prices a Stake Back drawn by hand as its builder would, rising and falling', () => {
     for (const coef of [0, PRODUCTION_FEE_COEF]) {
       const stake = 10;
       // Rising: first level 62,500 (its NO hands the stake back), target 63,500 (its YES is the bet).
@@ -380,7 +380,7 @@ describe('shapes a builder can place', () => {
     expect(handoverLink('BTC1', s.handover)).toBe(builderLink('BTC1', { product: 'breakout', low: leg(1), high: leg(5), ...terms }));
   });
 
-  it('knows a Return Parlay: a step down then a different step up, rising when the YES is the bigger order', () => {
+  it('knows a Stake Back: a step down then a different step up, rising when the YES is the bigger order', () => {
     const rising = must(ladder, [10, 10, 10, 0, 0, 18, 18, 18]);
     expect(rising.handover).toEqual({ kind: 'parlay', direction: 'up', condition: leg(2), target: leg(4) });
     expect(handoverLink('BTC1', rising.handover)).toBe('/parlay?market=BTC1&condition=S62500&target=S63500');
@@ -438,8 +438,9 @@ describe('a sketch in words', () => {
 
   it('says an order in one plain line, with the exchange’s own name for the contract', () => {
     const s = must(ladder, [0, 0, 0, 10, 10, 0, 0, 0]);
-    expect(s.orders.map(orderText)).toEqual(['Buy 10 YES on $62,500 or above at 82¢', 'Buy 10 NO on $63,500 or above at 60¢']);
-    expect(orderText({ contracts: 16.12, outcome: 'no', label: '', strike: 141.6, price: 0.2 })).toBe('Buy 16.12 NO on $141.60 or above at 20¢');
+    expect(s.orders.map(orderText)).toEqual(['10 shares that it finishes at or above $62,500, at 82¢', '10 shares that it finishes below $63,500, at 60¢']);
+    expect(orderText({ contracts: 16.12, outcome: 'no', label: '', strike: 141.6, price: 0.2 })).toBe('16.12 shares that it finishes below $141.60, at 20¢');
+    expect(orderText({ contracts: 1, outcome: 'yes', label: '', strike: 100, price: 0.5 })).toBe('1 share that it finishes at or above $100, at 50¢');
     expect(contractsText(3)).toBe('3');
     expect(contractsText(2.5)).toBe('2.50');
   });

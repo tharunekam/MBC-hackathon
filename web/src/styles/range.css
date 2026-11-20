@@ -1,7 +1,7 @@
-/* The range builder, for a range and for a breakout on the same two levels. It reuses the builder's panels and tables; only
+/* The range builder, for a Range and for a Breakout on the same two levels. It reuses the builder's panels and tables; only
    what a bet on two levels adds is here, scoped to .range-page. */
 
-/* ------------------------------------------------------------ inside / outside bar */
+/* ------------------------------------------------------------ win / lose bar */
 .rb-track {
   display: flex;
   gap: 2px;
@@ -10,8 +10,8 @@
 .rb-seg {
   flex-basis: 0;
   min-width: 4px;
-  border-radius: 2px;
-  transition: flex-grow 360ms var(--ease);
+  border-radius: var(--r-xs);
+  transition: flex-grow var(--t-slow) var(--ease);
 }
 .rb-seg[data-kind='win'] {
   background: var(--good);
@@ -23,19 +23,19 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px 16px;
-  margin-top: 10px;
+  margin-top: 12px;
   font-size: 13px;
   color: var(--muted);
 }
 .rb-key {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 .rb-key i {
   width: 8px;
   height: 8px;
-  border-radius: 2px;
+  border-radius: var(--r-xs);
   background: var(--faint);
 }
 .rb-key[data-kind='win'] i {
@@ -46,46 +46,21 @@
 }
 .rb-key b {
   font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink);
-}
-
-/* ------------------------------------------------------------ the market's expected move, under the chart */
-.range-page .chart-even {
-  margin-top: 12px;
-  margin-bottom: 0;
-  font-size: 13.5px;
-  line-height: 1.45;
-  color: var(--soft);
-}
-.range-page .chart-even b {
-  font-weight: 600;
   color: var(--ink);
 }
 
 /* ------------------------------------------------------------ ticket */
-/* The four figures and the line under them read as one block: the line sits on the grid's bottom edge. */
-.range-page .rg-figures .nums {
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
+/* The four figures, and under them one muted line about what the two orders do. */
+.range-page .rg-figures {
+  display: grid;
+  gap: 8px;
 }
-.range-page .nums dd {
-  font-variant-numeric: tabular-nums;
-}
+/* What the two orders do is a footnote to the four figures, not a fifth tile: one muted line, so the button below stays on screen. */
 .rg-pay {
   margin: 0;
-  padding: 10px 16px;
-  border: 1px solid var(--line);
-  border-top: 0;
-  border-radius: 0 0 var(--r-md) var(--r-md);
-  background: var(--surface-2);
-  font-size: 13.5px;
-  line-height: 1.45;
-  color: var(--soft);
-}
-.rg-pay b {
-  font-weight: 600;
-  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted);
 }
 
 /* ------------------------------------------------------------ tables */
@@ -97,41 +72,25 @@
   padding-top: 12px;
   border-top: 1px solid var(--line);
 }
-/* Rungs strictly between the floor and the ceiling: a hairline on the left, so the range reads down the table. */
+/* Prices strictly between the two levels: a hairline on the left, so the range reads down the table. */
 .range-page .rungs .is-inside td:first-child {
   border-left: 2px solid var(--good);
   padding-left: 8px;
 }
-/* The same rungs for a breakout, where finishing between the two levels is the loss. */
+/* The same prices for a Breakout, where finishing between the two levels is the loss. */
 .range-page .rungs .is-between td:first-child {
   border-left: 2px solid var(--bad);
   padding-left: 8px;
 }
 
 @media (max-width: 720px) {
-  /* On a phone the figures below carry the same two numbers; the bar alone keeps the ticket within a screen of the chart. */
-  .range-page .rb-legend {
-    display: none;
-  }
   /* The Place bet button has to stay within about a screen of the chart, so the ticket's own line moves to the payoff
-     table, which follows it on a phone, and the grid of figures gets its bottom corners back. */
+     table, which follows it on a phone. */
   .range-page .rg-pay {
     display: none;
   }
   .range-page .rg-always {
     display: block;
-  }
-  .range-page .rg-figures .nums {
-    border-bottom-left-radius: var(--r-md);
-    border-bottom-right-radius: var(--r-md);
-  }
-  /* The market's expected move in one line: "Even chance between $62,820 and $63,650." */
-  .range-page .chart-even {
-    margin-top: 8px;
-    font-size: 13px;
-  }
-  .range-page .chart-even::first-letter {
-    text-transform: uppercase;
   }
 }
 
@@ -139,9 +98,4 @@
   .rb-seg {
     transition: none;
   }
-}
-
-/* A long label wraps to two lines; the figures still sit on one baseline across the row. */
-.range-page .nums > div {
-  align-content: space-between;
 }

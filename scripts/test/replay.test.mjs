@@ -25,6 +25,9 @@ describe('what identifies a request', () => {
   it('the account a browser names is not part of it, but the bet is', () => {
     assert.equal(keyOf('POST', '/api/bets', '{"user":"primary","event":"E","stake":10}'), keyOf('POST', '/api/bets', '{"user":"mallory","event":"E","stake":10}'));
     assert.equal(keyOf('GET', '/api/bets?user=primary'), keyOf('GET', '/api/bets'));
+    // The page sends a fresh random requestId with every attempt: it must not make a replayed click look like a different request.
+    assert.equal(keyOf('POST', '/api/bets', '{"event":"E","stake":10,"requestId":"aaaaaaaa-1111"}'), keyOf('POST', '/api/bets', '{"requestId":"bbbbbbbb-2222","stake":10,"event":"E"}'));
+    assert.equal(keyOf('POST', '/api/bets', '{"event":"E","stake":10,"requestId":"aaaaaaaa-1111"}'), keyOf('POST', '/api/bets', '{"event":"E","stake":10}'));
     assert.notEqual(keyOf('POST', '/api/bets', '{"event":"E","stake":10}'), keyOf('POST', '/api/bets', '{"event":"E","stake":25}'));
     assert.notEqual(keyOf('GET', '/api/bets'), keyOf('POST', '/api/bets'));
   });

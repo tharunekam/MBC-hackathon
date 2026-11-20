@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { OrderNotSent, OrderUnconfirmed } from './exchange.ts';
 import type { Exchange, OrderRequest, OrderResult } from './exchange.ts';
 import type { BetRecord, Ledger, LegRecord, ReportedSettlement } from './ledger.ts';
 import type { GeminiContract, GeminiEvent } from './gemini/types.ts';
@@ -12,7 +13,7 @@ import type { LinkedPair } from './pairs.ts';
 import { conditionalPrice } from './pricing.ts';
 import type { BreakoutQuote } from './breakout.ts';
 import type { RangeQuote } from './range.ts';
-import { PRICE_TICK, clean, feeRate, floorToStep, hedgeQuantity, payoffs, settlementPayout, takerFee } from './pricing.ts';
+import { PRICE_TICK, clean, feeRate, floorToStep, hedgeQuantity, settlementPayout, takerFee } from './pricing.ts';
 import { secondLegWaitOf, waitForSecondLeg } from './second-leg-wait.ts';
 
 export interface BetRequest {
@@ -34,6 +35,10 @@ export interface BetRequest {
   onHedgeFail?: 'unwind' | 'leave';
   /** Set when the bet is one leg of a basket. */
   basket?: NonNullable<BetRecord['basket']>;
+  /** The request id the app sent; stored on the bet so a repeat of the request can be answered with it. */
+  clientRequestId?: string;
+  /** A short fingerprint of what the person chose, kept with the bet so a request id reused for something else can be told from a repeat. */
+  requestKey?: string;
 }
 
 export interface Deps {
@@ -56,6 +61,8 @@ export interface Deps {
   secondLegWaitMs?: number;
   /** How that wait pauses between two reads. Tests pass their own so they do not really wait. */
   sleep?: (ms: number) => Promise<void>;
+  /** Milliseconds to wait before each look-up of an order whose answer was lost. Default LOOKUP_WAITS_MS; tests shorten it. */
+  lookupWaitsMs?: number[];
 }
 
 /**
@@ -78,6 +85,8 @@ export const REVIEW_GRACE_MS = 60_000;
 
 export const MAX_HEDGE_ATTEMPTS = 3;
 export const defaultId = (): string => randomBytes(4).toString('hex');
+/** The exchange's own words about an order book it could not give go to the log; the person is told only that it could not be read. */
+export const logUnreadableBook = (err: unknown): void => console.error(`[executor] the order book could not be read: ${err instanceof Error ? err.message : String(err)}`);
 export const withinLimit = (price: number | null, max: number): boolean => price !== null && price <= max + 1e-9;
 
 // ------------------------------------------------------------------ which leg is which
@@ -108,7 +117,44 @@ export function legMap(bet: Pick<BetRecord, 'product' | 'direction' | 'condition
   };
 }
 
-/** Sends one order, recording it in the ledger before and after. */
+/**
+ * When an order's answer is lost, how long to wait before each look-up of it by its tag. The exchange's order history can
+ * trail a fresh order by a second or two, so an order that is "not there" at once may simply not be listed yet.
+ */
+export const LOOKUP_WAITS_MS = [0, 500, 1500, 3000];
+const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Asks the exchange for an order by its tag, a few times. `order` is what it says when it has the order. `absent` is true
+ * only when its last two answers were both "no such order" (so it was asked, twice, seconds apart, and could answer):
+ * an exchange that errors, or is silent, has told us nothing.
+ */
+async function lookUpOrder(deps: Deps, req: OrderRequest): Promise<{ order: OrderResult | null; absent: boolean }> {
+  const waits = deps.lookupWaitsMs ?? LOOKUP_WAITS_MS;
+  let noSuchOrder = 0;
+  for (const [i, wait] of waits.entries()) {
+    if (wait > 0) await pause(wait);
+    try {
+      // The order was sent moments ago, so the newest orders are enough; only the last look reads the whole history.
+      const found = await deps.exchange.findOrder(req.clientOrderId, { recent: i < waits.length - 1 });
+      // An immediate-or-cancel order that still reads as open is not finished yet; ask again.
+      if (found && (req.tif === 'GTC' || !found.open)) return { order: found, absent: false };
+      noSuchOrder = found ? 0 : noSuchOrder + 1;
+    } catch {
+      noSuchOrder = 0;
+    }
+  }
+  return { order: null, absent: noSuchOrder >= 2 };
+}
+
+/**
+ * Sends one order, recording it in the ledger before and after.
+ *
+ * If the answer is lost (a timeout, a socket that closed mid-request) the order may still have reached the exchange and
+ * filled, so it is looked up by its tag before anything is concluded: found, it is recorded as the exchange says; the
+ * exchange saying twice that it has no such order is an "error" leg, as for a refusal; and when the exchange cannot say, the
+ * leg is "unknown" and the caller must send nothing further for the bet. An order the exchange refused is "error" at once.
+ */
 export async function sendLeg(deps: Deps, bet: BetRecord, role: LegRecord['role'], req: OrderRequest): Promise<LegRecord> {
   const now = deps.now ?? (() => new Date());
   const leg: LegRecord = {
@@ -132,14 +178,44 @@ export async function sendLeg(deps: Deps, bet: BetRecord, role: LegRecord['role'
   try {
     result = await deps.exchange.placeOrder(req);
   } catch (err) {
-    leg.status = 'error';
-    leg.note = err instanceof Error ? err.message : String(err);
+    const message = err instanceof Error ? err.message : String(err);
+    leg.note = message;
+    if (err instanceof OrderNotSent) {
+      leg.status = 'error';
+    } else {
+      const looked = await lookUpOrder(deps, req);
+      if (looked.order) {
+        applyResult(leg, looked.order, deps.feeCoef ?? 0);
+        leg.note = `${message}; the order was then found on the exchange by its tag.`;
+      } else if (looked.absent && !(err instanceof OrderUnconfirmed)) {
+        leg.status = 'error';
+      } else {
+        leg.status = 'unknown';
+        leg.note = `${message}; the exchange could not confirm what became of the order.`;
+      }
+    }
     deps.ledger.save();
     return leg;
   }
   applyResult(leg, result, deps.feeCoef ?? 0);
   deps.ledger.save();
   return leg;
+}
+
+/** What a bet says while one of its orders has no confirmed result. */
+export const UNKNOWN_NOTE =
+  'Gemini did not confirm one of this bet\'s orders, so the bet may be partly or fully in place. Nothing more was sent. Check your Gemini account.';
+
+/** True while an order of the bet has been sent but its result is not recorded: the bet's figures are not final. */
+export const hasUnresolvedLeg = (bet: Pick<BetRecord, 'legs'>): boolean => bet.legs.some((l) => l.status === 'sent' || l.status === 'unknown');
+
+/** Ends a bet that has an unconfirmed order: it sends nothing further, and says so rather than "placed" or "failed". */
+export function holdForCheck(deps: Deps, bet: BetRecord): BetRecord {
+  refreshTotals(bet);
+  bet.status = 'unhedged';
+  bet.note = UNKNOWN_NOTE;
+  deps.ledger.save();
+  return bet;
 }
 
 export function applyResult(leg: LegRecord, result: OrderResult, feeCoef: number): void {
@@ -206,10 +282,17 @@ export function refreshTotals(bet: BetRecord): void {
     };
     return;
   }
-  bet.payoffs = payoffs(
-    { quantity: h.outcome.quantity, avgPrice: h.outcome.quantity > 0 ? h.outcome.spent / h.outcome.quantity : 0 },
-    { quantity: h.hedge.quantity, avgPrice: h.hedge.quantity > 0 ? h.hedge.spent / h.hedge.quantity : 0 },
-  );
+  // What the bet has cost is bet.cost, net of anything sold back. It cannot be rebuilt from each leg's average price: a leg
+  // that was sold back (an unwound bet, or one part-way through a cash-out) holds nothing now, yet what it lost is real.
+  const ifConditionFails = clean(h.hedge.quantity - bet.cost);
+  bet.payoffs = {
+    stake: bet.cost,
+    ifConditionFails,
+    ifBothHit: clean(h.outcome.quantity - bet.cost),
+    ifConditionOnly: clean(-bet.cost),
+    conditionalPrice: h.outcome.quantity > 0 ? clean(bet.cost / h.outcome.quantity) : null,
+    hedged: h.outcome.quantity > 0 && ifConditionFails >= -0.005,
+  };
 }
 
 /**
@@ -288,10 +371,8 @@ export async function planConditionalBet(deps: Deps, req: BetRequest): Promise<C
     view.topOfBook(named.b.symbol),
     deps.exchange.getEvent(req.eventTicker),
   ]).catch((err: unknown) => {
-    throw new BetRefused(
-      'no_depth',
-      `Could not read the live order book, so no order was sent (${err instanceof Error ? err.message : String(err)}).`,
-    );
+    logUnreadableBook(err);
+    throw new BetRefused('no_depth', 'Could not read the live order book, so no order was sent.');
   });
   const pair = findPair(event, req.conditionSymbol, req.targetSymbol, feeCoef, deps.waiveMarkup, direction);
 
@@ -386,6 +467,8 @@ export async function placeConditionalBet(deps: Deps, req: BetRequest): Promise<
     product: 'parlay',
     ...(direction === 'down' ? { direction } : {}),
     ...(req.basket ? { basket: req.basket } : {}),
+    ...(req.clientRequestId ? { clientRequestId: req.clientRequestId } : {}),
+    ...(req.requestKey ? { requestKey: req.requestKey } : {}),
     condition: { symbol: pair.a.symbol, label: pair.a.label, strike: realStrike(direction, pair.a.strike) },
     target: { symbol: pair.b.symbol, label: pair.b.label, strike: realStrike(direction, pair.b.strike) },
     requestedStake: req.stake,
@@ -415,6 +498,7 @@ export async function placeConditionalBet(deps: Deps, req: BetRequest): Promise<
     tif: 'IOC',
     clientOrderId: `gv-${id}-b`,
   });
+  if (bLeg.status === 'unknown') return holdForCheck(deps, bet);
   if (bLeg.status === 'error' || bLeg.quantityFilled <= 0) {
     bet.status = 'failed';
     bet.note = bLeg.status === 'error' ? `Outcome order failed: ${bLeg.note}` : 'Nothing was available at the quoted price, so no bet was placed.';
@@ -425,6 +509,7 @@ export async function placeConditionalBet(deps: Deps, req: BetRequest): Promise<
 
   // Leg 2: the hedge, sized from what leg 1 really cost.
   await hedge(view, bet, maxPrice, slip);
+  if (bet.legs.some((l) => l.status === 'unknown')) return holdForCheck(deps, bet); // never unwind or re-hedge around an order that may have filled
   refreshTotals(bet);
 
   if (bet.payoffs?.hedged) {
@@ -480,7 +565,7 @@ async function hedge(deps: Deps, bet: BetRecord, maxPrice: number, slip: number)
       tif: 'IOC',
       clientOrderId: `gv-${bet.id}-a${attempt}`,
     });
-    if (leg.status === 'filled') return;
+    if (leg.status === 'filled' || leg.status === 'unknown') return;
   }
 }
 
@@ -526,46 +611,154 @@ export async function unwind(deps: Deps, bet: BetRecord, slip: number): Promise<
   }
 
   const left = netHolding(bet, m.outcome.symbol, m.outcome.side).quantity + netHolding(bet, m.hedge.symbol, m.hedge.side).quantity;
-  if (left <= 1e-9) {
+  if (left <= 1e-9 && !hasUnresolvedLeg(bet)) {
     bet.status = 'unwound';
     bet.note = 'The second order could not be completed within the price limit, so the position was sold back.';
   } else {
     bet.status = 'unhedged';
-    bet.note = 'The second order could not be completed and the position could not be fully sold back; the bet is NOT fully in place.';
+    bet.note = hasUnresolvedLeg(bet)
+      ? UNKNOWN_NOTE
+      : 'The second order could not be completed and the position could not be fully sold back; the bet is NOT fully in place.';
   }
+}
+
+export interface RecoverOptions {
+  /** Look at only these bets (the periodic re-check hands over the ones that are due). Default: every bet. */
+  bets?: BetRecord[];
+  /** Look up only the orders whose result is not recorded, one by one by tag; never read the account's whole order list. */
+  pendingOnly?: boolean;
 }
 
 /**
  * Fills in any order that was sent but whose result was never recorded
  * (for example, the process stopped mid-bet). Looks each one up by its tag.
+ * An order recorded as an "error" or "unknown" is looked up too: an answer that was lost does not mean the order did not fill.
+ * An order that cannot be looked up now is left as it is, and so is the rest of its bet.
  */
-export async function recoverBets(deps: Deps, user?: string): Promise<number> {
+export async function recoverBets(deps: Deps, user?: string, opts: RecoverOptions = {}): Promise<number> {
   let fixed = 0;
+  // The exchange's own list of orders, read once and only if some leg needs it: an "error" leg is not looked up one by one,
+  // because asking for an order that is not there walks the whole order history.
+  let venue: Map<string, OrderResult> | null | undefined;
+  const venueOrder = async (tag: string): Promise<OrderResult | null> => {
+    if (venue === undefined) {
+      try {
+        venue = new Map((await deps.exchange.allOrders()).filter((o) => o.clientOrderId).map((o) => [o.clientOrderId, o]));
+      } catch {
+        venue = null; // it cannot be asked now; the leg stays as it is and /reconcile will name any difference
+      }
+    }
+    return venue?.get(tag) ?? null;
+  };
   // A copy of the list: bets placed while this runs are in flight, not interrupted, and must not be touched.
-  for (const bet of [...deps.ledger.data.bets]) {
+  for (const bet of [...(opts.bets ?? deps.ledger.data.bets)]) {
     // Orders can only be looked up on the account that sent them.
     if (user !== undefined && bet.user !== user) continue;
-    const pending = bet.legs.filter((l) => l.status === 'sent');
-    if (pending.length === 0 && bet.status !== 'placing') continue;
+    const pending = bet.legs.filter((l) => l.status === 'sent' || l.status === 'unknown');
+    const doubtful = opts.pendingOnly ? [] : bet.legs.filter((l) => l.status === 'error' && l.quantityFilled <= 0);
+    if (pending.length === 0 && doubtful.length === 0 && (opts.pendingOnly || bet.status !== 'placing')) continue;
+    let repaired = false;
+    let lookupFailed = false;
     for (const leg of pending) {
-      const found = await deps.exchange.findOrder(leg.clientOrderId);
+      let found: OrderResult | null;
+      try {
+        found = await deps.exchange.findOrder(leg.clientOrderId);
+      } catch (err) {
+        // The exchange cannot say now. The leg stays as it is, and so does the bet's status: it is looked at again later.
+        console.error(`[executor] could not look up order ${leg.clientOrderId}: ${err instanceof Error ? err.message : String(err)}`);
+        lookupFailed = true;
+        break;
+      }
       if (found) applyResult(leg, found, deps.feeCoef ?? 0);
       else {
         leg.status = 'unfilled';
         leg.note = 'Gemini has no order with this tag; it was never received.';
       }
+      repaired = true;
+      fixed++;
+    }
+    if (lookupFailed) {
+      if (repaired) refreshTotals(bet);
+      continue;
+    }
+    for (const leg of doubtful) {
+      const found = await venueOrder(leg.clientOrderId);
+      if (!found || found.filledQuantity <= 0) continue; // the exchange agrees nothing filled: it stays as it was
+      applyResult(leg, found, deps.feeCoef ?? 0);
+      leg.note = `${leg.note ?? 'No answer came back'}; the order was then found on the exchange by its tag.`;
+      repaired = true;
       fixed++;
     }
     refreshTotals(bet);
     refreshCashOut(bet); // a sale that was interrupted: what it really sold is now known
-    if (bet.status === 'placing') {
-      const held = holdings(bet).outcome.quantity;
-      bet.status = held <= 0 ? 'failed' : bet.payoffs?.hedged ? 'open' : 'unhedged';
+    // A bet that was left "placing", or was marked failed or "check the account" for want of an answer, is read again from what it holds.
+    if (bet.status === 'placing' || (repaired && (bet.status === 'failed' || bet.note === UNKNOWN_NOTE))) {
+      const h = holdings(bet);
+      const held = clean(Math.max(0, h.outcome.quantity) + Math.max(0, h.hedge.quantity));
+      bet.status =
+        held <= 1e-9 ? (bet.legs.some((l) => l.role === 'unwind' && l.quantityFilled > 0) ? 'unwound' : 'failed') : bet.payoffs?.hedged ? 'open' : 'unhedged';
       if (bet.status === 'unhedged') bet.note = 'Recovered after an interruption: the second order is incomplete.';
+      else if (bet.note === UNKNOWN_NOTE) {
+        bet.note =
+          bet.status === 'failed'
+            ? 'Gemini has no record of this bet\'s order, so nothing was bought.'
+            : bet.status === 'unwound'
+              ? 'The second order could not be completed within the price limit, so the position was sold back.'
+              : undefined;
+      }
     }
   }
   if (fixed > 0) deps.ledger.save();
   return fixed;
+}
+
+/** An order whose result is still not recorded is looked up again once it is this old (ms): a history trails an order by seconds, not by a minute. */
+export const RECHECK_AFTER_MS = 60_000;
+/** ...and one bet is looked at again no sooner than this (ms) after the last look. */
+export const RECHECK_EVERY_MS = 300_000;
+
+/**
+ * The part of recovery that runs while the server is up: a bet with an order whose result is not recorded (the answer was
+ * lost and the exchange could not say what became of it) is looked up again by tag, so it does not wait for a restart.
+ * `checkedAt` is the caller's memory of when each bet was last looked at. An order sent less than a minute ago may still
+ * be in flight and is left alone; a bet is looked at once every five minutes; only the orders named are read, never the
+ * account's whole order list. Run it where no bet of this user is being placed (the API queues it with them).
+ */
+export async function recheckUnresolved(deps: Deps, user: string, checkedAt: Map<string, number>): Promise<number> {
+  const nowMs = (deps.now ?? (() => new Date()))().getTime();
+  const due = deps.ledger.data.bets.filter((bet) => {
+    if (bet.user !== user) return false;
+    // `!(x < y)` rather than `x >= y`: a time that cannot be read counts as old, a bet never looked at as due.
+    const old = bet.legs.some((l) => (l.status === 'sent' || l.status === 'unknown') && !(nowMs - Date.parse(l.sentAt) < RECHECK_AFTER_MS));
+    return old && !(nowMs - (checkedAt.get(bet.id) ?? -Infinity) < RECHECK_EVERY_MS);
+  });
+  for (const bet of due) checkedAt.set(bet.id, nowMs);
+  return due.length === 0 ? 0 : recoverBets(deps, user, { bets: due, pendingOnly: true });
+}
+
+/**
+ * Puts right a bet an error left "placing" for good (a ledger write that failed once an order had gone out, say): nothing
+ * else would ever move it, and a repeat of its request would be answered "placing" for ever. With no order sent it failed;
+ * with one sent, what became of it is not known, so it is held like any bet with an unconfirmed order. The disk may be what
+ * failed, so a failure to save here is not raised again: the next save that works writes it.
+ */
+export function holdInterrupted(deps: Deps, bets: BetRecord[]): void {
+  for (const bet of bets) {
+    if (bet.status !== 'placing') continue;
+    if (bet.legs.length === 0) {
+      bet.status = 'failed';
+      bet.note = 'This bet could not be recorded, so no order was sent.';
+    } else {
+      refreshTotals(bet);
+      bet.status = 'unhedged';
+      bet.note = UNKNOWN_NOTE;
+    }
+  }
+  try {
+    deps.ledger.save();
+  } catch (err) {
+    console.error(`[executor] could not save the ledger after an interrupted bet: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 const isClean = (side: string | null | undefined): side is 'yes' | 'no' => side === 'yes' || side === 'no';
@@ -590,6 +783,8 @@ export interface SettleResult {
   needsReview: BetRecord[];
   /** Bets sold back earlier whose market has now given a clean result: how the call turned out is recorded, nothing is paid. */
   called: BetRecord[];
+  /** Events that could not be read this pass. Their bets were left exactly as they were and are tried again next time. */
+  unreadable: string[];
 }
 
 /** True when a bet's result may be used for scoring: settled with a clean yes/no on both contracts. */
@@ -697,14 +892,36 @@ function finishPrice(...reported: (string | null | undefined)[]): number | null 
  * Gemini later reports a clean result.
  */
 export async function settleBets(deps: Deps): Promise<SettleResult> {
+  const result: SettleResult = { settled: [], needsReview: [], called: [], unreadable: [] };
+  try {
+    await settlePass(deps, result);
+  } finally {
+    // Whatever was settled before anything went wrong is kept: the next pass would otherwise find the memory and the disk disagreeing.
+    if (result.settled.length > 0 || result.needsReview.length > 0 || result.called.length > 0) deps.ledger.save();
+  }
+  return result;
+}
+
+async function settlePass(deps: Deps, result: SettleResult): Promise<void> {
   const now = deps.now ?? (() => new Date());
-  const result: SettleResult = { settled: [], needsReview: [], called: [] };
   const events = new Map<string, Awaited<ReturnType<Exchange['getEvent']>>>();
 
   for (const bet of deps.ledger.data.bets) {
     const soldBack = bet.status === 'cashed_out' && !bet.called;
     if (!soldBack && bet.status !== 'open' && bet.status !== 'unhedged' && bet.status !== 'needs_review') continue;
-    if (!events.has(bet.eventTicker)) events.set(bet.eventTicker, await deps.exchange.getEvent(bet.eventTicker));
+    // What it paid cannot be worked out while an order's result is not known; recoverBets (or a person) settles that first.
+    if (hasUnresolvedLeg(bet)) continue;
+    // One event that cannot be read (retired, an error, a timeout) must not stop the bets on every other event.
+    if (result.unreadable.includes(bet.eventTicker)) continue;
+    if (!events.has(bet.eventTicker)) {
+      try {
+        events.set(bet.eventTicker, await deps.exchange.getEvent(bet.eventTicker));
+      } catch (err) {
+        result.unreadable.push(bet.eventTicker);
+        console.error(`[executor] settle: could not read event ${bet.eventTicker}: ${err instanceof Error ? err.message : String(err)}`);
+        continue;
+      }
+    }
     const event = events.get(bet.eventTicker)!;
     const aContract = event.contracts.find((c) => c.instrumentSymbol === bet.condition.symbol);
     const bContract = event.contracts.find((c) => c.instrumentSymbol === bet.target.symbol);
@@ -773,6 +990,4 @@ export async function settleBets(deps: Deps): Promise<SettleResult> {
     bet.status = 'needs_review';
     result.needsReview.push(bet);
   }
-  if (result.settled.length > 0 || result.needsReview.length > 0 || result.called.length > 0) deps.ledger.save();
-  return result;
 }

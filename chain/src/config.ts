@@ -54,6 +54,28 @@ export function mergedEnv(env: Record<string, string | undefined> = process.env)
   return { ...parseEnvFile(resolve(REPO_ROOT, '.env')), ...parseEnvFile(resolve(CHAIN_ROOT, '.env')), ...env };
 }
 
+/**
+ * A limit that must be a plain number above zero if it is set at all. "20/min" would otherwise become NaN, which is falsy, and
+ * quietly switch the rate limiter off.
+ */
+function positiveSetting(name: string, raw: string | undefined): number | null {
+  if (raw === undefined || raw.trim() === '') return null;
+  const n = /^\d+(\.\d+)?$/.test(raw.trim()) ? Number(raw) : Number.NaN;
+  if (!Number.isFinite(n) || !(n > 0)) throw new Error(`${name} must be a number above 0, but it is "${raw.slice(0, 40)}".`);
+  return n;
+}
+
+/**
+ * A whole number of at least `min` (at most `max`), or `fallback` when not set. A value such as "three" or "60s" stops the
+ * service with a sentence instead of becoming NaN, which would silently empty the leaderboard or switch the backfill off.
+ */
+function wholeSetting(name: string, raw: string | undefined, fallback: number, min = 0, max = Number.MAX_SAFE_INTEGER): number {
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const n = /^\d+$/.test(raw.trim()) ? Number(raw) : Number.NaN;
+  if (!Number.isSafeInteger(n) || n < min || n > max) throw new Error(`${name} must be a whole number from ${min} to ${max}, but it is "${raw.slice(0, 40)}".`);
+  return n;
+}
+
 export function loadConfig(env: Record<string, string | undefined> = process.env): ChainConfig {
   const m = mergedEnv(env);
   const network = m.GIVEN_CHAIN === 'fake' ? 'fake' : 'devnet';
@@ -65,7 +87,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     programId: m.GIVEN_PROGRAM_ID || undefined,
     dataDir,
     host: m.GIVEN_CHAIN_HOST ?? '127.0.0.1',
-    port: Number(m.GIVEN_CHAIN_PORT ?? 8742),
+    port: wholeSetting('GIVEN_CHAIN_PORT', m.GIVEN_CHAIN_PORT, 8742, 0, 65535),
     executorUrl: m.GIVEN_EXECUTOR_URL ?? 'http://127.0.0.1:8787',
     user: m.GIVEN_PINNED_USER ?? 'primary',
     corsOrigins: (m.GIVEN_CORS_ORIGINS ?? '').split(',').map((o) => o.trim().replace(/\/+$/, '')).filter(Boolean),
@@ -73,11 +95,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     qnSecurityToken: m.QN_SECURITY_TOKEN || undefined,
     hookInsecure: m.GIVEN_HOOK_INSECURE === '1',
     adminToken: m.GIVEN_ADMIN_TOKEN || undefined,
-    minCalls: Number(m.GIVEN_LB_MIN_CALLS ?? 1),
-    backfillMs: Number(m.GIVEN_BACKFILL_MS ?? (network === 'devnet' ? 60_000 : 0)),
+    minCalls: wholeSetting('GIVEN_LB_MIN_CALLS', m.GIVEN_LB_MIN_CALLS, 1),
+    backfillMs: wholeSetting('GIVEN_BACKFILL_MS', m.GIVEN_BACKFILL_MS, network === 'devnet' ? 60_000 : 0),
     selfIngest: m.GIVEN_SELF_INGEST ? m.GIVEN_SELF_INGEST === '1' : network === 'fake',
     extraAuthorities: (m.GIVEN_EXTRA_AUTHORITIES ?? '').split(',').map((s) => s.trim()).filter(Boolean),
-    rateLimitPerMin: m.GIVEN_RATE_LIMIT_PER_MIN ? Number(m.GIVEN_RATE_LIMIT_PER_MIN) : null,
+    rateLimitPerMin: positiveSetting('GIVEN_RATE_LIMIT_PER_MIN', m.GIVEN_RATE_LIMIT_PER_MIN),
     trustProxy: m.GIVEN_TRUST_PROXY === '1',
   };
 }

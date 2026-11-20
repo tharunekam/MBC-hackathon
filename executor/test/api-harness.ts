@@ -24,14 +24,47 @@ export const WIDE = [
 
 export type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
+/** Gemini cannot be asked: every look-up of an order by its tag fails, as when its REST side is down. Returns what puts it back. */
+export function cannotBeAsked(ex: FakeExchange): () => void {
+  const real = ex.findOrder.bind(ex);
+  ex.findOrder = async () => {
+    throw new Error('fetch failed');
+  };
+  return () => {
+    ex.findOrder = real;
+  };
+}
+
 /** Runs the real HTTP handler on a spare local port, backed by the in-memory exchange. */
-export async function start(strikes: ConstructorParameters<typeof FakeExchange>[1], opts: { waiveMarkup?: boolean; seeded?: boolean; adminToken?: string; maxStake?: number } = {}) {
-  const exchange = new FakeExchange('ETHTEST', strikes);
+export async function start(
+  strikes: ConstructorParameters<typeof FakeExchange>[1],
+  opts: {
+    waiveMarkup?: boolean;
+    seeded?: boolean;
+    adminToken?: string;
+    maxStake?: number;
+    /** The operator kill switch, read on every request. */
+    isPaused?: () => boolean;
+    /** Waits between the look-ups of an order whose answer was lost; tests shorten them. */
+    orderLookupWaitsMs?: number[];
+    /** Run against this ledger (read back from disk) and this exchange, as a restarted server would. */
+    ledger?: Ledger;
+    exchange?: FakeExchange;
+    /** Where the ids it hands out start (a restarted server does not repeat the ids of the one before it). */
+    idFrom?: number;
+    /** Settle (and re-check unconfirmed orders) by itself this often, in ms. Unset: only when asked. */
+    autoSettleMs?: number;
+    /** Hands out ids itself instead (a test that makes the id source fail). */
+    newId?: () => string;
+  } = {},
+) {
+  const exchange = opts.exchange ?? new FakeExchange('ETHTEST', strikes);
   const other = new FakeExchange('ETHTEST', strikes); // a second user's account
-  const ledger = new Ledger(join(mkdtempSync(join(tmpdir(), 'given-api-')), 'ledger.json'));
+  const ledger = opts.ledger ?? new Ledger(join(mkdtempSync(join(tmpdir(), 'given-api-')), 'ledger.json'));
   let clock = new Date('2026-11-17T23:10:00Z');
-  let n = 0;
+  let n = opts.idFrom ?? 0;
   let sessionsOpened = 0;
+  let marketReads = 0;
   const sessions = new Map<string, FakeExchange>();
   const api = createApi({
     ledger,
@@ -44,16 +77,29 @@ export async function start(strikes: ConstructorParameters<typeof FakeExchange>[
       return sessions.get(user)!;
     },
     isConnected: (user) => sessions.has(user),
-    markets: { listEvents: () => exchange.listEvents(), getEvent: (t) => exchange.getEvent(t) },
+    markets: {
+      listEvents: () => exchange.listEvents(),
+      // Counted once the read has finished: a request that has done its own market read is on its way into the account's queue.
+      getEvent: async (t) => {
+        try {
+          return await exchange.getEvent(t);
+        } finally {
+          marketReads++;
+        }
+      },
+    },
     isSandbox: true,
     feeCoef: 0,
     waiveMarkup: opts.waiveMarkup ?? false,
     seeded: opts.seeded,
     adminToken: opts.adminToken,
     maxStake: opts.maxStake,
+    isPaused: opts.isPaused,
+    orderLookupWaitsMs: opts.orderLookupWaitsMs,
+    autoSettleMs: opts.autoSettleMs,
     marketsCacheMs: 0,
     now: () => clock,
-    newId: () => `api${++n}`,
+    newId: opts.newId ?? (() => `api${++n}`),
   });
   const server = createServer(api);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -77,6 +123,7 @@ export async function start(strikes: ConstructorParameters<typeof FakeExchange>[
     ...extra,
   });
   return {
+    base,
     exchange,
     other,
     ledger,
@@ -84,6 +131,11 @@ export async function start(strikes: ConstructorParameters<typeof FakeExchange>[
     betBody,
     setClock: (iso: string) => (clock = new Date(iso)),
     sessionsOpened: () => sessionsOpened,
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    /** How many market reads the API itself has finished for requests (not the ones a bet makes while it is placed). */
+    marketReads: () => marketReads,
+    close: () => {
+      api.close(); // stops the settle timer
+      return new Promise<void>((resolve) => server.close(() => resolve()));
+    },
   };
 }

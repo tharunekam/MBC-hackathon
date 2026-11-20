@@ -11,16 +11,17 @@ import { execLive } from '../lib/liveClients';
 import { categoriesOf, closesIn, filterGroups, updatedLabel } from '../lib/marketFilter';
 import { closesLabel, groupByAsset, parlaysOnOffer, strikeSpan } from '../lib/markets';
 import { PRODUCTS } from '../lib/nav';
+import { keepMode } from '../lib/venue';
 import '../styles/markets.css';
 
 type LadderState = 'priced' | 'none' | 'order';
 
 const stateOf = (e: MarketEvent): LadderState => (e.ladderOutOfOrder ? 'order' : hasPrices(e) ? 'priced' : 'none');
-const STATE_TEXT: Record<LadderState, string> = { priced: 'Priced', none: 'No prices', order: 'Out of order' };
+const STATE_TEXT: Record<LadderState, string> = { priced: 'Priced', none: 'No prices yet', order: 'Prices unclear' };
 
 /**
- * How far the market expects this ladder's price to travel: half the width of the band it gives an even chance of holding,
- * as a percent of the band's middle. A dash when the ladder's prices do not reach far enough either side to say.
+ * How far the market expects this market's price to travel: half the width of the band it gives an even chance of holding,
+ * as a percent of the band's middle. A dash when the market's prices do not reach far enough either side to say.
  */
 function expectedMove(e: MarketEvent): string {
   const levels = distributionOf(e.rungs)?.levels;
@@ -74,11 +75,10 @@ export default function Markets() {
     <div className="page mk">
       <header className="page-head">
         <div>
-          <span className="eyebrow">Markets</span>
-          <h1 className="h-page">Every ladder, by asset</h1>
-          <p className="lede">Each ladder is a set of price levels the exchange lists for one asset and one close time. Open one to build a bet on it.</p>
+          <h1 className="h-page">Markets you can bet on</h1>
+          <p className="lede">Pick a market and choose how to bet on it.</p>
         </div>
-        {status && !markets.error && (
+        {status && !markets.error && totals.ladders > 0 && (
           <span className="chip-quiet mk-status">
             <i className="mk-live" aria-hidden="true" />
             {status}
@@ -100,171 +100,191 @@ export default function Markets() {
       ) : markets.error && !markets.data ? (
         <div className="mk-state" role="alert">
           <h2 className="mk-state-title">The markets did not load</h2>
-          <p>The list of ladders could not be fetched. Nothing about your bets has changed.</p>
+          <p>Nothing about your bets has changed.</p>
           <button type="button" className="btn btn-ghost btn-sm" onClick={markets.reload}>
             Try again
           </button>
         </div>
       ) : (
-        <>
-          <dl className="mk-stats" aria-label="Summary">
-            <Stat label="Ladders" value={totals.ladders} />
-            <Stat label="With prices" value={totals.priced} />
-            <Stat label="Parlays on offer" value={totals.offers} />
-            <Stat label="Assets" value={totals.assets} />
-          </dl>
-
-          {markets.error && <p className="fine mk-stale">The last refresh failed, so these figures may be out of date. Retrying on its own.</p>}
-
-          <Outlook groups={groups} now={now} />
-
-          <div className="mk-toolbar">
-            <div className="mk-seg" role="group" aria-label="Category">
-              {['', ...categories].map((c) => (
-                <button key={c || 'all'} type="button" aria-pressed={cat === c} onClick={() => patch({ cat: c || null })}>
-                  {c || 'All'}
-                </button>
-              ))}
-            </div>
-            <div className="mk-search">
-              <label htmlFor="mk-q" className="sr-only">
-                Search by asset, ticker or title
-              </label>
-              <input
-                id="mk-q"
-                type="search"
-                value={text}
-                placeholder="Search asset or ticker"
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(e) => {
-                  setText(e.target.value);
-                  patch({ q: e.target.value || null });
-                }}
-              />
-            </div>
-            <label className="mk-toggle">
-              <input type="checkbox" checked={priced} disabled={!anyPriced} onChange={(e) => patch({ priced: e.target.checked ? null : '0' })} />
-              Only ladders with prices
-            </label>
+        totals.ladders === 0 ? (
+          <div className="mk-state">
+            <h2 className="mk-state-title">No markets are open</h2>
+            <p>New markets appear here as soon as they are listed.</p>
           </div>
+        ) : (
+          <>
+            <dl className="mk-stats" role="group" aria-label="Summary">
+              <Stat label="Markets open" value={totals.ladders} />
+              <Stat label="With prices" value={totals.priced} />
+              <Stat label="Stake Back bets on offer" value={totals.offers} />
+              <Stat label="Assets" value={totals.assets} />
+            </dl>
 
-          <p className="mk-count" role="status">
-            {shownLadders} {shownLadders === 1 ? 'ladder' : 'ladders'} across {shown.length} {shown.length === 1 ? 'asset' : 'assets'}
-            {!anyPriced && totals.ladders > 0 && <span> · No ladder has prices at the moment, so all are listed</span>}
-          </p>
+            {markets.error && <p className="fine mk-stale">The last refresh failed, so these figures may be out of date. Retrying on its own.</p>}
 
-          {totals.ladders === 0 ? (
-            <div className="mk-state">
-              <h2 className="mk-state-title">No ladders listed</h2>
-              <p>The exchange is not listing any ladders right now. This page updates on its own.</p>
-            </div>
-          ) : shown.length === 0 ? (
-            <div className="mk-state">
-              <h2 className="mk-state-title">Nothing matches</h2>
-              <p>No ladder fits these filters.</p>
-              {filtered && (
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setParams({}, { replace: true })}>
-                  Clear filters
-                </button>
+            <Outlook groups={groups} now={now} />
+
+            {!anyPriced && (
+              <div className="mk-state mk-calm">
+                <h2 className="mk-state-title">No market has prices yet</h2>
+                <p>The exchange has listed these markets but nobody has quoted them. Prices usually appear within a few minutes, and this page updates on its own.</p>
+              </div>
+            )}
+
+            <div className="mk-toolbar">
+              <div className="mk-seg" role="group" aria-label="Category">
+                {['', ...categories].map((c) => (
+                  <button key={c || 'all'} type="button" aria-pressed={cat === c} onClick={() => patch({ cat: c || null })}>
+                    {c || 'All'}
+                  </button>
+                ))}
+              </div>
+              <div className="mk-search">
+                <label htmlFor="mk-q" className="sr-only">
+                  Search assets
+                </label>
+                <input
+                  id="mk-q"
+                  type="search"
+                  value={text}
+                  placeholder="Search assets"
+                  autoComplete="off"
+                  spellCheck={false}
+                  onChange={(e) => {
+                    setText(e.target.value);
+                    patch({ q: e.target.value || null });
+                  }}
+                />
+              </div>
+              {anyPriced && (
+                <label className="mk-toggle">
+                  <input type="checkbox" checked={priced} onChange={(e) => patch({ priced: e.target.checked ? null : '0' })} />
+                  Only markets with prices
+                </label>
               )}
             </div>
-          ) : (
-            <div className="mk-groups">
-              {shown.map((g) => (
-                <section key={g.key} className="mk-group" aria-labelledby={`mk-h-${g.key}`}>
-                  <div className="mk-group-head">
-                    <h2 id={`mk-h-${g.key}`} className="mk-group-title">
-                      {g.label}
-                    </h2>
-                    <span className="mk-tag">{g.category}</span>
-                    <span className="mk-meta">
-                      {g.events.length} {g.events.length === 1 ? 'ladder' : 'ladders'} · {g.priced} with prices
-                    </span>
-                  </div>
-                  <div className="mk-table-wrap">
-                    <table className="mk-table" role="table">
-                      <caption className="sr-only">{g.label} ladders, soonest close first</caption>
-                      <thead role="rowgroup">
-                        <tr role="row">
-                          <th role="columnheader" scope="col" className="mk-c-closes">Closes</th>
-                          <th role="columnheader" scope="col" className="mk-c-num">Strikes</th>
-                          <th role="columnheader" scope="col" className="mk-c-num mk-c-rungs">Rungs</th>
-                          <th role="columnheader" scope="col" className="mk-c-num mk-c-move">Expected move</th>
-                          <th role="columnheader" scope="col" className="mk-c-num mk-c-offers">Parlays on offer</th>
-                          <th role="columnheader" scope="col" className="mk-c-state">State</th>
-                          <th role="columnheader" scope="col" className="mk-c-act">
-                            <span className="sr-only">Action</span>
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody role="rowgroup">
-                        {g.events.map((e) => {
-                          const span = strikeSpan(e);
-                          const st = stateOf(e);
-                          const rel = closesIn(e.expiry, now);
-                          return (
-                            <tr key={e.ticker} role="row" className="mk-row">
-                              <td role="cell" className="mk-closes">
-                                <span className="mk-when">{closesLabel(e.expiry, now)}</span>
-                                {rel && <span className="mk-rel">{rel}</span>}
-                              </td>
-                              <td role="cell" className="mk-num" data-label="Strikes">
-                                {span ? `${money(span.low)} – ${money(span.high)}` : '–'}
-                              </td>
-                              <td role="cell" className="mk-num mk-rungs" data-label="Rungs">
-                                {e.rungs.length}
-                              </td>
-                              <td role="cell" className="mk-num" data-label="Expected move">
-                                {expectedMove(e)}
-                              </td>
-                              <td role="cell" className="mk-num" data-label="Parlays on offer">
-                                {parlaysOnOffer(e) > 0 ? parlaysOnOffer(e) : <span className="mk-none">None</span>}
-                              </td>
-                              <td role="cell" className="mk-state-cell" data-label="State">
-                                <span className="mk-dot" data-state={st} aria-hidden="true" />
-                                {STATE_TEXT[st]}
-                              </td>
-                              <td role="cell" className="mk-act">
-                                {hasPrices(e) ? (
-                                  <span className="mk-links">
-                                    {PRODUCTS.slice(0, 2).map((p) => (
-                                      <Link key={p.id} className="mk-link" to={`${p.to}?market=${encodeURIComponent(e.ticker)}`}>
-                                        {p.id === 'parlay' ? 'Parlay' : p.short}
-                                        <span className="sr-only">
-                                          {' '}
-                                          on {g.label}, {closesLabel(e.expiry, now)}
-                                        </span>
-                                      </Link>
-                                    ))}
-                                    <Link className="mk-link" to={`/hunch?market=${encodeURIComponent(e.ticker)}`}>
-                                      Hunch
-                                      <span className="sr-only">
-                                        {' '}
-                                        on {g.label}, {closesLabel(e.expiry, now)}
-                                      </span>
-                                    </Link>
-                                  </span>
-                                ) : (
-                                  <span className="mk-wait">Waiting for prices</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
-              ))}
-            </div>
-          )}
 
-          <p className="fine mk-foot">
-            Prices come from the exchange and refresh on their own. A ladder with no prices cannot be bet on. Expected move is read from a ladder’s own prices: the market gives an even chance of
-            finishing within that much of the middle of its view, either side.
-          </p>
-        </>
+            <p className="mk-count" role="status">
+              {shownLadders < totals.ladders
+                ? `${shownLadders} of ${totals.ladders} markets shown`
+                : `${shownLadders} ${shownLadders === 1 ? 'market' : 'markets'} across ${shown.length} ${shown.length === 1 ? 'asset' : 'assets'}`}
+            </p>
+
+            {shown.length === 0 ? (
+              <div className="mk-state">
+                <h2 className="mk-state-title">Nothing matches</h2>
+                <p>Try fewer filters.</p>
+                {filtered && (
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setParams({}, { replace: true })}>
+                    Clear filters
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="mk-groups">
+                {shown.map((g) => {
+                  const table = (
+                    <div className="mk-table-wrap">
+                      <table className="mk-table" role="table">
+                        <caption className="sr-only">{g.label} markets, soonest close first</caption>
+                        <thead role="rowgroup">
+                          <tr role="row">
+                            <th role="columnheader" scope="col" className="mk-c-closes">Closes</th>
+                            <th role="columnheader" scope="col" className="mk-c-num mk-c-range">Price range</th>
+                            <th role="columnheader" scope="col" className="mk-c-num mk-c-rungs">Levels</th>
+                            <th role="columnheader" scope="col" className="mk-c-num mk-c-move">Expected move</th>
+                            <th role="columnheader" scope="col" className="mk-c-num mk-c-offers">Stake Back bets</th>
+                            <th role="columnheader" scope="col" className="mk-c-state">Status</th>
+                            <th role="columnheader" scope="col" className="mk-c-act">
+                              <span className="sr-only">Bet on this market</span>
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody role="rowgroup">
+                          {g.events.map((e) => {
+                            const span = strikeSpan(e);
+                            const st = stateOf(e);
+                            const rel = closesIn(e.expiry, now);
+                            const open = hasPrices(e);
+                            const where = `${g.label}, ${closesLabel(e.expiry, now)}`;
+                            return (
+                              <tr key={e.ticker} role="row" className="mk-row">
+                                <td role="cell" className="mk-closes">
+                                  <span className="mk-when">{closesLabel(e.expiry, now)}</span>
+                                  {rel && <span className="mk-rel">{rel}</span>}
+                                </td>
+                                <td role="cell" className="mk-num" data-label="Price range">
+                                  {span ? `${money(span.low)} to ${money(span.high)}` : '–'}
+                                </td>
+                                <td role="cell" className="mk-num mk-rungs" data-label="Levels">
+                                  {e.rungs.length}
+                                </td>
+                                <td role="cell" className="mk-num" data-label="Expected move">
+                                  {expectedMove(e)}
+                                </td>
+                                <td role="cell" className="mk-num" data-label="Stake Back bets">
+                                  {!open ? '–' : parlaysOnOffer(e) > 0 ? parlaysOnOffer(e) : <span className="mk-none">None</span>}
+                                </td>
+                                <td role="cell" className="mk-state-cell" data-label="Status">
+                                  <span className="mk-dot" data-state={st} aria-hidden="true" />
+                                  {STATE_TEXT[st]}
+                                </td>
+                                <td role="cell" className="mk-act">
+                                  {/* A market with no prices has nothing to open: its status already says so, and the cell stays empty. */}
+                                  {open && (
+                                    <span className="mk-links">
+                                      {PRODUCTS.slice(0, 2).map((p) => (
+                                        <Link key={p.id} className="mk-link" to={keepMode(`${p.to}?market=${encodeURIComponent(e.ticker)}`)}>
+                                          {p.short}
+                                          <span className="sr-only"> on {where}</span>
+                                        </Link>
+                                      ))}
+                                      <Link className="mk-link" to={keepMode(`/hunch?market=${encodeURIComponent(e.ticker)}`)}>
+                                        Hunch
+                                        <span className="sr-only"> on {where}</span>
+                                      </Link>
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                  const count = `${g.events.length} ${g.events.length === 1 ? 'market' : 'markets'}`;
+                  // An asset with nothing priced is a closed drawer: one line instead of a table of rows that all say the same.
+                  return g.priced === 0 ? (
+                    <details key={g.key} className="mk-group mk-group-bare" open={q.trim() !== ''}>
+                      <summary className="mk-group-head">
+                        <h2 className="mk-group-title">{g.label}</h2>
+                        <span className="mk-tag">{g.category}</span>
+                        <span className="mk-meta">{count}, no prices yet</span>
+                      </summary>
+                      {table}
+                    </details>
+                  ) : (
+                    <section key={g.key} className="mk-group" aria-labelledby={`mk-h-${g.key}`}>
+                      <div className="mk-group-head">
+                        <h2 id={`mk-h-${g.key}`} className="mk-group-title">
+                          {g.label}
+                        </h2>
+                        <span className="mk-tag">{g.category}</span>
+                        <span className="mk-meta">
+                          {count} · {g.priced} with prices
+                        </span>
+                      </div>
+                      {table}
+                    </section>
+                  );
+                })}
+              </div>
+            )}
+
+            <p className="fine mk-foot">Expected move is how far the market thinks the price will finish from its middle, in either direction.</p>
+          </>
+        )
       )}
     </div>
   );

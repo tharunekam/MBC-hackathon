@@ -4,8 +4,8 @@
 
 Given builds bets on [Gemini](https://www.gemini.com) prediction markets from ordinary orders in the user's own Gemini
 account, then records each call on Solana so it can be proven later without trusting us. Every outcome is known before
-you bet. The products: a **Return Parlay** (a parlay that pays your stake back if its first leg misses, going up or going
-down), a **Range** (win if a price finishes between two levels), its opposite the **Breakout** (win if it finishes outside
+you bet. The products: a **Stake Back** (a bet on a second price level that pays your stake back if the first level fails, going up or going
+down; called Return Parlay until 2026-11-19, and still `parlay` in the code and the API), a **Range** (win if a price finishes between two levels), its opposite the **Breakout** (win if it finishes outside
 them, whichever way) and a **Basket** (several of these bets, on different assets, placed together).
 
 > Given uses Gemini's prediction market API and is **not affiliated with Gemini**. Everything runs on Gemini's sandbox
@@ -43,17 +43,18 @@ Condition A is priced 0.80 / 0.84 (bid / ask) and target B is 0.40 / 0.42. A $10
 
 That is the arithmetic at the best prices. The app sends the refund order with room to fill two cents worse and sizes it
 to cover the stake even then, so on these prices a $100 stake really buys 189.5 and 102.04 contracts: **+$89.50** if the
-target is reached, and the stake and about $2 more back if the condition fails. The quote shows those figures, and a bet
-never costs more than the stake asked for.
+target is reached, and the stake and about $2 more back if the condition fails. The quote shows those figures, and at the
+prices it was quoted at a bet never costs more than the stake asked for (if the price moves before the first order fills,
+it can: see the known limits in `docs/PLAN.md`).
 
 The fair price (no spread, no fees) is 50¢ per $1 and you pay 52.5¢, or 55.4¢ with Gemini's production fees. Every quote
-shows four numbers: the chance both happen, the fair price, what you pay, and what you would get selling right now. The
+shows four numbers: the chance of winning, the fair price, what you pay, and what you would get selling right now. The
 app **refuses** pairs that cost too much over fair (all-in 95¢ or more, or more than 8¢ and 20% over). See
 `executor/README.md` for the rule and the sizing maths.
 
 ### Going down, and the other two products
 
-- **Return Parlay, falling.** Bet that a price stays under a higher level, then falls below a lower one. It is the same bet
+- **Stake Back, falling.** Bet that a price stays under a higher level, then falls below a lower one. It is the same bet
   on the mirror image of the ladder (strikes negated, every book flipped), so the offer rule, the depth guard and the sizing
   are the ones the rising bet uses; only the order sides change: a NO on the lower level is the bet and a YES on the higher
   level is the refund.
@@ -82,7 +83,7 @@ app **refuses** pairs that cost too much over fair (all-in 95¢ or more, or more
 **Why these and not others.** A ladder has a contract at every level, which is what an options chain is, so the price of
 each contract is the market's chance of finishing at or above that level and any payoff that changes only at those levels
 can be built exactly from plain orders. Two orders on two levels can make four shapes. NO on the lower with YES on the
-higher is the Return Parlay when one order is sized to refund the other, and the Breakout when they are the same size. YES
+higher is the Stake Back when one order is sized to refund the other, and the Breakout when they are the same size. YES
 on the lower with NO on the higher is the Range. The other two (YES on both, or NO on both: a bet that pays more the
 further the price goes) are not built. Nothing is packaged, pooled, held or issued by us: each bet is two orders in the
 user's own account, and the page shows every result before they are sent.
@@ -115,6 +116,16 @@ program, and nobody can relabel a call after seeing how it went.
   inside it) or a Breakout on the same two levels (it does not). The time axis is the square root of the time left, so an
   hour, a day and a month fit on one chart and a steady market draws a fan with straight sides. Nothing is modelled; a
   band is left out where a ladder's prices do not reach that far.
+- **Sketch.** The general case of the three products. Set what you want to receive at each price the market can finish
+  at, and the page works out the orders that pay exactly that (a YES at each level where the payout steps up, a NO where it
+  steps down), what they cost at the exchange's prices, what comes back wherever it finishes, and what the market's own
+  odds say the shape is worth. A shape made of two orders is a Stake Back, a Range or a Breakout, and opens in its builder
+  with the levels chosen; anything else is priced and not placed. Nothing is sent from the page.
+- **Your open bets, together.** My bets adds up every open bet on one market, bar by bar, and draws what they net at each
+  finishing price with the market's chance of ending ahead, so three bets on Bitcoin read as one position.
+- **Cautions from the sandbox.** A market that takes bets while some of its levels are still post-only gets a caution on
+  every builder (a bet's second order can be refused there, and the first is then sold back for less), and a basket with
+  two legs on one market gets one too (the first leg's orders can move the prices the next needs). Neither refuses.
 - **What a basket pays.** For the legs on one ladder, the Basket adds their results up bar by bar and draws what the whole
   position nets at each finishing price, with the market's chance of ending ahead and what the bets cost over fair value.
 - **How a basket's legs move together.** Legs on the same ladder are decided by one finishing price, so the chance that
@@ -145,10 +156,10 @@ web (React/Vite)  ──►  executor (Node)  ──►  Gemini REST + WebSocket
 
 | Package | Role |
 |---|---|
-| `executor/` | Quotes, the two-leg bets (parlay either way, range, breakout) with depth guard and sizing, cash-out, a ledger written before every order, settlement, and **reconcile to the cent against Gemini** (it counts Gemini's YES/NO netting). A sandbox liquidity seeder, disclosed (below). 258 tests. |
-| `chain/` | Commit and reveal on Solana, the QuickNode webhook, the leaderboard, a public proof endpoint. 126 tests. |
+| `executor/` | Quotes, the two-leg bets (parlay either way, range, breakout) with depth guard and sizing, cash-out, a ledger written before every order, settlement, and **reconcile to the cent against Gemini** (it counts Gemini's YES/NO netting). A sandbox liquidity seeder, disclosed (below). 399 tests. |
+| `chain/` | Commit and reveal on Solana, the QuickNode webhook, the leaderboard, a public proof endpoint. 152 tests. |
 | `receipts-program/` | `given_receipts`, our Solana program (Anchor): checks each reveal against its commit on chain, refuses a repeat, keeps each handle's score. Deployed on devnet, interface published on chain. 8 tests against the built program. |
-| `web/` | The app: a tab for each product (Return Parlay; Range with its Breakout switch, both over a probability ladder with draggable markers; Basket as a list of legs, with what they pay together at each finishing price), the quote, the market's view of where the price finishes as a histogram and as an expected move, Hunch (your view against the market's, and the bets that fit it), a market index, My bets with cash-out, a leaderboard that counts calls sealed beside calls revealed and can be re-read from the program, and a proof page. Pages update on their own over server-sent events. 551 tests. |
+| `web/` | The app: a tab for each product (Stake Back; Range with its Breakout switch, both over a probability ladder with draggable markers; Basket as a list of legs, with what they pay together at each finishing price), the quote, the market's view of where the price finishes as a histogram and as an expected move, Hunch (your view against the market's, and the bets that fit it), a market index, My bets with cash-out, a leaderboard that counts calls sealed beside calls revealed and can be re-read from the program, and a proof page. Pages update on their own over server-sent events. 791 tests. |
 | `scripts/` | The dev stack, the hosted-demo server (`serve.mjs`: the built app plus an allowlist of API paths on one port), the deploy checker, the browser end-to-end test, and the rehearsals. A recorder and replayer for the stage (`docs/DEPLOY.md`). 52 tests. |
 | `docs/` | `PLAN.md`, `GIVEN.md` (decision log), `CONTRACTS.md` (interfaces), `GEMINI_API_NOTES.md`, `SUBMISSION.md`. |
 
@@ -173,7 +184,9 @@ The app is the fee payer, so users never see a wallet, gas or a seed phrase. Rec
 `2QfQ15Ha5VxvvwWqdsDdCyf6n8uxKfVDHh9GHZdFHeHz` (devnet). Only memos signed by that key count; a reveal counts only if it
 reproduces its commit and is the first for it. The **proof page** (`/verify/:signature`) checks all of this in the browser by
 reading the records straight from a Solana node and recomputing the hash with WebCrypto, without asking our server.
-What it proves: the call was fixed before the result. What it does not: the result itself (called it or missed) is
+What it proves: the seal and the reveal are on Solana, the reveal reproduces the seal, and the seal landed before the reveal
+(and, where the market's code carries its close time, before the market closed). The chain service refuses to seal a call once
+its market has closed (HTTP 409 `too_late`), so a seal cannot follow a result that is already known. What it does not: the result itself (won or lost) is
 attested by our key, with Gemini's order IDs as the evidence. Calls whose first half failed are refunded, void, and never
 scored.
 
@@ -239,8 +252,8 @@ npm run dev         # whole stack with no keys and no SOL: local test exchange +
 npm run dev:quotes  # REAL Gemini sandbox prices and order books with no keys; every order is refused (read-only)
 node scripts/seed-history.mjs all   # optional: a win, a loss and a refund, committed and revealed
 npm run stop        # stop this project's servers
-npm test            # 987 tests: executor 258, chain service 126, web 551, hosted-demo server and scripts 52
-npm run e2e         # the production build in real Chrome (25 checks: every product, cash-out, the histogram and Hunch; e2e:sabotage must fail)
+npm test            # 1,545 tests: executor 424, chain service 156, web 912, hosted-demo server and scripts 53
+npm run e2e         # the production build in real Chrome (26 checks: every product, cash-out, the histogram, Hunch and the Outlook; e2e:sabotage must fail)
 npm run e2e:replay  # records a bet through the real app, then replays it with nothing running behind it (7 checks)
 npm run rehearse    # (also rehearse:chaos) the whole golden path through the real clients, Gemini and Solana stood in on the wire
 npm run preflight   # what is ready for the real thing and what is missing, with the fix for each
@@ -251,7 +264,7 @@ No backend at all: `npm --prefix web run dev` and open http://127.0.0.1:5273/?mo
 demo data (three assets, every product, labelled "Demo data"). CI (`.github/workflows/tests.yml`) runs the typecheck, every
 test, a production build and the rehearsal on each push.
 
-Open http://127.0.0.1:5273. The nav always says what the app is talking to: "Test exchange" with `npm run dev`, "Sandbox · practice money" on Gemini's sandbox, and "Demo data", "Replay", "Quotes only" or "Seeded prices" for the other cases. The footer and the landing page say the same in a sentence.
+Open http://127.0.0.1:5273. The nav carries a label only where what is behind the page changes what you should expect: "Demo data", "Replay", "Quotes only" or "Seeded prices". Gemini's sandbox and the local test exchange (`npm run dev`) carry none, so a bet reads the same on either.
 
 Real services (Gemini sandbox + Solana devnet): put sandbox keys in `.env` (see `executor/README.md`), create the authority
 wallet with `cd chain && npm run keygen`, fund it on devnet, check it with `npm run status`, prove the real path with

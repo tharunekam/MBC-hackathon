@@ -22,8 +22,8 @@ describe('a bet record without a kind is a rising parlay', () => {
 
 describe('words for each product', () => {
   it('names the products as the header does', () => {
-    expect(productName({ product: 'parlay', direction: 'up' })).toBe('Return Parlay');
-    expect(productName({ product: 'parlay', direction: 'down' })).toBe('Return Parlay');
+    expect(productName({ product: 'parlay', direction: 'up' })).toBe('Stake Back');
+    expect(productName({ product: 'parlay', direction: 'down' })).toBe('Stake Back');
     expect(productName({ product: 'range', direction: 'up' })).toBe('Range');
     expect(productName({ product: 'breakout', direction: 'up' })).toBe('Breakout');
   });
@@ -37,23 +37,15 @@ describe('words for each product', () => {
 
 describe('how a settled bet came out', () => {
   const settled = (conditionResolved: 'yes' | 'no', targetResolved: 'yes' | 'no') => ({ settlement: { conditionResolved, targetResolved, payout: 0, pnl: 0, settledAt: '' } });
-  it('is a refund when the first half failed, a win when the target hit, otherwise a loss', () => {
+  it('is a stake back when the first level failed, a win when the target hit, otherwise a loss', () => {
     expect(resultOf(settled('no', 'no'))).toBe('refunded');
     expect(resultOf(settled('yes', 'yes'))).toBe('won');
     expect(resultOf(settled('yes', 'no'))).toBe('lost');
     expect(resultOf({})).toBe(null);
   });
-  it('words it for the product: a range finishes inside or outside', () => {
-    const parlay = { product: 'parlay', direction: 'up' } as const;
-    const range = { product: 'range', direction: 'up' } as const;
-    expect(resultWords(parlay, 'won')).toBe('Won');
-    expect(resultWords(parlay, 'refunded')).toBe('Stake back');
-    expect(resultWords(range, 'won')).toBe('Finished inside');
-    expect(resultWords(range, 'lost')).toBe('Finished outside');
-  });
-  it('a breakout uses the same two words the other way round: outside is the win', () => {
-    const breakout = { product: 'breakout', direction: 'up' } as const;
-    expect(resultWords(breakout, 'won')).toBe('Finished outside');
-    expect(resultWords(breakout, 'lost')).toBe('Finished inside');
+  it('words it the same for every product: Won, Lost, or Stake back', () => {
+    expect(resultWords('won')).toBe('Won');
+    expect(resultWords('lost')).toBe('Lost');
+    expect(resultWords('refunded')).toBe('Stake back');
   });
 });

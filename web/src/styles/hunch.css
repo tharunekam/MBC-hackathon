@@ -1,0 +1,27 @@
+/* Hunch: the few rules the shared builder styles do not cover. */
+
+/* Three figures on one baseline: a label that wraps to two lines pushes nothing, because every value sits at the foot of its cell. */
+.hunch .hunch-figs > div {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 4px;
+}
+.hunch .hunch-figs dd {
+  margin: 0;
+}
+.hunch-skel {
+  height: 160px;
+  margin-top: 16px;
+}
+/* Said once above the page when a link named a market that is no longer listed. */
+.hunch-gone {
+  margin: 0 0 24px;
+  font-size: 14px;
+  color: var(--soft);
+}
+.hunch-gone a {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

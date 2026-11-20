@@ -276,6 +276,22 @@ describe('live stream', () => {
     assert.equal(bets[0]!.status, 'settled');
   });
 
+  it('gives a bet that was sold back its market’s result by itself, with no other bet open', async () => {
+    // Before, the timer only ran while some bet was open or unhedged, so a sold-back bet on its own never got `called` and
+    // its call could never be revealed (and the test exchange's rounds waited on it for good).
+    const r = await rig({ autoSettleMs: 40 });
+    const placed = (await (await fetch(`${r.base}/bets`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(betBody(r.exchange)) })).json()) as { bet: { id: string } };
+    const sold = await fetch(`${r.base}/cashout`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ bet: placed.bet.id }) });
+    assert.equal(sold.status, 200);
+    r.exchange.resolve(1800, 'yes');
+    r.exchange.resolve(1820, 'no');
+    const called = async () => ((await (await fetch(`${r.base}/bets`)).json()) as { bets: Array<{ id: string; status: string; called?: { conditionResolved: string; targetResolved: string } }> }).bets.find((b) => b.id === placed.bet.id);
+    await until('the sold-back bet to get its result', async () => (await called())?.called !== undefined);
+    const bet = await called();
+    assert.equal(bet!.status, 'cashed_out');
+    assert.deepEqual([bet!.called!.conditionResolved, bet!.called!.targetResolved], ['yes', 'no']);
+  });
+
   it('does not read the market list in the background when nobody is watching', async () => {
     const r = await rig({ refreshMs: 30 });
     await sleep(250);
