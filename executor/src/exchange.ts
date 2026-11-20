@@ -1,7 +1,7 @@
 import type { Config, Credentials } from './config.ts';
 import { GeminiPublic, GeminiRest } from './gemini/rest.ts';
 import type { BookTicker, GeminiEvent, GeminiOrderRecord } from './gemini/types.ts';
-import { GeminiWs } from './gemini/ws.ts';
+import { GeminiRefused, GeminiWs } from './gemini/ws.ts';
 import { fmt2 } from './pricing.ts';
 
 export interface OrderRequest {
@@ -24,6 +24,15 @@ export interface OrderResult {
   open: boolean;
 }
 
+/**
+ * What `placeOrder` throws when the venue is known NOT to have taken the order: it answered with a refusal, or the
+ * session was not open to carry it. Any other error from `placeOrder` is a lost answer, and the order may have filled.
+ */
+export class OrderNotSent extends Error {}
+
+/** `placeOrder` was told the order was accepted, but the order's record never appeared, so what it did is not known. */
+export class OrderUnconfirmed extends Error {}
+
 export interface VenueOrder extends OrderResult {
   clientOrderId: string;
   symbol: string;
@@ -38,9 +47,13 @@ export interface VenueOrder extends OrderResult {
  */
 export interface Exchange {
   getEvent(ticker: string): Promise<GeminiEvent>;
+  /** Throws `OrderNotSent` when the venue did not take the order. Any other error means the answer was lost: look the order up by its tag. */
   placeOrder(req: OrderRequest): Promise<OrderResult>;
-  /** Looks an order up by its tag. Null means Gemini has no order with that tag. */
-  findOrder(clientOrderId: string): Promise<OrderResult | null>;
+  /**
+   * Looks an order up by its tag. Null means Gemini has no order with that tag. `recent` looks only at live orders and the
+   * newest few, which is all an order sent moments ago needs and is far quicker than reading the whole history.
+   */
+  findOrder(clientOrderId: string, opts?: { recent?: boolean }): Promise<OrderResult | null>;
   cancelOrder(orderId: string): Promise<void>;
   cash(): Promise<number>;
   /** All orders Gemini has on record for the account (recent history plus live). */
@@ -86,17 +99,27 @@ export class GeminiExchange implements Exchange {
   }
 
   async placeOrder(req: OrderRequest): Promise<OrderResult> {
-    await this.ws.connect();
+    try {
+      await this.ws.connect();
+    } catch (err) {
+      throw new OrderNotSent(err instanceof Error ? err.message : String(err)); // nothing had been sent yet
+    }
     const terminal = req.tif === 'IOC' ? this.ws.waitForTerminal(req.clientOrderId, 8000) : null;
-    const ack = await this.ws.placeOrder({
-      symbol: req.symbol,
-      side: req.side === 'buy' ? 'BUY' : 'SELL',
-      eventOutcome: req.outcome === 'yes' ? 'YES' : 'NO',
-      price: fmt2(req.limitPrice),
-      quantity: fmt2(req.quantity),
-      timeInForce: req.tif,
-      clientOrderId: req.clientOrderId,
-    });
+    let ack;
+    try {
+      ack = await this.ws.placeOrder({
+        symbol: req.symbol,
+        side: req.side === 'buy' ? 'BUY' : 'SELL',
+        eventOutcome: req.outcome === 'yes' ? 'YES' : 'NO',
+        price: fmt2(req.limitPrice),
+        quantity: fmt2(req.quantity),
+        timeInForce: req.tif,
+        clientOrderId: req.clientOrderId,
+      });
+    } catch (err) {
+      // A client-error refusal means no order exists. A 5xx, a timeout or a socket that closed mid-request means nobody knows yet.
+      throw err instanceof GeminiRefused ? new OrderNotSent(err.message) : err;
+    }
     if (terminal) await terminal;
 
     // The order record over REST is the source of truth for what filled.
@@ -106,14 +129,14 @@ export class GeminiExchange implements Exchange {
       if (rec && (req.tif === 'GTC' || rec.status !== 'open')) return toResult(rec);
       await sleep(400);
     }
-    throw new Error(
+    throw new OrderUnconfirmed(
       `Order ${req.clientOrderId} was accepted by Gemini (id ${ack.orderId}) but its record did not appear; ` +
         'check it before retrying.',
     );
   }
 
-  async findOrder(clientOrderId: string): Promise<OrderResult | null> {
-    const rec = await this.rest.findOrder(clientOrderId);
+  async findOrder(clientOrderId: string, opts: { recent?: boolean } = {}): Promise<OrderResult | null> {
+    const rec = await this.rest.findOrder(clientOrderId, { recentOnly: opts.recent });
     return rec ? toResult(rec) : null;
   }
 

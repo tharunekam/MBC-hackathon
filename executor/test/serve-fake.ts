@@ -16,11 +16,23 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApi } from '../src/api.ts';
+import { numberSetting } from '../src/config.ts';
 import { Ledger } from '../src/ledger.ts';
 import { createLiveHub } from '../src/live.ts';
 import { FakeExchange } from './fake.ts';
 
-const PORT = Number(process.env.GIVEN_PORT ?? 8741);
+// The same settings, read the same way as the real executor: a value that is not a usable number stops this server too.
+let PORT: number;
+let MAX_STAKE: number;
+let RATE_LIMIT: number | undefined;
+try {
+  PORT = numberSetting('GIVEN_PORT', process.env.GIVEN_PORT, { atLeast: 0, atMost: 65535, whole: true }) ?? 8741;
+  MAX_STAKE = numberSetting('GIVEN_MAX_STAKE', process.env.GIVEN_MAX_STAKE, { above: 0 }) ?? 100;
+  RATE_LIMIT = numberSetting('GIVEN_RATE_LIMIT_PER_MIN', process.env.GIVEN_RATE_LIMIT_PER_MIN, { above: 0 });
+} catch (err) {
+  console.error(`Refusing to start. ${err instanceof Error ? err.message : String(err)}`);
+  process.exit(1);
+}
 const SPOT = Number(process.env.FAKE_SPOT ?? 63240);
 const SIGMA = 0.012;
 
@@ -129,11 +141,11 @@ const handler = () =>
     autoSettleMs: 3000, // a resolved event settles its bets within seconds, so the page updates by itself
     quoteCacheMs: 1000,
     pinnedUser: process.env.GIVEN_PINNED_USER || 'primary',
-    maxStake: Number(process.env.GIVEN_MAX_STAKE ?? 100),
+    maxStake: MAX_STAKE,
     // The same settings the real executor reads, so a hosted staging run exercises the same protections.
     corsOrigins: (process.env.GIVEN_CORS_ORIGINS ?? '').split(',').map((o) => o.trim().replace(/\/+$/, '')).filter(Boolean),
     trustProxy: process.env.GIVEN_TRUST_PROXY === '1',
-    ...(process.env.GIVEN_RATE_LIMIT_PER_MIN ? { rateLimit: { max: Number(process.env.GIVEN_RATE_LIMIT_PER_MIN), windowMs: 60_000 } } : {}),
+    ...(RATE_LIMIT !== undefined ? { rateLimit: { max: RATE_LIMIT, windowMs: 60_000 } } : {}),
     newId: () => `f${(++n).toString(36)}${Math.random().toString(36).slice(2, 5)}`,
   });
 let api = handler();

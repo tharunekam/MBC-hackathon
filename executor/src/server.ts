@@ -12,6 +12,7 @@ import { resolve } from 'node:path';
 import { createApi } from './api.ts';
 import { recoverBets } from './bets.ts';
 import { isLoopback, loadConfig, requireUser } from './config.ts';
+import type { Config } from './config.ts';
 import { GeminiExchange } from './exchange.ts';
 import type { Exchange } from './exchange.ts';
 import { GeminiPublic } from './gemini/rest.ts';
@@ -19,7 +20,14 @@ import { Ledger } from './ledger.ts';
 import { createLiveHub } from './live.ts';
 import { ReadOnlyExchange } from './readonly.ts';
 
-const config = loadConfig();
+let config: Config;
+try {
+  config = loadConfig();
+} catch (err) {
+  // A setting that is wrong (a stake cap of "$25", say) is reported plainly and nothing is started.
+  console.error(`Refusing to start. ${err instanceof Error ? err.message : String(err)}`);
+  process.exit(1);
+}
 
 // A network-facing executor holds trading keys. It must be sandbox-only and must not let the browser pick the account or the size.
 if (!isLoopback(config.host)) {
@@ -61,7 +69,7 @@ const api = createApi({
   readOnly: config.readOnly,
   live,
   quoteCacheMs: 1500,
-  autoSettleMs: Number.isFinite(config.autoSettleMs) ? config.autoSettleMs : 0,
+  autoSettleMs: config.autoSettleMs,
   markets: { listEvents: () => pub.listEvents('active'), getEvent: (ticker) => pub.getEvent(ticker) },
   isSandbox: config.isSandbox,
   feeCoef: config.takerFeeCoef,

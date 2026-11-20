@@ -23,6 +23,12 @@ export interface PlaceOrderParams {
   clientOrderId: string;
 }
 
+/**
+ * Gemini answered a request with a client error (status 400 to 499), or the socket was not open to carry it: whatever was
+ * asked was not done. Any other failure (a 5xx, a closed socket, a timeout) is a plain Error: the work may have been done.
+ */
+export class GeminiRefused extends Error {}
+
 export interface PlaceOrderAck {
   orderId: string;
   status: string;
@@ -146,7 +152,7 @@ export class GeminiWs extends EventEmitter {
 
   private send(method: string, params: unknown, timeoutMs = 10_000): Promise<unknown> {
     const ws = this.ws;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return Promise.reject(new Error('Gemini WebSocket is not open'));
+    if (!ws || ws.readyState !== WebSocket.OPEN) return Promise.reject(new GeminiRefused('Gemini WebSocket is not open'));
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -172,8 +178,12 @@ export class GeminiWs extends EventEmitter {
       const p = this.pending.get(msg.id)!;
       this.pending.delete(msg.id);
       clearTimeout(p.timer);
+      const detail = JSON.stringify(msg.error ?? msg).slice(0, 300);
       if (msg.status === 200) p.resolve(msg.result ?? {});
-      else p.reject(new Error(`Gemini rejected the request: ${JSON.stringify(msg.error ?? msg).slice(0, 300)}`));
+      // Only a client error (400 to 499) says the request was understood and turned down. A 5xx, or any other status, is
+      // what a gateway answers for work that may have been done: the answer is lost, so the order is looked up by its tag.
+      else if (typeof msg.status === 'number' && msg.status >= 400 && msg.status < 500) p.reject(new GeminiRefused(`Gemini rejected the request: ${detail}`));
+      else p.reject(new Error(`Gemini answered the request with status ${String(msg.status)}: ${detail}`));
       return;
     }
 

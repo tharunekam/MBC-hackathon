@@ -32,7 +32,8 @@ function setup(strikes: ConstructorParameters<typeof FakeExchange>[1] = LADDER) 
   const exchange = new FakeExchange('ETHTEST', strikes);
   const ledger = new Ledger(join(mkdtempSync(join(tmpdir(), 'given-products-')), 'ledger.json'));
   let n = 0;
-  const deps = { exchange, ledger, newId: () => `t${++n}`, now: () => new Date('2026-11-17T23:10:00Z'), waiveMarkup: false };
+  // lookupWaitsMs: after a lost answer an order is looked up by its tag at once, not over several seconds.
+  const deps = { exchange, ledger, newId: () => `t${++n}`, now: () => new Date('2026-11-17T23:10:00Z'), waiveMarkup: false, lookupWaitsMs: [0, 0] };
   return { exchange, ledger, deps };
 }
 
@@ -186,9 +187,15 @@ for (const [name, id, place] of [
     const { exchange, ledger, deps } = setup();
     await ensureBaseline(exchange, ledger, 'primary');
     exchange.failAfterSend = `gv-${id}-b`; // the first order reaches the venue, then the connection dies
+    const lookup = exchange.findOrder.bind(exchange);
+    exchange.findOrder = async () => {
+      throw new Error('fetch failed'); // and Gemini cannot be asked about it either, so the answer stays lost
+    };
     const bet = await place(exchange, deps);
-    assert.equal(bet.status, 'failed'); // we could not confirm it...
-    assert.equal(bet.legs[0]!.status, 'error');
+    exchange.findOrder = lookup;
+    assert.equal(bet.status, 'unhedged'); // we could not confirm it, so the bet says so and sends nothing more...
+    assert.equal(bet.legs[0]!.status, 'unknown');
+    assert.equal(bet.legs.length, 1);
     assert.ok(exchange.orders.get(`gv-${id}-b`)!.filledQuantity > 0); // ...but it did fill
 
     // Simulate the crash state a restart would see: order recorded as sent, bet still placing.

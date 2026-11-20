@@ -10,10 +10,15 @@
  *   GET  /quote?product=breakout&event=&low=&high=&stake=[&user=]              a breakout (the range's opposite)
  *   POST /bets            {user, event, condition, target, stake, direction?, maxPrice?, slippageTicks?, onHedgeFail?}
  *   POST /bets            {product: "range" | "breakout", user, event, low, high, stake, maxPrice?, slippageTicks?}
- *   POST /baskets         {user, name?, legs: [{product, event, condition, target | low, high, stake, direction?}]}
+ *   POST /baskets         {user, name?, legs: [{product, event, condition, target | low, high, stake, direction?, maxPrice?}]}
+ *                         Both POSTs take an optional "requestId" (8 to 64 of A-Z a-z 0-9 _ -). Sent again, it answers with the
+ *                         bet (or basket) it placed the first time, 200 and "repeated": true, and places nothing. Sent again for
+ *                         a different request (another product, market, levels, direction or stake) it answers 409
+ *                         "request_id_reused". "maxPrice", slippage, "onHedgeFail" and a basket's name do not count as different.
  *   GET  /bets[?user=]
  *   GET  /cashout?bet=ID                                     what selling an open bet back would bring in now
- *   POST /cashout         {bet, minProceeds?, slippageTicks?}   sell it back: two sell orders
+ *   POST /cashout         {bet, minProceeds?, slippageTicks?}   sell it back: two sell orders. 409 "sale_unconfirmed" when the first sell
+ *                         may have gone through (the bet is held as unhedged and nothing more is sent)
  *   POST /settle
  *   GET  /flow[?user=]
  *   GET  /reconcile[?user=]
@@ -22,7 +27,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { BasketRefused, MAX_BASKET_LEGS, MIN_BASKET_LEGS, placeBasket } from './basket.ts';
 import type { BasketLeg } from './basket.ts';
-import { BetRefused, ReviewError, isScorable, placeConditionalBet, recordReviewedPayout, settleBets } from './bets.ts';
+import { BetRefused, ReviewError, hasUnresolvedLeg, holdInterrupted, isScorable, logUnreadableBook, placeConditionalBet, recheckUnresolved, recordReviewedPayout, settleBets } from './bets.ts';
 import { CashOutRefused, cashOutBet, quoteCashOut } from './cashout.ts';
 import type { Exchange } from './exchange.ts';
 import { betFlow, flowTotals } from './flow.ts';
@@ -118,6 +123,8 @@ export interface ApiDeps {
   trustProxy?: boolean;
   now?: () => Date;
   newId?: () => string;
+  /** Milliseconds to wait before each look-up of an order whose answer was lost (see sendLeg). Tests shorten it. */
+  orderLookupWaitsMs?: number[];
 }
 
 class HttpError extends Error {
@@ -147,7 +154,10 @@ const pairView = (p: LinkedPair, direction?: Direction) => {
   };
 };
 const legView = (r: Rung) => ({ symbol: r.symbol, label: r.label, strike: r.strike, bid: r.bid, ask: r.ask });
-const betView = (bet: BetRecord) => ({ ...bet, scorable: isScorable(bet), flow: betFlow(bet) });
+const betView = (bet: BetRecord) => {
+  const { requestKey: _kept, ...shown } = bet; // the fingerprint is for repeat checks only
+  return { ...shown, scorable: isScorable(bet), flow: betFlow(bet) };
+};
 
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
@@ -194,7 +204,18 @@ export function createApi(deps: ApiDeps): ApiHandler {
     waiveMarkup: deps.waiveMarkup,
     now: deps.now,
     newId: deps.newId,
+    lookupWaitsMs: deps.orderLookupWaitsMs,
   });
+
+  // A safeguard that was set to something that is not a usable number would silently switch itself off (every comparison
+  // with NaN is false), so refuse to start instead.
+  if (deps.maxStake !== undefined && !(Number.isFinite(deps.maxStake) && deps.maxStake > 0)) {
+    throw new Error(`maxStake must be a number of dollars above 0, got ${String(deps.maxStake)}.`);
+  }
+  if (deps.rateLimit !== undefined && !(Number.isFinite(deps.rateLimit.max) && deps.rateLimit.max > 0 && Number.isFinite(deps.rateLimit.windowMs) && deps.rateLimit.windowMs > 0)) {
+    throw new Error(`rateLimit needs a max and a windowMs above 0, got ${JSON.stringify(deps.rateLimit)}.`);
+  }
+  if (!Number.isFinite(deps.feeCoef) || deps.feeCoef < 0) throw new Error(`feeCoef must be a number of 0 or more, got ${String(deps.feeCoef)}.`);
 
   // One bet (or settle) at a time per user: orders for the same account never interleave.
   const queues = new Map<string, Promise<unknown>>();
@@ -202,6 +223,38 @@ export function createApi(deps: ApiDeps): ApiHandler {
     const next = (queues.get(key) ?? Promise.resolve()).then(job, job);
     queues.set(key, next.catch(() => undefined));
     return next;
+  };
+
+  /** The kill switch. Checked when a request arrives and again when its turn in the queue comes, so a pause stops bets already waiting. */
+  const refuseIfPaused = (): void => {
+    if (deps.isPaused?.()) throw new HttpError(503, 'paused', 'Betting is paused for a moment. Try again soon.');
+  };
+
+  /** The optional "requestId" that makes a POST safe to repeat. */
+  const requestIdOf = (v: unknown): string | undefined => {
+    if (v === undefined || v === null) return undefined;
+    if (typeof v !== 'string' || !/^[A-Za-z0-9_-]{8,64}$/.test(v)) {
+      throw new HttpError(400, 'bad_request_id', '"requestId" must be 8 to 64 letters, digits, "_" or "-".');
+    }
+    return v;
+  };
+  /** The bet a request id already placed for this user (a bet that came in a basket is that basket's, not a bet request's). */
+  const betForRequest = (user: string, requestId: string | undefined): BetRecord | undefined =>
+    requestId === undefined ? undefined : deps.ledger.data.bets.find((b) => b.user === user && b.clientRequestId === requestId && !b.basket);
+  const basketForRequest = (user: string, requestId: string | undefined) =>
+    requestId === undefined ? undefined : Object.values(deps.ledger.data.baskets ?? {}).find((b) => b.user === user && b.clientRequestId === requestId);
+
+  // What makes a request "the same" is what the person chose: the product, the market, the two levels, the direction and the
+  // stake to the cent. The price limit, the slippage, what to do if the hedge fails and a basket's name are not choices.
+  const choiceOf = (product: string, event: string, first: string, second: string, direction: string, stake: number): unknown[] =>
+    [product, event, first, second, direction, Math.round(stake * 100)];
+  const requestKeyOf = (choices: unknown[][]): string => createHash('sha256').update(JSON.stringify(choices)).digest('hex').slice(0, 16);
+  const idReused = () => new HttpError(409, 'request_id_reused', 'That request id was already used for a different request. Send a new request id for a new bet.');
+  /** The answer to a repeat of a bet's request: the bet itself, unless the id now stands for another choice. */
+  const repeatOfBet = (prior: BetRecord, key: string | undefined) => {
+    // A bet recorded before fingerprints existed has nothing to compare, so a repeat of its id is taken as the same request.
+    if (prior.requestKey !== undefined && prior.requestKey !== key) throw idReused();
+    return { status: 200, body: { bet: betView(prior), stakeReduced: prior.stakeReduced ?? null, repeated: true } };
   };
 
   const requireUser = (given: unknown): string => {
@@ -217,7 +270,8 @@ export function createApi(deps: ApiDeps): ApiHandler {
     return v.trim();
   };
   const stakeOf = (v: unknown): number => {
-    const stake = typeof v === 'string' && v.trim() !== '' ? Number(v) : v;
+    // A string is a plain dollar amount ("12", "12.5"), not what Number() would also read: "0x10", "+5", "2e0".
+    const stake = typeof v === 'string' && /^(\d+\.?\d*|\.\d+)$/.test(v.trim()) ? Number(v) : typeof v === 'string' ? NaN : v;
     if (typeof stake !== 'number' || !Number.isFinite(stake) || stake <= 0) {
       throw new HttpError(400, 'invalid_stake', '"stake" must be a positive dollar amount.');
     }
@@ -397,6 +451,12 @@ export function createApi(deps: ApiDeps): ApiHandler {
     return user !== undefined && deps.users.includes(user) ? user : undefined;
   };
 
+  /** A quote whose order books could not be read says so in its own words; the exchange's text goes to the log. */
+  const depthUnavailable = (err: unknown) => {
+    logUnreadableBook(err);
+    return { unavailable: 'The live order book could not be read just now.' };
+  };
+
   async function quoteNow(q: URLSearchParams) {
     const product = productOf(q.get('product'));
     if (product === 'range') return quoteRange(q);
@@ -446,7 +506,7 @@ export function createApi(deps: ApiDeps): ApiHandler {
             maxStake: Math.round(planForQuantity(most, pair.b.ask, pair.a.bid, deps.feeCoef, DEFAULT_SLIP).cost * 100) / 100,
           };
         } catch (err) {
-          body.depth = { unavailable: err instanceof Error ? err.message : String(err) };
+          body.depth = depthUnavailable(err);
         }
       }
       const plan = planForQuantity(quantity, pair.b.ask, pair.a.bid, deps.feeCoef, DEFAULT_SLIP);
@@ -505,7 +565,7 @@ export function createApi(deps: ApiDeps): ApiHandler {
             maxStake: Math.round(planRange(most, pair.low.ask, pair.high.bid, deps.feeCoef).cost * 100) / 100,
           };
         } catch (err) {
-          body.depth = { unavailable: err instanceof Error ? err.message : String(err) };
+          body.depth = depthUnavailable(err);
         }
       }
       const plan = planRange(contracts, pair.low.ask, pair.high.bid, deps.feeCoef);
@@ -564,7 +624,7 @@ export function createApi(deps: ApiDeps): ApiHandler {
             maxStake: Math.round(planBreakout(most, pair.low.bid, pair.high.ask, deps.feeCoef).cost * 100) / 100,
           };
         } catch (err) {
-          body.depth = { unavailable: err instanceof Error ? err.message : String(err) };
+          body.depth = depthUnavailable(err);
         }
       }
       const plan = planBreakout(contracts, pair.low.bid, pair.high.ask, deps.feeCoef);
@@ -590,13 +650,28 @@ export function createApi(deps: ApiDeps): ApiHandler {
     throw err;
   }
 
-  /** The numbers every bet request carries, whichever product it is for. */
-  function limitsOf(body: Record<string, unknown>) {
-    const maxPrice = body.maxPrice === undefined || body.maxPrice === null ? undefined : Number(body.maxPrice);
-    const slippageTicks = body.slippageTicks === undefined || body.slippageTicks === null ? undefined : Number(body.slippageTicks);
+  /**
+   * An error that is not a refusal (a ledger write that failed, say) can leave the bet it came from "placing" for good, with an
+   * order out and nothing to say what became of it. The bets this request added are put right: failed if no order went out,
+   * otherwise held with the unknown note, so a repeat of the request is told the truth instead of "placing".
+   */
+  function holdUnfinished(d: ReturnType<typeof betDeps>, user: string, from: number): void {
+    holdInterrupted(d, deps.ledger.data.bets.slice(from).filter((b) => b.user === user && b.status === 'placing'));
+  }
+
+  /** The price limit a bet or a basket leg may carry: the most it may cost per $1. */
+  function maxPriceOf(v: unknown): number | undefined {
+    const maxPrice = v === undefined || v === null ? undefined : Number(v);
     if (maxPrice !== undefined && !(maxPrice > 0 && maxPrice < 1)) {
       throw new HttpError(400, 'invalid_max_price', '"maxPrice" must be between 0 and 1.');
     }
+    return maxPrice;
+  }
+
+  /** The numbers every bet request carries, whichever product it is for. */
+  function limitsOf(body: Record<string, unknown>) {
+    const maxPrice = maxPriceOf(body.maxPrice);
+    const slippageTicks = body.slippageTicks === undefined || body.slippageTicks === null ? undefined : Number(body.slippageTicks);
     if (slippageTicks !== undefined && !(Number.isInteger(slippageTicks) && slippageTicks >= 0 && slippageTicks <= 10)) {
       throw new HttpError(400, 'invalid_slippage', '"slippageTicks" must be a whole number from 0 to 10.');
     }
@@ -604,10 +679,11 @@ export function createApi(deps: ApiDeps): ApiHandler {
   }
 
   async function placeBet(body: Record<string, unknown>) {
-    if (deps.isPaused?.()) throw new HttpError(503, 'paused', 'Betting is paused for a moment. Try again soon.');
+    refuseIfPaused();
     const user = requireUser(body.user);
+    const requestId = requestIdOf(body.requestId);
     const product = productOf(body.product);
-    if (product === 'range' || product === 'breakout') return placeRange(user, body, product);
+    if (product === 'range' || product === 'breakout') return placeRange(user, body, product, requestId);
     const request = {
       user,
       eventTicker: text(body.event, 'event'),
@@ -617,22 +693,32 @@ export function createApi(deps: ApiDeps): ApiHandler {
       stake: stakeOf(body.stake),
       ...limitsOf(body),
       onHedgeFail: body.onHedgeFail === 'leave' ? ('leave' as const) : ('unwind' as const),
+      ...(requestId ? { clientRequestId: requestId } : {}),
     };
+    const requestKey = requestId
+      ? requestKeyOf([choiceOf('parlay', request.eventTicker, request.conditionSymbol, request.targetSymbol, request.direction, request.stake)])
+      : undefined;
     await getEvent(request.eventTicker); // a clear 404 for an unknown event, before anything else
     return queued(user, async () => {
+      // Looked for here, in the queue, so a repeat sent while the first is still being placed waits for it and finds it.
+      const prior = betForRequest(user, requestId);
+      if (prior) return repeatOfBet(prior, requestKey);
+      refuseIfPaused();
       const d = betDeps(user);
       await ensureBaseline(d.exchange, deps.ledger, user, now);
+      const before = deps.ledger.data.bets.length;
       try {
-        const bet = await placeConditionalBet(d, request);
+        const bet = await placeConditionalBet(d, { ...request, requestKey });
         return { status: 201, body: { bet: betView(bet), stakeReduced: bet.stakeReduced ?? null } };
       } catch (err) {
+        holdUnfinished(d, user, before);
         return refusal(err);
       }
     });
   }
 
   /** A range or a breakout: the same request (a lower and a higher strike and a stake), placed by its own order path. */
-  async function placeRange(user: string, body: Record<string, unknown>, product: 'range' | 'breakout') {
+  async function placeRange(user: string, body: Record<string, unknown>, product: 'range' | 'breakout', requestId: string | undefined) {
     const request = {
       user,
       eventTicker: text(body.event, 'event'),
@@ -641,15 +727,22 @@ export function createApi(deps: ApiDeps): ApiHandler {
       stake: stakeOf(body.stake),
       ...limitsOf(body),
       onFail: body.onFail === 'leave' ? ('leave' as const) : ('unwind' as const),
+      ...(requestId ? { clientRequestId: requestId } : {}),
     };
+    const requestKey = requestId ? requestKeyOf([choiceOf(product, request.eventTicker, request.lowSymbol, request.highSymbol, '', request.stake)]) : undefined;
     await getEvent(request.eventTicker);
     return queued(user, async () => {
+      const prior = betForRequest(user, requestId);
+      if (prior) return repeatOfBet(prior, requestKey);
+      refuseIfPaused();
       const d = betDeps(user);
       await ensureBaseline(d.exchange, deps.ledger, user, now);
+      const before = deps.ledger.data.bets.length;
       try {
-        const bet = product === 'breakout' ? await placeBreakoutBet(d, request) : await placeRangeBet(d, request);
+        const bet = product === 'breakout' ? await placeBreakoutBet(d, { ...request, requestKey }) : await placeRangeBet(d, { ...request, requestKey });
         return { status: 201, body: { bet: betView(bet), stakeReduced: bet.stakeReduced ?? null } };
       } catch (err) {
+        holdUnfinished(d, user, before);
         return refusal(err);
       }
     });
@@ -676,25 +769,50 @@ export function createApi(deps: ApiDeps): ApiHandler {
         throw err;
       }
     })();
+    const maxPrice = (() => {
+      try {
+        return maxPriceOf(leg.maxPrice);
+      } catch (err) {
+        if (err instanceof HttpError) throw new HttpError(err.status, err.code, `Leg ${index + 1}: ${err.message}`, { leg: index });
+        throw err;
+      }
+    })();
+    const limit = maxPrice === undefined ? {} : { maxPrice };
     const product = productOf(leg.product);
-    if (product === 'range' || product === 'breakout') return { product, eventTicker: at('event'), lowSymbol: at('low'), highSymbol: at('high'), stake };
-    return { product: 'parlay', direction: directionOf(leg.direction), eventTicker: at('event'), conditionSymbol: at('condition'), targetSymbol: at('target'), stake };
+    if (product === 'range' || product === 'breakout') return { product, eventTicker: at('event'), lowSymbol: at('low'), highSymbol: at('high'), stake, ...limit };
+    return { product: 'parlay', direction: directionOf(leg.direction), eventTicker: at('event'), conditionSymbol: at('condition'), targetSymbol: at('target'), stake, ...limit };
   }
 
   async function placeBasketRoute(body: Record<string, unknown>) {
-    if (deps.isPaused?.()) throw new HttpError(503, 'paused', 'Betting is paused for a moment. Try again soon.');
+    refuseIfPaused();
     const user = requireUser(body.user);
+    const requestId = requestIdOf(body.requestId);
     if (!Array.isArray(body.legs) || body.legs.length < MIN_BASKET_LEGS || body.legs.length > MAX_BASKET_LEGS) {
       throw new HttpError(400, 'invalid_legs', `A basket needs from ${MIN_BASKET_LEGS} to ${MAX_BASKET_LEGS} legs.`);
     }
     const legs = body.legs.map(basketLeg); // each leg's stake is held to the demo's per-bet cap here, as for a single bet
     const name = typeof body.name === 'string' && body.name.trim() !== '' ? body.name.trim().slice(0, 40) : undefined;
     for (const ticker of new Set(legs.map((l) => l.eventTicker))) await getEvent(ticker);
+    // The legs as the person chose them, in order: the price limits and the basket's name are not part of the choice.
+    const requestKey = requestId
+      ? requestKeyOf(legs.map((l) => (l.product === 'parlay'
+        ? choiceOf('parlay', l.eventTicker, l.conditionSymbol, l.targetSymbol, l.direction ?? 'up', l.stake)
+        : choiceOf(l.product, l.eventTicker, l.lowSymbol, l.highSymbol, '', l.stake))))
+      : undefined;
     return queued(user, async () => {
+      const prior = basketForRequest(user, requestId);
+      if (prior && prior.requestKey !== undefined && prior.requestKey !== requestKey) throw idReused(); // a record from before fingerprints is taken as the same
+      if (prior) {
+        const bets = deps.ledger.data.bets.filter((b) => b.basket?.id === prior.id);
+        // A basket the process died in the middle of is reported as it stands: the legs it never reached are not placed now.
+        const failed = prior.failed ?? (prior.done || bets.length >= prior.size ? null : { index: bets.length, code: 'interrupted', message: 'This basket was interrupted before every bet was placed. The rest were not placed.' });
+        return { status: 200, body: { basket: { id: prior.id, name: prior.name ?? null, size: prior.size, failed }, bets: bets.map(betView), repeated: true } };
+      }
+      refuseIfPaused();
       const d = betDeps(user);
       await ensureBaseline(d.exchange, deps.ledger, user, now);
       try {
-        const result = await placeBasket(d, { user, name, legs });
+        const result = await placeBasket(d, { user, name, legs, clientRequestId: requestId, requestKey });
         return {
           status: 201,
           body: { basket: { id: result.id, name: result.name ?? null, size: result.size, failed: result.failed }, bets: result.bets.map(betView) },
@@ -722,7 +840,7 @@ export function createApi(deps: ApiDeps): ApiHandler {
 
   /** Sells a bet back: one sell order per leg. A refusal is 422 with the quote it was refused on, like a refused bet. */
   async function cashOut(body: Record<string, unknown>) {
-    if (deps.isPaused?.()) throw new HttpError(503, 'paused', 'Betting is paused for a moment. Try again soon.');
+    refuseIfPaused();
     const bet = betToCashOut(body.bet);
     const minProceeds = body.minProceeds === undefined || body.minProceeds === null ? undefined : Number(body.minProceeds);
     if (minProceeds !== undefined && !(Number.isFinite(minProceeds) && minProceeds >= 0)) {
@@ -731,12 +849,14 @@ export function createApi(deps: ApiDeps): ApiHandler {
     const { slippageTicks } = limitsOf(body);
     // Queued with that account's bets and settles, so its sells never interleave with another order.
     return queued(bet.user, async () => {
+      refuseIfPaused();
       try {
         const done = await cashOutBet(betDeps(bet.user), bet, { minProceeds, slippageTicks });
         return { status: 200, body: { bet: betView(done), cashOut: done.cashOut ?? null } };
       } catch (err) {
         if (err instanceof CashOutRefused) {
-          const status = err.code === 'not_open' ? 409 : 422;
+          // 409: the bet is not in a state to be sold, or its first sale may have gone through. 422: refused on the numbers.
+          const status = err.code === 'not_open' || err.code === 'sale_unconfirmed' ? 409 : 422;
           return { status, body: { error: err.message, code: err.code, quote: err.quote ?? null } };
         }
         throw err;
@@ -760,6 +880,7 @@ export function createApi(deps: ApiDeps): ApiHandler {
         settled: done.settled.map(betView),
         needsReview: done.needsReview.map(betView),
         called: done.called.map(betView),
+        unreadable: done.unreadable,
         stillOpen: deps.ledger.data.bets.filter((b) => b.status === 'open' || b.status === 'unhedged').length,
       };
     });
@@ -790,7 +911,7 @@ export function createApi(deps: ApiDeps): ApiHandler {
       const d = betDeps(user);
       await ensureBaseline(d.exchange, deps.ledger, user, now);
       const report = await reconcile(d.exchange, deps.ledger, user);
-      const checked = deps.ledger.legs(user).filter((l) => l.status !== 'error').length;
+      const checked = deps.ledger.legs(user).length;
       return { venue, checkedAt: now().toISOString(), ordersChecked: checked, ordersMatched: Math.max(0, checked - report.mismatches.length), ...report };
     });
   }
@@ -853,15 +974,36 @@ export function createApi(deps: ApiDeps): ApiHandler {
     refresher.unref();
   });
 
+  /**
+   * Bets with an order nobody could account for (its answer was lost and the exchange could not say what became of it) are
+   * looked up by tag again, not only when the process starts. Each user's look is queued with that user's bets, so it never
+   * meets an order that is still in flight; see `recheckUnresolved` for what it leaves alone.
+   */
+  const rechecked = new Map<string, number>();
+  async function recheckDoubtful(): Promise<number> {
+    let fixed = 0;
+    for (const user of new Set(deps.ledger.data.bets.filter(hasUnresolvedLeg).map((b) => b.user))) {
+      if (deps.users.includes(user)) fixed += await queued(user, () => recheckUnresolved(betDeps(user), user, rechecked));
+    }
+    return fixed;
+  }
+
   // Finished bets are settled by themselves, so a bet flips to settled on the page when its event closes.
   let autoSettle: NodeJS.Timeout | undefined;
   if (deps.autoSettleMs && deps.autoSettleMs > 0 && !deps.readOnly) {
     autoSettle = setInterval(() => {
-      if (!deps.ledger.data.bets.some((b) => b.status === 'open' || b.status === 'unhedged')) return;
-      settle().then(
-        (done) => (done.settled.length > 0 || done.needsReview.length > 0 || done.called.length > 0) && deps.live?.publish('bets'),
-        (err: unknown) => console.error(`[executor] auto-settle failed: ${err instanceof Error ? err.message : String(err)}`),
-      );
+      void (async () => {
+        try {
+          if ((await recheckDoubtful()) > 0) deps.live?.publish('bets');
+        } catch (err) {
+          console.error(`[executor] re-check of unconfirmed orders failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        if (!deps.ledger.data.bets.some((b) => b.status === 'open' || b.status === 'unhedged')) return;
+        settle().then(
+          (done) => (done.settled.length > 0 || done.needsReview.length > 0 || done.called.length > 0) && deps.live?.publish('bets'),
+          (err: unknown) => console.error(`[executor] auto-settle failed: ${err instanceof Error ? err.message : String(err)}`),
+        );
+      })();
     }, deps.autoSettleMs);
     autoSettle.unref();
   }
@@ -981,9 +1123,11 @@ export function createApi(deps: ApiDeps): ApiHandler {
       } catch (err) {
         if (err instanceof HttpError) return send(err.status, { error: err.message, code: err.code, ...err.extra });
         const message = err instanceof Error ? err.message : String(err);
-        // Anything else came from Gemini or the network; say so plainly and never leak a stack trace.
+        // Whatever else was thrown is for the log, not the caller: it can hold a file path, the exchange's own words or a stack.
+        console.error(`[executor] ${req.method ?? 'GET'} ${(req.url ?? '/').split('?')[0]} failed: ${message}`);
         const fromGemini = /Gemini|WebSocket|fetch failed|timed out|aborted/i.test(message);
-        send(fromGemini ? 502 : 500, { error: message, code: fromGemini ? 'gemini_error' : 'internal_error' });
+        if (fromGemini) send(502, { error: 'Gemini did not answer. Try again in a moment.', code: 'gemini_error' });
+        else send(500, { error: 'internal', message: 'Something went wrong on our side.' });
       }
     })();
   };

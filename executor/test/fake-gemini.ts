@@ -12,7 +12,8 @@
  * It is written from the documented protocol and the client's own notes, so it proves the client is self-consistent
  * and survives the failures below; it cannot prove Gemini agrees. The sandbox run does that.
  *
- * Faults: `rejectNext`, `dropAfterPlace`, `nowOffsetSec`.
+ * Faults: `rejectNext`, `dropAfterPlace`, `nowOffsetSec`, `hideOrders`, `failStatusNext` (an order answered with a status
+ * instead of the ack, with or without the order having run), `dropBeforeAck` (the order runs, the socket closes unanswered).
  */
 import { createHmac } from 'node:crypto';
 import { createServer } from 'node:http';
@@ -43,7 +44,21 @@ const sign = (secret: string, payload: string) => createHmac('sha384', secret).u
 
 export async function startFakeGemini(opts: FakeGeminiOptions) {
   const orders: Array<GeminiOrderRecord & { rawId: string }> = [];
-  const state = { rejectNext: null as string | null, dropAfterPlace: false, nowOffsetSec: 0, nextId: 0n, requests: [] as string[], wsAuthFailures: 0, ordersSubscribed: false };
+  // hideOrders: accepted orders do not show in the REST order lists (a lagging history), so placing one cannot confirm it.
+  const state = {
+    rejectNext: null as string | null,
+    /** The next order is answered with this status (and an error body) instead of the ack. `ran`: the order was executed first, as a gateway that fails after its backend worked would. */
+    failStatusNext: null as { status: number; ran: boolean } | null,
+    /** The next order is executed and the socket is closed without any answer. */
+    dropBeforeAck: false,
+    dropAfterPlace: false,
+    hideOrders: false,
+    nowOffsetSec: 0,
+    nextId: 0n,
+    requests: [] as string[],
+    wsAuthFailures: 0,
+    ordersSubscribed: false,
+  };
   const serverNow = () => Math.floor(Date.now() / 1000) + state.nowOffsetSec;
   const newId = () => String(123456789012345000n + ++state.nextId * 7n); // ends in digits a JS number would round
 
@@ -97,13 +112,13 @@ export async function startFakeGemini(opts: FakeGeminiOptions) {
     if (url.pathname === '/v1/balances') return json(res, 200, JSON.stringify([{ type: 'exchange', currency: 'USD', amount: (opts.cash ?? 1000).toFixed(2), available: (opts.cash ?? 1000).toFixed(2) }]));
     if (url.pathname === '/v1/prediction-markets/terms/status') return json(res, 200, JSON.stringify({ hasAcceptedLatest: true }));
     if (url.pathname === '/v1/prediction-markets/orders/active') {
-      return json(res, 200, JSON.stringify({ orders: orders.filter((o) => o.status === 'open').map(toWire) }).replace(/"orderId":"(\d+)"/g, '"orderId":$1'));
+      return json(res, 200, JSON.stringify({ orders: orders.filter((o) => o.status === 'open' && !state.hideOrders).map(toWire) }).replace(/"orderId":"(\d+)"/g, '"orderId":$1'));
     }
     if (url.pathname === '/v1/prediction-markets/orders/history') {
       const body = readBody(req);
       const limit = Number(body.limit ?? 50);
       const offset = Number(body.offset ?? 0);
-      const newestFirst = orders.filter((o) => o.status !== 'open').slice().reverse();
+      const newestFirst = orders.filter((o) => o.status !== 'open' && !state.hideOrders).slice().reverse();
       return json(res, 200, JSON.stringify({ orders: newestFirst.slice(offset, offset + limit).map(toWire) }).replace(/"orderId":"(\d+)"/g, '"orderId":$1'));
     }
     if (url.pathname === '/v1/prediction-markets/positions') return json(res, 200, JSON.stringify({ positions: [] }));
@@ -157,6 +172,9 @@ export async function startFakeGemini(opts: FakeGeminiOptions) {
         state.rejectNext = null;
         return ws.send(JSON.stringify({ id: msg.id, status: 400, error: { code: 1013, msg: reason } }));
       }
+      const fault = state.failStatusNext;
+      state.failStatusNext = null;
+      if (fault && !fault.ran) return ws.send(JSON.stringify({ id: msg.id, status: fault.status, error: { code: 9000 + fault.status, msg: 'upstream failure' } }));
       const book = opts.books.get(p.symbol.toUpperCase());
       const limit = Number(p.price);
       const want = Number(p.quantity);
@@ -177,8 +195,14 @@ export async function startFakeGemini(opts: FakeGeminiOptions) {
         orderId: rawId, rawId, globalOrderId: rawId, clientOrderId: p.clientOrderId, status, symbol: p.symbol.toUpperCase(), side: p.side.toLowerCase() as 'buy' | 'sell', outcome: p.eventOutcome.toLowerCase() as 'yes' | 'no',
         quantity: want.toFixed(2), filledQuantity: filled.toFixed(2), remainingQuantity: (want - filled).toFixed(2), price: p.price, avgExecutionPrice: filled > 0 && price !== null ? price.toFixed(4) : null, timeInForce: p.timeInForce, createdAt: new Date().toISOString(),
       });
-      // The ack carries the id as a bare number, exactly as Gemini does.
-      ws.send(`{"id":${msg.id},"status":200,"result":{"orderId":${rawId},"status":"accepted","symbol":"${p.symbol.toLowerCase()}"}}`);
+      if (state.dropBeforeAck) {
+        state.dropBeforeAck = false;
+        ws.terminate();
+        return;
+      }
+      // The ack carries the id as a bare number, exactly as Gemini does. A fault answers with a status instead.
+      if (fault) ws.send(JSON.stringify({ id: msg.id, status: fault.status, error: { code: 9000 + fault.status, msg: 'upstream failure' } }));
+      else ws.send(`{"id":${msg.id},"status":200,"result":{"orderId":${rawId},"status":"accepted","symbol":"${p.symbol.toLowerCase()}"}}`);
       if (state.dropAfterPlace) {
         state.dropAfterPlace = false;
         ws.terminate();

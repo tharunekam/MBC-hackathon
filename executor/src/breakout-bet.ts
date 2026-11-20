@@ -9,7 +9,7 @@
  * The steps are the range's (range-bet.ts) on the other two sides of the same two books.
  */
 import { betIdFor } from './bet-id.ts';
-import { BetRefused, MAX_HEDGE_ATTEMPTS, defaultId, holdings, netHolding, refreshTotals, sendLeg, unwind, withinLimit } from './bets.ts';
+import { BetRefused, MAX_HEDGE_ATTEMPTS, defaultId, holdForCheck, holdings, logUnreadableBook, netHolding, refreshTotals, sendLeg, unwind, withinLimit } from './bets.ts';
 import type { Deps } from './bets.ts';
 import { capBreakoutToDepth, findBreakout, planBreakout, breakoutContractsFor } from './breakout.ts';
 import type { BreakoutPair } from './breakout.ts';
@@ -35,6 +35,10 @@ export interface BreakoutRequest {
   onFail?: 'unwind' | 'leave';
   /** Set when the bet is one leg of a basket. */
   basket?: NonNullable<BetRecord['basket']>;
+  /** The request id the app sent; stored on the bet so a repeat of the request can be answered with it. */
+  clientRequestId?: string;
+  /** A short fingerprint of what the person chose, kept with the bet so a request id reused for something else can be told from a repeat. */
+  requestKey?: string;
 }
 
 /** Everything read and decided before a breakout's first order. Nothing here sends an order. */
@@ -69,7 +73,8 @@ export async function planBreakoutBet(deps: Deps, req: BreakoutRequest): Promise
     deps.exchange.topOfBook(named.high.symbol),
     deps.exchange.getEvent(req.eventTicker),
   ]).catch((err: unknown) => {
-    throw new BetRefused('no_depth', `Could not read the live order book, so no order was sent (${err instanceof Error ? err.message : String(err)}).`);
+    logUnreadableBook(err);
+    throw new BetRefused('no_depth', 'Could not read the live order book, so no order was sent.');
   });
   const pair = findBreakout(event, req.lowSymbol, req.highSymbol, feeCoef, deps.waiveMarkup);
 
@@ -138,6 +143,8 @@ export async function placeBreakoutBet(deps: Deps, req: BreakoutRequest): Promis
     expiry: event.expiryDate ?? null,
     product: 'breakout',
     ...(req.basket ? { basket: req.basket } : {}),
+    ...(req.clientRequestId ? { clientRequestId: req.clientRequestId } : {}),
+    ...(req.requestKey ? { requestKey: req.requestKey } : {}),
     condition: { symbol: pair.low.symbol, label: pair.low.label, strike: pair.low.strike },
     target: { symbol: pair.high.symbol, label: pair.high.label, strike: pair.high.strike },
     requestedStake: req.stake,
@@ -165,6 +172,7 @@ export async function placeBreakoutBet(deps: Deps, req: BreakoutRequest): Promis
     tif: 'IOC',
     clientOrderId: `gv-${id}-b`,
   });
+  if (first.status === 'unknown') return holdForCheck(deps, bet);
   if (first.status === 'error' || first.quantityFilled <= 0) {
     bet.status = 'failed';
     bet.note = first.status === 'error' ? `First order failed: ${first.note}` : 'Nothing was available at the quoted price, so no bet was placed.';
@@ -175,6 +183,7 @@ export async function placeBreakoutBet(deps: Deps, req: BreakoutRequest): Promis
 
   // Leg 2: NO on the lower strike, the same size as what filled.
   await matchSecondLeg(deps, bet, maxPrice, slip);
+  if (bet.legs.some((l) => l.status === 'unknown')) return holdForCheck(deps, bet); // never unwind or re-send around an order that may have filled
   refreshTotals(bet);
 
   if (bet.payoffs?.hedged) {
@@ -225,6 +234,6 @@ async function matchSecondLeg(deps: Deps, bet: BetRecord, maxPrice: number, slip
       tif: 'IOC',
       clientOrderId: `gv-${bet.id}-a${attempt}`,
     });
-    if (leg.status === 'filled') return;
+    if (leg.status === 'filled' || leg.status === 'unknown') return;
   }
 }
