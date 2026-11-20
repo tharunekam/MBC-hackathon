@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MY_BETS, PRODUCTS, TOOLS } from './nav';
 import { titleFor } from './titles';
 
 describe('page titles', () => {
@@ -6,8 +7,16 @@ describe('page titles', () => {
     expect(titleFor('/parlay')).toBe('Return Parlay · Given');
     expect(titleFor('/range')).toBe('Range and Breakout · Given');
     expect(titleFor('/hunch')).toBe('Hunch · Given');
+    expect(titleFor('/sketch')).toBe('Sketch · Given');
     expect(titleFor('/bets/')).toBe('My bets · Given');
     expect(titleFor('/verify/5fE6B5sFabc')).toBe('Proof of a call · Given');
+  });
+
+  it('has a title for every place the header and the menu link to', () => {
+    for (const place of [...PRODUCTS, ...TOOLS, MY_BETS]) expect(titleFor(place.to), place.to).not.toBe('Page not found · Given');
+    // Sketch sits with the other tools, straight after Hunch.
+    const ids = TOOLS.map((t) => t.id);
+    expect(ids.indexOf('sketch')).toBe(ids.indexOf('hunch') + 1);
   });
 
   it('keeps the site line for the landing page, and says so for an address it does not know', () => {

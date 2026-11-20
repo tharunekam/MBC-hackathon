@@ -58,6 +58,7 @@ production unless `GIVEN_ALLOW_PRODUCTION=1`.
 | `GIVEN_SANDBOX_WAIVE_MARKUP` | off | Sandbox demo switch described above |
 | `GIVEN_CORS_ORIGINS` | none | Extra browser origins allowed to call the API, comma-separated. Localhost is always allowed |
 | `GIVEN_DATA_DIR` | `executor/data` | Where `ledger.json` lives |
+| `GIVEN_SECOND_LEG_WAIT_MS` | `0` (off) | How long a bet's second order may wait for a post-only contract to open before the bet is sold back; at most `15000`. **Not yet run on the real sandbox**: see "Waiting for the second order" |
 
 ## Commands
 
@@ -170,6 +171,38 @@ looking the tag up on Gemini instead of resending.
 A bet refused before trading throws `BetRefused` with a `code`:
 `offer_refused`, `market_closed`, `no_depth`, `insufficient_depth`,
 `price_above_limit` or `stake_too_small`. Nothing is written to the ledger.
+
+## Waiting for the second order (`src/second-leg-wait.ts`): off by default
+
+**`GIVEN_SECOND_LEG_WAIT_MS` has NOT been run on the real Gemini sandbox, only against the in-memory test exchange.
+Before it is switched on for a demo, place bets with it on the sandbox and run `node src/cli.ts reconcile` afterwards.**
+
+**Why it exists.** Every bet is two orders sent one after the other. On the sandbox on 2026-11-20 a breakout's first
+order filled, the second contract was then found post-only (its ladder had been listed about 14 minutes and was flipping
+between `open` and `post_only`), so the second order was never sent and the position was sold straight back on a wide
+book: $1.55 lost of a $3 bet.
+
+**What it does.** `GIVEN_SECOND_LEG_WAIT_MS` is how many milliseconds a bet's second order may wait for that to pass.
+The default is `0`: no wait, and the order path is the one verified on the sandbox, with the same orders, the same tags
+and the same ledger records. Any value is capped at `15000`. Above 0, a second leg that finds its contract `active`,
+`post_only` and without a result re-reads the event every 500 ms until the contract is open or the wait is used up, then
+carries on as before: a fresh book, the same price limit, the same size and the same three attempts (waiting uses none of
+them up). If the contract does not open in time the bet ends as it does today: sold back, or left `unhedged` with
+`--leave`. The same code serves all four bets (`waitForSecondLeg`, called from `bets.ts`, `range-bet.ts` and
+`breakout-bet.ts`).
+
+- Not waited on: a contract that is settled, closed, expired, resolved or missing, or in any market state other than
+  `post_only` (`isTemporarilyClosed` is the one place that decides).
+- The wait is one allowance per bet, shared by its three attempts, and the time the re-reads take counts against it. A
+  re-read that fails counts as "not open yet".
+- While a bet waits it holds its first leg only, the answer to `POST /bets` takes that much longer, and that account's
+  next bet queues behind it.
+- A bet that waited carries `secondLegWait: { waitedMs, reads, opened }` in the ledger and in the API's answer, and
+  `node src/cli.ts bets` prints it. A bet that did not wait has no such field.
+
+What the tests cannot show, and the sandbox run must: that Gemini's single-event read reports the contract `open` as soon
+as it takes orders again, and that an order sent in that moment is accepted (`test/second-leg-wait.test.ts` covers the
+rest on the test exchange).
 
 ## The other bets (`src/mirror.ts`, `src/range.ts`, `src/range-bet.ts`, `src/breakout.ts`, `src/breakout-bet.ts`, `src/basket.ts`)
 

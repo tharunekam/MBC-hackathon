@@ -20,6 +20,7 @@ export const PRODUCTS: readonly Product[] = [
 export const TOOLS: readonly Destination[] = [
   { id: 'markets', name: 'Markets', to: '/markets' },
   { id: 'hunch', name: 'Hunch', to: '/hunch' },
+  { id: 'sketch', name: 'Sketch', to: '/sketch' },
   { id: 'leaderboard', name: 'Leaderboard', to: '/leaderboard' },
   { id: 'proof', name: 'Proof', to: '/proof' },
 ];

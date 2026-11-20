@@ -17,6 +17,7 @@ import type { BetRecord } from './ledger.ts';
 import type { GeminiEvent } from './gemini/types.ts';
 import { toRung } from './pairs.ts';
 import { PRICE_TICK, breakoutPrice, clean, feeRate } from './pricing.ts';
+import { secondLegWaitOf, waitForSecondLeg } from './second-leg-wait.ts';
 
 export interface BreakoutRequest {
   user: string;
@@ -193,6 +194,7 @@ export async function placeBreakoutBet(deps: Deps, req: BreakoutRequest): Promis
 /** Buys NO on the lower strike until it matches the YES held on the higher one, within the price cap. */
 async function matchSecondLeg(deps: Deps, bet: BetRecord, maxPrice: number, slip: number): Promise<void> {
   const feeCoef = deps.feeCoef ?? 0;
+  const wait = secondLegWaitOf(deps); // nothing to spend unless GIVEN_SECOND_LEG_WAIT_MS is on
   for (let attempt = 1; attempt <= MAX_HEDGE_ATTEMPTS; attempt++) {
     const yes = holdings(bet).outcome;
     const no = netHolding(bet, bet.condition.symbol, 'no');
@@ -202,7 +204,9 @@ async function matchSecondLeg(deps: Deps, bet: BetRecord, maxPrice: number, slip
     // Fresh book for the lower strike each attempt.
     const event = await deps.exchange.getEvent(bet.eventTicker);
     const contract = event.contracts.find((c) => c.instrumentSymbol === bet.condition.symbol);
-    const rung = contract ? toRung(contract) : null;
+    let rung = contract ? toRung(contract) : null;
+    // Only with the wait switched on: a contract that is post-only is re-read until it opens or the wait is used up.
+    if (wait.leftMs > 0) rung = await waitForSecondLeg(deps, bet, bet.condition.symbol, contract, rung, wait);
     if (!rung || !rung.open || rung.bid === null) return;
 
     const noAsk = clean(1 - rung.bid);

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
+import Outlook from '../components/Outlook';
 import type { MarketEvent } from '../api/types';
 import { distributionOf, evenBand, moveText } from '../lib/distribution';
 import { money } from '../lib/format';
@@ -114,6 +115,8 @@ export default function Markets() {
           </dl>
 
           {markets.error && <p className="fine mk-stale">The last refresh failed, so these figures may be out of date. Retrying on its own.</p>}
+
+          <Outlook groups={groups} now={now} />
 
           <div className="mk-toolbar">
             <div className="mk-seg" role="group" aria-label="Category">

@@ -520,3 +520,104 @@
     transition: none;
   }
 }
+
+/* Were the market's odds right? (components/OddsCard.tsx): one row per band of chance, a bar for how many came in and a
+   mark for how many the odds expected. */
+.lb-odds-list {
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.lb-odds-list li {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.7fr) minmax(120px, 1.4fr) minmax(0, 1.6fr);
+  align-items: center;
+  gap: 8px 24px;
+  padding: 16px 20px;
+}
+.lb-odds-list li + li {
+  border-top: 1px solid var(--line);
+}
+.lb-odds-band {
+  display: grid;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.lb-odds-band .fine {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.lb-odds-meter {
+  position: relative;
+  height: 10px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--ink) 9%, transparent);
+}
+.lb-odds-meter .lb-odds-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 5px;
+  background: var(--accent);
+  transition: width 260ms var(--ease);
+}
+.lb-odds-meter .lb-odds-mark {
+  position: absolute;
+  top: -5px;
+  bottom: -5px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ink);
+}
+.lb-odds-nums {
+  font-size: 14px;
+  color: var(--soft);
+}
+.lb-odds-nums b {
+  font-weight: 600;
+  color: var(--ink);
+}
+.lb-odds-list li[data-empty] .lb-odds-nums,
+.lb-odds-list li[data-empty] .lb-odds-band {
+  color: var(--muted);
+}
+.lb-odds-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin-top: 12px;
+}
+.lb-odds-keys span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.lb-odds-keys .lb-odds-fill {
+  display: inline-block;
+  width: 18px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--accent);
+}
+.lb-odds-keys .lb-odds-mark {
+  display: inline-block;
+  width: 2px;
+  height: 14px;
+  background: var(--ink);
+}
+:root[data-still] .lb-odds-meter .lb-odds-fill {
+  transition: none;
+}
+@media (max-width: 720px) {
+  .lb-odds-list li {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 16px;
+  }
+}

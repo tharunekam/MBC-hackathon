@@ -1,0 +1,312 @@
+/* Sketch (pages/Sketch.tsx): set what each bar of the ladder pays, and read the orders that pay it. Laid out like Hunch: the
+   market and its chart on the left, the result on the right. Scoped under .sketch or its own sk- names. */
+
+/* ------------------------------------------------------------ shapes to start from */
+.sk-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+.sk-presets .chip {
+  height: 34px;
+  padding: 0 14px;
+}
+/* "Clear" undoes rather than draws, so it sits apart from the four shapes. */
+.sk-presets .sk-clear {
+  margin-left: auto;
+  border-color: var(--line);
+  color: var(--muted);
+}
+.sk-presets .chip:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+.sk-presets .chip:disabled:hover {
+  background: transparent;
+}
+
+/* ------------------------------------------------------------ the chart */
+.sk-chart {
+  width: 100%;
+  min-height: 204px;
+  margin-top: 12px;
+}
+.sk-chart svg {
+  display: block;
+  overflow: visible;
+  /* A finger scrolls the page past the chart; the sliders are its controls. */
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .sk-chart svg {
+    cursor: crosshair;
+  }
+}
+/* The market's bars are a backdrop here, so they do not move as fast as the bars being set. */
+.sk-chart .dc-bar {
+  fill: color-mix(in srgb, var(--ink) 16%, transparent);
+}
+.sk-chart .dc-slot:hover .dc-bar {
+  fill: color-mix(in srgb, var(--ink) 24%, transparent);
+}
+/* What the person set. The accent alone is pale on the light surface, so the bar carries a darker edge of the same hue. */
+.sk-pay {
+  fill: var(--accent);
+  stroke: var(--accent-text);
+  stroke-width: 1;
+  transition:
+    y 120ms var(--ease),
+    height 120ms var(--ease);
+}
+.sk-amount {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  fill: var(--ink);
+  font-variant-numeric: lining-nums;
+}
+:root[data-still] .sk-pay {
+  transition: none;
+}
+.sketch .dist-keys [data-kind='pay'] i {
+  background: var(--accent);
+  outline: 1px solid var(--accent-text);
+  outline-offset: -1px;
+}
+
+/* ------------------------------------------------------------ one slider per bar */
+.sk-rows {
+  display: grid;
+  margin-top: 16px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.sk-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 1.4fr) 44px;
+  align-items: center;
+  gap: 16px;
+  min-height: 44px;
+}
+.sk-row + .sk-row {
+  border-top: 1px solid var(--line);
+}
+.sk-where {
+  display: grid;
+  min-width: 0;
+  line-height: 1.3;
+}
+.sk-where label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.sk-where small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.sk-row input[type='range'] {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  accent-color: var(--accent);
+  touch-action: pan-y;
+}
+.sk-row output {
+  text-align: right;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+/* ------------------------------------------------------------ the result */
+.sketch .sk-result {
+  position: sticky;
+  top: 88px;
+  display: grid;
+  gap: 0;
+  padding: 28px;
+  align-content: start;
+}
+.sk-result .q-title {
+  margin-bottom: 16px;
+}
+.sk-result .sk-note {
+  margin: 0 0 16px;
+}
+.sk-figs {
+  display: grid;
+}
+.sk-figs > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+/* The first three are one sum (pay, less what comes back, is what is at risk); the next groups start on a stronger rule. */
+.sk-figs > .is-break {
+  border-top-color: var(--line-strong);
+}
+.sk-figs dt {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  font-size: 14px;
+  color: var(--soft);
+}
+.sk-figs dt small {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.sk-figs dd {
+  flex: none;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  font-variant-numeric: lining-nums tabular-nums;
+  white-space: nowrap;
+}
+.sk-figs .is-main dt {
+  font-weight: 600;
+  color: var(--ink);
+}
+.sk-figs .is-main dd {
+  font-size: 22px;
+}
+.sk-figs [data-kind='win'] dd {
+  color: var(--good);
+}
+.sk-figs [data-kind='lose'] dd {
+  color: var(--bad);
+}
+
+.sk-sub {
+  margin-top: 8px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line-strong);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.sk-orders {
+  display: grid;
+  margin-top: 8px;
+}
+.sk-orders li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--soft);
+}
+.sk-orders li + li {
+  border-top: 1px solid var(--line);
+}
+.sk-orders b {
+  flex: none;
+  font-weight: 500;
+  color: var(--ink);
+  font-variant-numeric: lining-nums tabular-nums;
+  white-space: nowrap;
+}
+.sk-orders .is-total {
+  border-top-color: var(--line-strong);
+  color: var(--ink);
+  font-weight: 600;
+}
+.sk-orders .is-total b {
+  font-weight: 600;
+}
+
+.sk-hand {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line-strong);
+}
+.sk-hand p {
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--soft);
+}
+.sk-hand p b {
+  font-weight: 600;
+  color: var(--ink);
+}
+.sk-hand p em {
+  color: var(--accent-text);
+}
+.sk-hand .fine {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.sk-none {
+  padding: 20px 0 4px;
+  border-top: 1px solid var(--line);
+  color: var(--soft);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.sk-foot {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.sk-now {
+  margin-top: 20px;
+}
+
+/* On a phone the cards are laid out by `order` (see app.css): the chart first, then the result straight after it. */
+@media (max-width: 960px) {
+  .sketch .sk-result {
+    order: 2;
+    position: static;
+    padding: 20px;
+  }
+  .sketch .sk-now {
+    margin-top: 16px;
+  }
+}
+@media (max-width: 720px) {
+  /* A finger needs 44px: the shapes to start from, each slider, and the button that opens a builder already is. */
+  .sk-presets .chip {
+    height: 44px;
+  }
+  .sk-row {
+    grid-template-columns: minmax(0, 1fr) minmax(96px, 1.1fr) 36px;
+    gap: 10px;
+    min-height: 52px;
+  }
+  .sk-row input[type='range'] {
+    height: 44px;
+  }
+  .sk-where label {
+    font-size: 13.5px;
+  }
+  .sk-row output {
+    font-size: 16px;
+  }
+  .sk-figs dt {
+    font-size: 13.5px;
+  }
+}

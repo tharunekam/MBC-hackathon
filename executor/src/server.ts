@@ -66,6 +66,7 @@ const api = createApi({
   isSandbox: config.isSandbox,
   feeCoef: config.takerFeeCoef,
   waiveMarkup: config.waiveMarkup,
+  secondLegWaitMs: config.secondLegWaitMs,
   seeded: config.seeded,
   corsOrigins: config.corsOrigins,
   pinnedUser: config.pinnedUser ?? undefined,
@@ -96,6 +97,7 @@ server.listen(config.port, config.host, () => {
   console.log(`Accounts: ${config.readOnly ? 'none (READ-ONLY: real prices, no orders)' : users.join(', ') || 'none configured'}   fee coefficient charged: ${config.takerFeeCoef}`);
   if (!config.readOnly && users.length === 0) console.warn('No Gemini keys found in .env. Quotes will fail and nothing can be traded. For real prices without keys, set GIVEN_READONLY=1.');
   if (config.waiveMarkup) console.log('Sandbox demo mode: pairs refused only for markup can be traded (GIVEN_SANDBOX_WAIVE_MARKUP=1).');
+  if (config.secondLegWaitMs > 0) console.log(`Second-order wait ON: up to ${config.secondLegWaitMs}ms for a post-only contract to open before a bet is sold back (GIVEN_SECOND_LEG_WAIT_MS). Run "node src/cli.ts reconcile" after the first bets placed with it.`);
 
   // Open each user's session now rather than on the first bet.
   for (const user of config.readOnly ? [] : users) {

@@ -19,7 +19,7 @@ import { friendly } from '../lib/friendly';
 import { useDebounced, useNow, useResource } from '../lib/hooks';
 import { listLadders, rungGap, snap, tickFor } from '../lib/ladders';
 import { execLive } from '../lib/liveClients';
-import { anotherOpen, marketNote, useNowAtClose, useReopenWatch } from '../lib/marketPhase';
+import { anotherOpen, marketNote, openingNote, useNowAtClose, useReopenWatch } from '../lib/marketPhase';
 import { marketHeading } from '../lib/markets';
 import { breakoutEstimate, breakoutOutcomesFor, rangeEstimate, rangeOutcomesFor } from '../lib/pricing';
 import { rangeComesBack, receiptWords } from '../lib/receiptWords';
@@ -107,6 +107,8 @@ export default function Range() {
   const market = event ? marketNote(event, clock, { another: anotherOpen(events, event, clock) }) : null;
   const closed = market?.phase === 'closed';
   useReopenWatch(market !== null, markets.reload);
+  // A market that takes bets but is still opening gets a heads-up above the stake. It refuses nothing.
+  const opening = event ? openingNote(event, clock) : null;
 
   const rungOf = (sym?: string): Rung | undefined => event?.rungs.find((r) => r.symbol === sym);
   const lowRung = rungOf(sel?.low);
@@ -503,6 +505,8 @@ export default function Range() {
                   )}
                 </p>
               </div>
+
+              {opening && <p className="note note-warn">{opening}</p>}
 
               {verdict === 'warn' && !state.notice && fair !== null && pricePaid !== null && (
                 <p className="note note-warn">

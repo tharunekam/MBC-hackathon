@@ -36,6 +36,8 @@ export class FakeExchange implements Exchange {
   depthUnavailable = false;
   /** Time stamped on new orders; tests can move it. */
   clock: () => Date = () => new Date('2026-11-17T23:30:00Z');
+  /** Reads of the event on which a contract still reports "post_only", whatever its real market state (see `postOnlyFor`). */
+  private readonly postOnlyReads = new Map<string, number>();
 
   constructor(
     ticker: string,
@@ -90,6 +92,15 @@ export class FakeExchange implements Exchange {
   /** Marks one contract as not open for trading (Gemini uses "post_only", "closed", ...). */
   setMarketState(strike: number, marketState: string): void {
     this.event.contracts.find((x) => x.instrumentSymbol === this.symbol(strike))!.marketState = marketState;
+  }
+
+  /**
+   * Makes one contract report "post_only" on the next `reads` reads of the event and its real state again after that, as
+   * a newly listed ladder flips on the sandbox. For "until told otherwise" use `setMarketState(strike, 'post_only')` and
+   * later `setMarketState(strike, 'open')`.
+   */
+  postOnlyFor(strike: number, reads: number): void {
+    this.postOnlyReads.set(this.symbol(strike), reads);
   }
 
   /**
@@ -153,7 +164,9 @@ export class FakeExchange implements Exchange {
       ...this.event,
       contracts: this.event.contracts.map((c) => {
         const b = this.books.get(c.instrumentSymbol)!;
-        return { ...c, prices: { bestBid: b.bid === null ? null : String(b.bid), bestAsk: b.ask === null ? null : String(b.ask) } };
+        const postOnly = this.postOnlyReads.get(c.instrumentSymbol) ?? 0;
+        if (postOnly > 0) this.postOnlyReads.set(c.instrumentSymbol, postOnly - 1);
+        return { ...c, ...(postOnly > 0 ? { marketState: 'post_only' } : {}), prices: { bestBid: b.bid === null ? null : String(b.bid), bestAsk: b.ask === null ? null : String(b.ask) } };
       }),
     };
   }

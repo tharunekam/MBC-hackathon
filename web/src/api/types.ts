@@ -308,6 +308,11 @@ export interface Bet {
   };
   offer?: OfferQuote | RangeQuote | BreakoutQuote;
   stakeReduced?: { requested: number; reducedTo: number; outcomeAvailable: number; conditionAvailable: number; reason: string };
+  /**
+   * Present only when the second order waited for its contract to open (the executor's GIVEN_SECOND_LEG_WAIT_MS, off by
+   * default): how long in all, how many times the market was re-read, and whether the contract was open at the end.
+   */
+  secondLegWait?: { waitedMs: number; reads: number; opened: boolean };
   settlement?: {
     conditionResolved: 'yes' | 'no';
     targetResolved: 'yes' | 'no';
@@ -578,6 +583,19 @@ export interface LeaderboardRow {
   recent?: { signature: string; betId: string; event?: string; condition?: string; target?: string; revealedAt: string; outcome: 0 | 1; edge: number }[];
 }
 
+/**
+ * Verified calls whose fair price (the chance the market gave them) fell in one band, with how many came in and how many
+ * the odds expected. The band runs from `from` up to, not including, `to`; the last one includes 1.
+ */
+export interface OddsBand {
+  from: number;
+  to: number;
+  calls: number;
+  cameIn: number;
+  /** The sum of the calls' fair prices. */
+  expected: number;
+}
+
 export interface LeaderboardResponse {
   asOf: string;
   minCalls: number;
@@ -592,6 +610,11 @@ export interface LeaderboardResponse {
   /** Public keys whose records the rows count. */
   authorities?: string[];
   rows: LeaderboardRow[];
+  /**
+   * How the market's odds held up across every verified call, in four bands of the chance it gave. Absent from an older
+   * service and from sessions recorded before it existed; the page then leaves the card out.
+   */
+  odds?: OddsBand[];
 }
 
 export const explorerTx = (signature: string, cluster: 'devnet' | 'mainnet-beta' = 'devnet') =>

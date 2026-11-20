@@ -36,6 +36,12 @@ export default function Receipt({ bet, call, callError, onAgain }: Props) {
         </p>
       )}
 
+      {bet.secondLegWait?.opened && (
+        <p className="note note-info">
+          The second order waited {(bet.secondLegWait.waitedMs / 1000).toFixed(1)} seconds for its market to start taking orders, then went in at the same price limit.
+        </p>
+      )}
+
       <ol className="steps">
         <li className="is-done">
           <span className="dot" />

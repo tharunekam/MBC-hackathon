@@ -29,6 +29,7 @@ import {
   pickMarket,
   refusedLeg,
   seedLegs,
+  sharedMarketNote,
   splitEvenly,
   splitWords,
   stakeText,
@@ -301,6 +302,8 @@ export default function Basket() {
     ),
   );
   const crypto = cryptoLegs(legs.map((l) => eventOf(l.event)));
+  // Legs may share a market (the picker allows it, and with one asset the page opens that way). Said once, on the ticket.
+  const sameMarket = sharedMarketNote(legs.map((l) => l.event));
 
   // How the legs come out together, read from the same ladders the legs are built on, so it moves whenever the prices do.
   // A leg with no market or levels yet goes in as null and is reported as left out.
@@ -638,6 +641,8 @@ export default function Basket() {
                   warn={warnTogether}
                 />
               )}
+
+              {sameMarket && <p className="note note-warn">{sameMarket}</p>}
 
               <p className="fine basket-terms">
                 Each leg is its own bet, with its own result. If a leg cannot

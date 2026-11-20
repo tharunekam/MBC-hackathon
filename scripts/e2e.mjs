@@ -168,6 +168,15 @@ await check('My bets lists it', async () => {
   await page.getByRole('link', { name: 'See my bets' }).click();
   await page.waitForURL('**/bets');
   await page.waitForSelector('text=Orders and proof');
+  // The one open bet, drawn across the prices its market can finish at: it must lose somewhere and win somewhere, and the
+  // worst it shows cannot be more than was paid.
+  await page.waitForSelector('.ob .ob-market .pv-slot', { timeout: 8000 });
+  const kinds = await page.evaluate(() => [...document.querySelectorAll('.ob .ob-market .pv-slot')].map((g) => g.getAttribute('data-kind')));
+  need(kinds.includes('ahead') && kinds.includes('behind'), `the open bet's bars are ${kinds.join(',')}`);
+  const line = (await page.locator('.ob .ob-line').first().innerText()).replace(/\s+/g, ' ');
+  const worst = Number(/Worst [−-]\$([\d.]+)/.exec(line)?.[1]);
+  const cost = (await api('/api/bets')).bets[0].cost;
+  need(Number.isFinite(worst) && worst <= cost + 0.011, `the card's worst case is "${line}" on a bet that cost ${cost}`);
 });
 
 // ---- 2. it updates by itself
@@ -204,6 +213,12 @@ await check('the leaderboard shows the handle, and updates by itself when anothe
   const open = (await api('/chain/calls')).calls.find((c) => c.state === 'committed');
   await api(`/chain/calls/${open.id}/reveal`, { method: 'POST' });
   await until('the row to show 2 calls', async () => (await calls()) === 2, 6_000); // polling alone would take up to 10s
+  // The same two calls, counted against the odds the market gave them. Both won, and what the card says must be what the
+  // service counted from the reveals.
+  const odds = (await api('/chain/leaderboard')).odds;
+  const total = odds.reduce((t, b) => ({ calls: t.calls + b.calls, cameIn: t.cameIn + b.cameIn }), { calls: 0, cameIn: 0 });
+  need(total.calls === 2 && total.cameIn === 2, `the odds bands count ${total.cameIn} of ${total.calls}`);
+  await until('the odds card to count both calls', async () => /^Of 2 revealed calls, 2 came in;/.test((await page.locator('.lb-odds .lb-chain-head p').innerText()).trim()), 12_000);
 });
 
 await check('a revealed call has a proof page with the verdict and the verify control', async () => {
@@ -551,6 +566,36 @@ await check('Breakout: the Range switch turns the bet inside out; placed as a YE
   need(done.settlement.targetResolved === 'yes' && Math.abs(done.settlement.payout - placed.legs[0].quantityFilled) < 0.011, `settled ${done.settlement.targetResolved}, paid ${done.settlement.payout}`);
   need(done.settlement.finishedAt === finish, `where it finished is recorded as ${done.settlement.finishedAt}`);
   return `won $${done.settlement.pnl.toFixed(2)} on $${placed.cost.toFixed(2)}`;
+});
+
+await check('Outlook: the Markets page reads the market’s middle and bands off the ladder, and opens a Range and a Breakout on its even-chance band', async () => {
+  await dev('/dev/reset');
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${base}/markets`);
+  await page.waitForSelector('.ol .ol-chart path.ol-middle', { timeout: 8000 });
+  const words = (await page.locator('.ol-words').innerText()).replace(/\s+/g, ' ');
+  need(/the middle of the market’s view is \$[\d,.]+\./.test(words), `the outlook says "${words}"`);
+  need(/an even chance of finishing between \$[\d,.]+ and \$[\d,.]+/.test(words), `no even-chance band in "${words}"`);
+  need((await page.locator('.ol-chart path.ol-even').count()) === 1, 'the even-chance band is not drawn');
+
+  // The band's two prices sit between rungs; the bet it opens is on the two listed levels nearest to them.
+  const inside = page.locator('.ol-acts a').first();
+  const levels = (await inside.innerText()).match(/\$[\d,.]+/g) ?? [];
+  need(levels.length === 2, `the link reads "${await inside.innerText()}"`);
+  await inside.click();
+  await page.waitForURL(/\/range\?market=.*low=.*high=/);
+  await placeable();
+  const asked = (await page.locator('.q-sentence').first().innerText()).replace(/\s+/g, ' ');
+  need(/between/i.test(asked) && levels.every((p) => asked.includes(p)), `Range opened on "${asked}", not on ${levels.join(' and ')}`);
+
+  await page.goto(`${base}/markets`);
+  await page.waitForSelector('.ol .ol-acts a');
+  await page.locator('.ol-acts a').nth(1).click();
+  await page.waitForURL(/\/range\?.*side=out/);
+  await placeable();
+  const out = (await page.locator('.q-sentence').first().innerText()).replace(/\s+/g, ' ');
+  need(/outside/i.test(out) && levels.every((p) => out.includes(p)), `Breakout opened on "${out}", not on ${levels.join(' and ')}`);
+  return `even chance between ${levels.join(' and ')}`;
 });
 
 // ---- 7. nothing broke quietly

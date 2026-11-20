@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { clampSecondLegWaitMs } from './second-leg-wait.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const EXECUTOR_ROOT = resolve(here, '..');
@@ -55,6 +56,12 @@ export interface Config {
   readOnly: boolean;
   /** GIVEN_AUTO_SETTLE_MS: settle finished bets by itself this often. 0 turns it off. Default 20000. */
   autoSettleMs: number;
+  /**
+   * GIVEN_SECOND_LEG_WAIT_MS: how long a bet's second order may wait for a post-only contract to open before the bet is
+   * sold back. Default 0, which is off and leaves the order path as it was verified on the sandbox; never more than
+   * 15000. See second-leg-wait.ts. Not yet run on the real sandbox.
+   */
+  secondLegWaitMs: number;
 }
 
 /** True for loopback addresses: the only ones that may run without the hosted-demo protections. */
@@ -131,6 +138,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     trustProxy: merged.GIVEN_TRUST_PROXY === '1',
     readOnly: merged.GIVEN_READONLY === '1',
     autoSettleMs: merged.GIVEN_AUTO_SETTLE_MS !== undefined ? Number(merged.GIVEN_AUTO_SETTLE_MS) : 20_000,
+    secondLegWaitMs: clampSecondLegWaitMs(merged.GIVEN_SECOND_LEG_WAIT_MS),
   };
 }
 

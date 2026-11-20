@@ -75,6 +75,10 @@ export interface ApiDeps {
   feeCoef: number;
   /** Sandbox demo switch; see config.waiveMarkup. */
   waiveMarkup: boolean;
+  /** How long a bet's second order may wait for a post-only contract to open (config.secondLegWaitMs). 0 or unset: no wait. */
+  secondLegWaitMs?: number;
+  /** How that wait pauses between reads; tests pass their own so they do not really wait. */
+  sleep?: (ms: number) => Promise<void>;
   /** Our own seeder is quoting on this sandbox (config.seeded). Reported by /health so the app can say so. */
   seeded?: boolean;
   /** GIVEN_ADMIN_TOKEN. Without it POST /review (record a payout by hand) answers 404. */
@@ -192,6 +196,8 @@ export function createApi(deps: ApiDeps): ApiHandler {
     ledger: deps.ledger,
     feeCoef: deps.feeCoef,
     waiveMarkup: deps.waiveMarkup,
+    secondLegWaitMs: deps.secondLegWaitMs,
+    sleep: deps.sleep,
     now: deps.now,
     newId: deps.newId,
   });

@@ -71,6 +71,10 @@ function printBet(bet: ReturnType<Ledger['bet']>): void {
     );
   }
   if (bet.stakeReduced) console.log(`  reduced: ${bet.stakeReduced.reason}`);
+  if (bet.secondLegWait) {
+    const w = bet.secondLegWait;
+    console.log(`  second order waited ${(w.waitedMs / 1000).toFixed(1)}s for its market to open (${w.reads} re-reads): ${w.opened ? 'it opened' : 'it did NOT open'}`);
+  }
   if (bet.offer) {
     const o = bet.offer;
     console.log(
@@ -181,7 +185,7 @@ async function main(): Promise<void> {
       }
       await ensureBaseline(exchange, ledger, user);
       const bet = await placeConditionalBet(
-        { exchange, ledger, feeCoef: config.takerFeeCoef, waiveMarkup: config.waiveMarkup },
+        { exchange, ledger, feeCoef: config.takerFeeCoef, waiveMarkup: config.waiveMarkup, secondLegWaitMs: config.secondLegWaitMs },
         {
           user,
           eventTicker,
@@ -202,7 +206,7 @@ async function main(): Promise<void> {
       }
       await ensureBaseline(exchange, ledger, user);
       const bet = await (command === 'breakout' ? placeBreakoutBet : placeRangeBet)(
-        { exchange, ledger, feeCoef: config.takerFeeCoef, waiveMarkup: config.waiveMarkup },
+        { exchange, ledger, feeCoef: config.takerFeeCoef, waiveMarkup: config.waiveMarkup, secondLegWaitMs: config.secondLegWaitMs },
         {
           user,
           eventTicker,

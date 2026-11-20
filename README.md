@@ -108,6 +108,13 @@ program, and nobody can relabel a call after seeing how it went.
   index show the band the market gives an even chance of finishing inside ("between $62,660 and $63,740", or "±0.9%").
   Narrower than that is a bet that it stays put, wider a bet on a big move, which is the choice the Range and Breakout
   switch offers.
+- **Outlook.** An exchange lists a separate ladder for each closing time (this hour, tonight, tomorrow). The Markets page
+  reads an asset's ladders side by side and draws the market's forecast as a fan: a line through the middle of its view at
+  each close, a darker band that holds an even chance and a lighter one that holds four chances in five. Pick a closing
+  time and the page says the figures in a sentence and opens a Range on that close's even-chance band (the price stays
+  inside it) or a Breakout on the same two levels (it does not). The time axis is the square root of the time left, so an
+  hour, a day and a month fit on one chart and a steady market draws a fan with straight sides. Nothing is modelled; a
+  band is left out where a ladder's prices do not reach that far.
 - **What a basket pays.** For the legs on one ladder, the Basket adds their results up bar by bar and draws what the whole
   position nets at each finishing price, with the market's chance of ending ahead and what the bets cost over fair value.
 - **How a basket's legs move together.** Legs on the same ladder are decided by one finishing price, so the chance that
@@ -181,6 +188,12 @@ The leaderboard ranks **edge**, not profit or volume: for each revealed call, ou
 the fair price at entry, summed. Luck on a few calls washes out. Revealing is the player's choice, so each row also says
 how many calls that player has **sealed**: a commit carries the handle, so the count is public on chain, and a record
 built by revealing only the calls that came off shows as a gap between the two numbers.
+
+**The yardstick is checked too.** A board that ranks players against the market's odds is only as good as those odds,
+so under the table the page asks "Were the market's odds right?": every revealed call grouped by the chance the market
+gave it when it was made (under 25%, 25 to 50, 50 to 75, 75 and over), with how many came in beside how many those odds
+expected. It draws no conclusion from fewer than 20 calls, and it counts revealed calls only, the same limit the sealed
+counts make visible.
 
 **The leaderboard can be read from the program with no server of ours involved.** Under the table, "Read from the
 program" has your browser ask a Solana node for the program's own score accounts (one `getProgramAccounts` request per

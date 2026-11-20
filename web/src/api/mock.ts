@@ -30,6 +30,7 @@ import type {
   RangeQuote,
   RangeQuoteResponse,
   Rung,
+  OddsBand,
 } from './types';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -106,8 +107,7 @@ export const mockSpot = (key: string, t = Date.now()) => {
   return spotNow(a, t);
 };
 
-function buildRungs(a: Asset, eventTicker: string, t: number): Rung[] {
-  const s = spotNow(a, t);
+function buildRungs(a: Asset, eventTicker: string, t: number, s = spotNow(a, t)): Rung[] {
   const out: Rung[] = [];
   for (let i = 0; i < a.rungs; i++) {
     const strike = a.lowest + i * a.step;
@@ -269,10 +269,37 @@ function pairsFor(rungs: Rung[], direction: Direction): Pair[] {
   return out;
 }
 
-function buildEvent(a: Asset, t: number): MarketEvent {
-  const expiry = nextHour(new Date(t));
+/**
+ * A later closing time for the same asset. Real exchanges list several ladders per asset (this hour, later today, tomorrow),
+ * and the further out one closes the wider the market's view of it, so its rungs sit further apart. `widen` is how many
+ * times wider than the next hour's ladder: both the gap between rungs and the spread of the view.
+ */
+interface Later {
+  hours: number;
+  widen: number;
+}
+const LATER: Later[] = [
+  { hours: 3, widen: 2 },
+  { hours: 24, widen: 4 },
+];
+
+/** The same asset's ladder for a later close: centred where the next hour's is, on round strikes `widen` times further apart. */
+function laterLadder(a: Asset, widen: number): Asset {
+  const step = a.step * widen;
+  const centre = a.lowest + (a.step * (a.rungs - 1)) / 2;
+  return { ...a, step, lowest: Math.round((centre - (step * (a.rungs - 1)) / 2) / step) * step, sigma: a.sigma * widen };
+}
+
+function titleFor(a: Asset, expiry: Date, now: Date): string {
+  const day = (d: Date) => new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', timeZone: 'America/New_York' }).format(d);
+  return day(expiry) === day(now) ? `${a.name} price today at ${hourLabel(expiry)} EST` : `${a.name} price on ${day(expiry)} at ${hourLabel(expiry)} EST`;
+}
+
+function buildEvent(a: Asset, t: number, later?: Later): MarketEvent {
+  const expiry = new Date(nextHour(new Date(t)).getTime() + (later?.hours ?? 0) * 3_600_000);
   const ticker = `${a.key}${expiry.toISOString().slice(2, 13).replace(/[-T]/g, '')}00`;
-  const rungs = buildRungs(a, ticker, t);
+  // Every ladder of an asset is priced off the one spot, whatever its own strikes are.
+  const rungs = buildRungs(later ? laterLadder(a, later.widen) : a, ticker, t, spotNow(a, t));
   const pairs = pairsFor(rungs, 'up');
   const falling = pairsFor(rungs, 'down');
   const offerable = pairs.filter((p) => p.quote.offerable);
@@ -281,7 +308,7 @@ function buildEvent(a: Asset, t: number): MarketEvent {
   for (const p of pairs) for (const r of p.quote.reasons) refusedByReason[r.code] = (refusedByReason[r.code] ?? 0) + 1;
   return {
     ticker,
-    title: `${a.name} price today at ${hourLabel(expiry)} EST`,
+    title: titleFor(a, expiry, new Date(t)),
     category: 'Crypto',
     expiry: expiry.toISOString(),
     rungs,
@@ -349,7 +376,9 @@ export function mockApi(): Api {
   const calls: CallRecord[] = [];
   let seeded = false;
 
-  const events = (t = Date.now()) => ASSETS.map((a) => buildEvent(a, t));
+  // The next hour's ladder for each asset first, as before, then its later closes: code that takes "the first ladder" still
+  // gets the one that closes soonest.
+  const events = (t = Date.now()) => [...ASSETS.map((a) => buildEvent(a, t)), ...ASSETS.flatMap((a) => LATER.map((l) => buildEvent(a, t, l)))];
   const eventOf = (ticker: string): MarketEvent => {
     const ev = events().find((e) => e.ticker === ticker);
     if (!ev) throw new ApiError(404, { error: `Gemini has no event "${ticker}".`, code: 'unknown_event' }, 'unknown');
@@ -997,8 +1026,23 @@ export function mockApi(): Api {
         });
       }
       rows.sort((x, y) => y.edge - x.edge);
+      // The other players' 37 calls by the chance the market gave them. The counts agree with their rows above: 21 came in
+      // and their edges sum to 5.54, so the odds expected 15.46. This visitor's own revealed calls are added to their bands.
+      const odds: OddsBand[] = [
+        { from: 0, to: 0.25, calls: 8, cameIn: 2, expected: 1.12 },
+        { from: 0.25, to: 0.5, calls: 14, cameIn: 7, expected: 4.76 },
+        { from: 0.5, to: 0.75, calls: 11, cameIn: 8, expected: 6.3 },
+        { from: 0.75, to: 1, calls: 4, cameIn: 4, expected: 3.28 },
+      ];
+      for (const c of mine) {
+        const fair = c.reveal!.fairPriceAtEntry;
+        const band = odds.find((b) => fair < b.to) ?? odds[odds.length - 1]!;
+        band.calls += 1;
+        band.cameIn += c.reveal!.outcome === 1 ? 1 : 0;
+        band.expected = cents(band.expected + fair);
+      }
       // No program and no keys: demo rows exist only here, so there is nothing on Solana for the page to read.
-      return { asOf: new Date().toISOString(), minCalls: 1, source: 'quicknode-stream', network: 'fake', program: null, authorities: [], rows: rows.map((r, i) => ({ rank: i + 1, ...r })) };
+      return { asOf: new Date().toISOString(), minCalls: 1, source: 'quicknode-stream', network: 'fake', program: null, authorities: [], rows: rows.map((r, i) => ({ rank: i + 1, ...r })), odds };
     },
   };
 }

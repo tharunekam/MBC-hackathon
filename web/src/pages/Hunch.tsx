@@ -10,7 +10,7 @@ import { useNow, useResource } from '../lib/hooks';
 import { builderLink, ideasOn, MIN_WIN, rank, winsOn, type Idea } from '../lib/hunch';
 import { listLadders, snap, tickFor } from '../lib/ladders';
 import { execLive } from '../lib/liveClients';
-import { anotherOpen, marketNote, useNowAtClose, useReopenWatch } from '../lib/marketPhase';
+import { anotherOpen, marketNote, openingNote, useNowAtClose, useReopenWatch } from '../lib/marketPhase';
 import { marketHeading } from '../lib/markets';
 import { wholePercents } from '../lib/shares';
 import '../styles/builder.css';
@@ -70,6 +70,8 @@ export default function Hunch() {
   // A market that has closed, or is not trading yet, has no bet to offer, whatever its last prices say.
   const clock = Math.max(now, useNowAtClose(event?.expiry));
   const market = event ? marketNote(event, clock, { another: anotherOpen(events, event, clock) }) : null;
+  // One that takes bets but is still opening gets a heads-up, said once for the whole list. The builders say it again.
+  const opening = event ? openingNote(event, clock) : null;
 
   const levels = dist?.levels;
   const chance = useMemo(() => (levels && view ? viewOf(levels, view) : null), [levels, view]);
@@ -208,6 +210,8 @@ export default function Hunch() {
             </span>
             <h2 className="q-sentence">Bets that fit your view</h2>
           </div>
+
+          {opening && <p className="note note-warn hunch-long">{opening}</p>}
 
           {longShots && <p className="note note-warn hunch-long">Only long shots are worth more than they cost to this view. On your own odds, each wins less than one time in five.</p>}
 

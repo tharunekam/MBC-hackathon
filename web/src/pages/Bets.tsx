@@ -6,6 +6,7 @@ import type { Bet, CallRecord } from '../api/types';
 import { explorerTx } from '../api/types';
 import { betTitle, kindOf } from '../lib/betKind';
 import { CashOut } from '../components/CashOut';
+import OpenBetsCard from '../components/OpenBetsCard';
 import {
   basketSummary,
   canRevealCall,
@@ -410,6 +411,9 @@ export default function Bets() {
               </div>
             </dl>
           )}
+
+          {/* What the open bets add up to, market by market. It renders nothing when no bet is open, or until prices arrive. */}
+          <OpenBetsCard bets={list} />
 
           {list.length === 0 ? (
             <div className="bl-empty">

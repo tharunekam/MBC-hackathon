@@ -94,6 +94,13 @@ export interface BetRecord {
     conditionAvailable: number;
     reason: string;
   };
+  /**
+   * Present only when the second order had to wait for its contract to stop being post-only (GIVEN_SECOND_LEG_WAIT_MS,
+   * off by default; see second-leg-wait.ts): how long it waited in all, how many times the event was re-read, and whether
+   * the contract was open at the end. `opened: false` means the wait ran out, or the contract closed for good, and the
+   * bet then went on exactly as it would have without waiting.
+   */
+  secondLegWait?: { waitedMs: number; reads: number; opened: boolean };
   /** Present on needs_review bets: exactly what Gemini reported for each contract. */
   review?: {
     reason: string;

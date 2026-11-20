@@ -24,6 +24,8 @@ import {
   refusedLeg,
   secondOptions,
   seedLegs,
+  sharedMarketNote,
+  sharedMarkets,
   splitEvenly,
   splitWords,
   stripLegPrefix,
@@ -174,6 +176,49 @@ describe('markets for legs', () => {
     ]);
     expect(seedLegs([], 30)).toEqual([]);
     expect(new Set(two.map((l) => l.key)).size).toBe(2);
+  });
+
+  it('finds the legs that are on a market another leg is on too, in the order they are placed', () => {
+    const [b, e, s] = [BTC.ticker, ETH.ticker, SOL.ticker];
+    expect(sharedMarkets([b, e, s])).toEqual([]);
+    expect(sharedMarkets([b, b])).toEqual([[0, 1]]);
+    expect(sharedMarkets([b, e, b, s, b])).toEqual([[0, 2, 4]]);
+    expect(sharedMarkets([e, b, b, e])).toEqual([
+      [0, 3],
+      [1, 2],
+    ]);
+    // A leg with no market yet shares nothing, however many there are.
+    expect(sharedMarkets([null, null, b])).toEqual([]);
+    expect(sharedMarkets([])).toEqual([]);
+  });
+
+  it('says nothing while every leg has a market to itself', () => {
+    expect(sharedMarketNote([BTC.ticker, ETH.ticker])).toBeNull();
+    expect(sharedMarketNote([BTC.ticker, null, null])).toBeNull();
+    expect(sharedMarketNote([])).toBeNull();
+    // The basket a page opens on when there are two assets.
+    expect(sharedMarketNote(seedLegs([BTC, ETH, SOL], 30).map((l) => l.event))).toBeNull();
+  });
+
+  it('says in one sentence what legs on the same market can do to each other, and the way out', () => {
+    const [b, e, s] = [BTC.ticker, ETH.ticker, SOL.ticker];
+    expect(sharedMarketNote([b, b])).toBe(
+      'Legs 1 and 2 share a market: the first one’s orders can move the prices the next one needs, so on a market with few orders a later leg can be turned down; legs on different markets avoid this.',
+    );
+    // With one asset the page opens on two legs on it, so the sentence is there from the start.
+    expect(sharedMarketNote(seedLegs([BTC], 30).map((l) => l.event))).toBe(sharedMarketNote([b, b]));
+    // The legs are named, so a person can see which one to move.
+    expect(sharedMarketNote([e, b, s, b])).toMatch(/^Legs 2 and 4 share a market: the first one’s orders /);
+    expect(sharedMarketNote([b, e, b, b])).toMatch(/^Legs 1, 3 and 4 share a market: /);
+    expect(sharedMarketNote([b, b, null])).toMatch(/^Legs 1 and 2 share a market: /);
+    // Two markets with more than one leg each: still one sentence.
+    expect(sharedMarketNote([b, b, e, e])).toMatch(/^Some of these legs share a market: the first one’s orders /);
+    for (const legs of [[b, b], [e, b, s, b], [b, b, e, e]]) {
+      const note = sharedMarketNote(legs)!;
+      expect(note).toMatch(/legs on different markets avoid this\.$/);
+      expect(note.match(/\./g)).toHaveLength(1);
+      expect(note).not.toMatch(/risk-free|guarantee|protected|buffer|volatil|Gemini/i);
+    }
   });
 });
 

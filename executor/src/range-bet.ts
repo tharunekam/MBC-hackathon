@@ -16,6 +16,7 @@ import { toRung } from './pairs.ts';
 import { PRICE_TICK, clean, feeRate, rangePrice } from './pricing.ts';
 import { capRangeToDepth, findRange, planRange, rangeContractsFor } from './range.ts';
 import type { RangePair } from './range.ts';
+import { secondLegWaitOf, waitForSecondLeg } from './second-leg-wait.ts';
 
 export interface RangeRequest {
   user: string;
@@ -191,6 +192,7 @@ export async function placeRangeBet(deps: Deps, req: RangeRequest): Promise<BetR
 /** Buys NO on the higher strike until it matches the YES held on the lower one, within the price cap. */
 async function matchSecondLeg(deps: Deps, bet: BetRecord, maxPrice: number, slip: number): Promise<void> {
   const feeCoef = deps.feeCoef ?? 0;
+  const wait = secondLegWaitOf(deps); // nothing to spend unless GIVEN_SECOND_LEG_WAIT_MS is on
   for (let attempt = 1; attempt <= MAX_HEDGE_ATTEMPTS; attempt++) {
     const yes = holdings(bet).outcome;
     const no = netHolding(bet, bet.target.symbol, 'no');
@@ -200,7 +202,9 @@ async function matchSecondLeg(deps: Deps, bet: BetRecord, maxPrice: number, slip
     // Fresh book for the higher strike each attempt.
     const event = await deps.exchange.getEvent(bet.eventTicker);
     const contract = event.contracts.find((c) => c.instrumentSymbol === bet.target.symbol);
-    const rung = contract ? toRung(contract) : null;
+    let rung = contract ? toRung(contract) : null;
+    // Only with the wait switched on: a contract that is post-only is re-read until it opens or the wait is used up.
+    if (wait.leftMs > 0) rung = await waitForSecondLeg(deps, bet, bet.target.symbol, contract, rung, wait);
     if (!rung || !rung.open || rung.bid === null) return;
 
     const noAsk = clean(1 - rung.bid);

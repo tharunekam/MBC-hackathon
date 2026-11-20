@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MarketEvent, Rung } from '../api/types';
-import { anotherOpen, marketNote, phaseOf } from './marketPhase';
+import { anotherOpen, marketNote, openingNote, phaseOf } from './marketPhase';
 
 const rung = (strike: number, state = 'active/open'): Rung => ({ symbol: `S${strike}`, label: `${strike}`, strike, bid: 0.4, ask: 0.42, open: state === 'active/open', state });
 const ladder = (expiry: string | null, states: string[] = ['active/open', 'active/open', 'active/open']) => ({ expiry, rungs: states.map((s, i) => rung(100 + i, s)) });
@@ -67,6 +67,54 @@ describe('what the page says about a ladder that cannot take a bet', () => {
     expect(n.text).not.toMatch(/few minutes|by itself/);
     expect(n.text).toMatch(/Pick another market above/);
     expect(marketNote(ladder(at(22, 0), ['mystery', 'mystery', 'mystery']), now, { another: false })!.text).not.toMatch(/above/);
+  });
+});
+
+describe('the heads-up for a market that is still opening', () => {
+  const OPENING = ['active/open', 'active/post_only', 'active/open'];
+
+  it('says nothing about a market with every contract open', () => {
+    expect(openingNote(ladder(at(22, 0)), now)).toBeNull();
+    expect(openingNote(ladder(null), now)).toBeNull();
+  });
+
+  it('speaks up when one contract is still post-only among open ones, and says what can happen and the way out', () => {
+    expect(openingNote(ladder(at(22, 0), OPENING), now)).toBe(
+      'This market has only just opened and some of its levels are not taking orders yet. If a bet’s second order is refused, its first is sold back, usually for less than was paid. Waiting a few minutes avoids this.',
+    );
+    // However the exchange spells the state, and whatever else is on the ladder.
+    expect(openingNote(ladder(null, ['active/open', 'Active/Post-Only']), now)).not.toBeNull();
+    expect(openingNote(ladder(at(22, 0), ['active/open', 'active/post_only', 'settled/closed']), now)).not.toBeNull();
+  });
+
+  it('is a caution about a market that takes bets: it never stands in for the note that says a market cannot', () => {
+    for (const states of [OPENING, ['active/open', 'active/open'], ['active/post_only', 'active/post_only'], ['settled/closed', 'settled/closed']]) {
+      const l = ladder(at(22, 0), states);
+      // At most one of the two speaks about any ladder.
+      expect([openingNote(l, now), marketNote(l, now, { another: false })].filter(Boolean).length).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('leaves a market where nothing is open yet to the note that says so', () => {
+    const all = ladder(at(22, 0), ['active/post_only', 'active/post_only', 'active/post_only']);
+    expect(openingNote(all, now)).toBeNull();
+    expect(marketNote(all, now, { another: false })!.label).toBe('Not open for bets yet');
+    // Post-only beside contracts that have finished: nothing is open, so it is still "not open yet".
+    expect(openingNote(ladder(at(22, 0), ['active/post_only', 'settled/closed']), now)).toBeNull();
+  });
+
+  it('says nothing about a market that has closed, by the clock or by its contracts', () => {
+    expect(openingNote(ladder(at(21, 35), OPENING), now)).toBeNull();
+    expect(openingNote(ladder(at(22, 0), ['settled/closed', 'settled/closed', 'settled/closed']), now)).toBeNull();
+  });
+
+  it('says nothing about a ladder with no contracts', () => {
+    expect(openingNote({ expiry: at(22, 0), rungs: [] }, now)).toBeNull();
+    expect(openingNote({ expiry: null, rungs: [] }, now)).toBeNull();
+  });
+
+  it('keeps to plain words', () => {
+    expect(openingNote(ladder(at(22, 0), OPENING), now)).not.toMatch(/risk-free|guarantee|protected|buffer|volatil|Gemini/i);
   });
 });
 

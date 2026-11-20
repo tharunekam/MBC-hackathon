@@ -173,6 +173,12 @@ revealed or not, counted from the chain) and `refunded` (commits this service kn
 revealed) beside `calls` (revealed and scored). A verifier rebuilding the board from the chain alone gets the same
 `sealed`; it cannot tell a refunded call from one kept back, so its `refunded` is 0.
 
+**The yardstick is checked too.** The board ranks players against the market's own odds, so `GET /leaderboard` also
+answers whether those odds were any good: `odds` groups every verified call into four bands of the fair price it was made
+at (under 25%, 25 to 50, 50 to 75, 75 and over) with how many came in and how many the odds expected (the sum of the fair
+prices). Every figure is in the reveals themselves, so a reader can rebuild it from the chain (`src/odds.ts`). It counts
+revealed calls only, the same limit the board has, which the sealed counts make visible.
+
 **A bet that was sold back keeps its call.** Such a bet never settles, but once its market has a clean result the
 executor records how the call turned out (`called`) and `POST /calls/:id/reveal` then reveals and scores it like any
 other, against the fair price it was made at. Before that the reveal answers `409 cashed_out` and nothing is written.

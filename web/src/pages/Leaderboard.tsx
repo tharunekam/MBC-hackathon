@@ -2,6 +2,7 @@ import { Fragment, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
+import OddsCard from '../components/OddsCard';
 import type { LeaderboardResponse, LeaderboardRow } from '../api/types';
 import { kindOfBetId } from '../lib/betKind';
 import { kindLabel } from '../lib/betsView';
@@ -400,6 +401,8 @@ export default function Leaderboard() {
           )}
         </>
       )}
+
+      {lb.data?.odds && <OddsCard bands={lb.data.odds} />}
 
       {lb.data && <ProgramBoard board={lb.data} />}
 

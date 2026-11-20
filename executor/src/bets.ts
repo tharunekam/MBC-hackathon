@@ -13,6 +13,7 @@ import { conditionalPrice } from './pricing.ts';
 import type { BreakoutQuote } from './breakout.ts';
 import type { RangeQuote } from './range.ts';
 import { PRICE_TICK, clean, feeRate, floorToStep, hedgeQuantity, payoffs, settlementPayout, takerFee } from './pricing.ts';
+import { secondLegWaitOf, waitForSecondLeg } from './second-leg-wait.ts';
 
 export interface BetRequest {
   user: string;
@@ -47,6 +48,14 @@ export interface Deps {
    * Every other refusal still applies. Off by default.
    */
   waiveMarkup?: boolean;
+  /**
+   * GIVEN_SECOND_LEG_WAIT_MS: how long, in all, a bet's second order may wait for its contract to stop being post-only
+   * before the bet is sold back or left unhedged. 0 or unset (the default): no wait, the order path as it was verified on
+   * the sandbox. Never more than 15000. See second-leg-wait.ts.
+   */
+  secondLegWaitMs?: number;
+  /** How that wait pauses between two reads. Tests pass their own so they do not really wait. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /**
@@ -434,6 +443,7 @@ export async function placeConditionalBet(deps: Deps, req: BetRequest): Promise<
 /** `deps.exchange` is the bet's own view of the ladder (the mirror for a falling bet), so every price read here is in the bet's terms. */
 async function hedge(deps: Deps, bet: BetRecord, maxPrice: number, slip: number): Promise<void> {
   const m = legMap(bet);
+  const wait = secondLegWaitOf(deps); // nothing to spend unless GIVEN_SECOND_LEG_WAIT_MS is on
   for (let attempt = 1; attempt <= MAX_HEDGE_ATTEMPTS; attempt++) {
     const b = netHolding(bet, m.outcome.symbol, m.outcome.side);
     const a = netHolding(bet, m.hedge.symbol, m.hedge.side);
@@ -442,7 +452,9 @@ async function hedge(deps: Deps, bet: BetRecord, maxPrice: number, slip: number)
     // Fresh book for the condition each attempt.
     const event = await deps.exchange.getEvent(bet.eventTicker);
     const contract = event.contracts.find((c) => c.instrumentSymbol === bet.condition.symbol);
-    const rung = contract ? toRung(contract) : null;
+    let rung = contract ? toRung(contract) : null;
+    // Only with the wait switched on: a contract that is post-only is re-read until it opens or the wait is used up.
+    if (wait.leftMs > 0) rung = await waitForSecondLeg(deps, bet, bet.condition.symbol, contract, rung, wait);
     if (!rung || !rung.open || rung.bid === null) return;
 
     const feeCoef = deps.feeCoef ?? 0;

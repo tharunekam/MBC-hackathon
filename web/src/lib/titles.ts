@@ -10,6 +10,7 @@ const PAGES: [prefix: string, title: string][] = [
   ['/range', 'Range and Breakout'],
   ['/basket', 'Basket'],
   ['/hunch', 'Hunch'],
+  ['/sketch', 'Sketch'],
   ['/markets', 'Markets'],
   ['/bets', 'My bets'],
   ['/leaderboard', 'Leaderboard'],

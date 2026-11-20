@@ -180,6 +180,8 @@ test('a verifier with no database rebuilds the leaderboard from the chain alone'
   assert.equal(board.rows[0]!.edge, 0.59);
   assert.equal(board.rows[0]!.hitRate, 1);
   assert.equal(board.rows[0]!.handle, call.handle);
+  // The same call, read as evidence about the market's odds: it gave this call a 41% chance, and it came in.
+  assert.deepEqual(board.odds.filter((b) => b.calls > 0), [{ from: 0.25, to: 0.5, calls: 1, cameIn: 1, expected: 0.41 }]);
   // Running it again finds nothing new.
   assert.deepEqual(await verifier.backfill(), { scanned: 2, added: 0 });
 });

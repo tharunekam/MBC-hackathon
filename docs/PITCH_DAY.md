@@ -18,7 +18,10 @@ be the evidence for the QuickNode bounty, so it is on for a short window only.
 ## About 30 minutes before presenting or recording
 
 1. Open the app on the phone and the laptop. Pick a ladder that has been open at least 15 minutes (new hourly ladders are
-   post-only at first) and confirm the button reads **Place bet**.
+   post-only at first) and confirm the button reads **Place bet**. If the ticket shows "This market has only just opened",
+   pick another: on 2026-11-20 a bet on such a ladder had its second order refused and was sold back for half its stake.
+   For a basket, put each leg on a different market and stay out of a ladder's last half hour: three sandbox baskets on
+   one thin ladder stopped after the first leg (`docs/PLAN.md`).
 2. `npm run quicknode -- pitch-on`
    It sends a signed test delivery to the public address first and refuses to start the Stream if that is not accepted, so
    credits are never spent on a Stream that cannot be heard. If QuickNode will not resume the paused Stream (the free plan only
@@ -54,6 +57,11 @@ be the evidence for the QuickNode bounty, so it is on for a short window only.
 - The ladder as a histogram is not new (Kalshi shows one on some range markets). What is ours is setting a person's view
   against it and listing the bets that pay for the difference.
 - The leaderboard: revealing is your choice, making the call is not hidden. It shows calls sealed beside calls revealed.
+- The Outlook (Markets page) is "the market's forecast, read from its own prices for each closing time". Say "how far
+  the market expects it to move by then", not "implied volatility", and "nothing is modelled". On the test exchange there
+  is one closing time, so it is one fan from now to the close; the sandbox and the demo data show several.
+- "Were the market's odds right?" counts revealed calls only, and with a handful of calls it says so. Do not present a
+  short table as proof of anything.
 - "Uses Gemini's API; not affiliated with Gemini." Say it is the **sandbox**, and say when a screen is a replay or the local test exchange.
 - The QuickNode Stream: network Solana devnet, dataset Programs + Logs, a filter that keeps successful transactions that logged
   a Given memo, delivered to a webhook that re-reads every transaction from Solana and verifies it, so a forged delivery cannot

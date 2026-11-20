@@ -10,6 +10,7 @@
  *    Gemini order IDs on the owner's bet are the evidence behind it.
  */
 import { edge, commitHash, handleFor, newSalt } from './hash.ts';
+import { oddsBands } from './odds.ts';
 import type { CallFields } from './hash.ts';
 import { ChainError } from './chain.ts';
 import type { Chain } from './chain.ts';
@@ -600,6 +601,8 @@ export class ChainService {
       /** Every key whose records these rows count. Public keys; they sign records anyone can read on chain. */
       authorities: [...this.authorities],
       rows,
+      // Every verified call, whoever made it and however few they have made: this is about the market's odds, not a player.
+      odds: oddsBands(Object.values(this.store.data.reveals).filter((r) => r.verified)),
     };
   }
 

@@ -16,6 +16,7 @@ import type { Phase } from '../lib/betState';
 import { cents, money, pct, usd } from '../lib/format';
 import { useDebounced, useResource } from '../lib/hooks';
 import { execLive } from '../lib/liveClients';
+import { openingNote } from '../lib/marketPhase';
 import { assetLabel, closesLabel, groupByAsset } from '../lib/markets';
 import { cleanStakeText } from '../lib/stake';
 
@@ -170,6 +171,10 @@ export default function BasketLeg(p: Props) {
   useEffect(() => {
     onStatus(leg.key, JSON.parse(signature) as LegStatus);
   }, [onStatus, leg.key, signature]);
+
+  // A market that takes bets but is still opening gets a heads-up on the leg, until the basket is placed. It refuses
+  // nothing: the leg's status and the basket's button are untouched by it.
+  const opening = event && p.phase !== 'placed' ? openingNote(event) : null;
 
   const locked = p.phase !== 'idle';
   const id = `leg-${leg.key}`;
@@ -330,6 +335,9 @@ export default function BasketLeg(p: Props) {
           </dl>
         )}
       </div>
+
+      {/* The builders' caution, with the leg's own spacing for a note (`leg-error` only takes the note's margins off). */}
+      {opening && <p className="note note-warn leg-error">{opening}</p>}
 
       {p.error && (
         <p className="note note-bad leg-error" role="alert">

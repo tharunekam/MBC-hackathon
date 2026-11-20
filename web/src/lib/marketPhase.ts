@@ -17,6 +17,9 @@ type Ladder = Pick<MarketEvent, 'expiry' | 'rungs'>;
 /** A contract in one of these states has finished for good. Anything else that is not open (Gemini lists new contracts "post_only") may still open. */
 const FINISHED = /settled|closed|expired|resolved/;
 
+/** How Gemini lists a new contract before it opens. An order sent to be filled at once, as both of a bet's are, is refused. */
+const postOnly = (r: { state: string }): boolean => /post[_-]only/.test(r.state.toLowerCase());
+
 const closeTime = (expiry: string | null): number => (expiry ? new Date(expiry).getTime() : Number.NaN);
 
 export function phaseOf(ladder: Ladder, now = Date.now()): MarketPhase {
@@ -58,10 +61,29 @@ export function marketNote(ladder: Ladder, now: number, opts: { another: boolean
     return { phase, label: 'This market has closed', text: `This market ${when ? `closed${when}` : 'has closed'} and takes no more bets. ${next}` };
   }
   // Listed but not trading yet. Gemini lists new contracts post-only for their first minutes; any other state makes no promise.
-  if (ladder.rungs.some((r) => /post[_-]only/.test(r.state.toLowerCase()))) {
+  if (ladder.rungs.some(postOnly)) {
     return { phase, label: 'Not open for bets yet', text: 'This market is not open for trading yet. New markets can take a few minutes to open, and this page picks it up when it does.' };
   }
   return { phase, label: 'Not open for bets', text: `This market is not open for trading right now. ${opts.another ? 'Pick another market above, or check back in a minute.' : 'Check back in a minute.'}` };
+}
+
+/** The same words on every builder, so a person who has read them once knows them again. */
+const OPENING =
+  'This market has only just opened and some of its levels are not taking orders yet. If a bet’s second order is refused, its first is sold back, usually for less than was paid. Waiting a few minutes avoids this.';
+
+/**
+ * A heads-up for a ladder that takes bets but is still opening: some of its contracts are open while at least one is still
+ * post-only. A bet is two orders sent one after the other. On a sandbox market listed a quarter of an hour earlier the first
+ * order filled, the second contract stopped taking orders in between, and the half-placed bet was sold back for about half
+ * its stake. This is a caution and never a refusal: the button stays as it was.
+ *
+ * Null for a ladder with every contract open, and for one that is closed or not open as a whole, which `marketNote` covers.
+ */
+export function openingNote(ladder: Ladder, now = Date.now()): string | null {
+  if (phaseOf(ladder, now) !== 'open') return null;
+  const waiting = ladder.rungs.some(postOnly);
+  const trading = ladder.rungs.some((r) => r.open && !postOnly(r));
+  return waiting && trading ? OPENING : null;
 }
 
 /** Whether any other ladder in the list can take a bet right now. */

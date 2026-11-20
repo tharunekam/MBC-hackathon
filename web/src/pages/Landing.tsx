@@ -5,6 +5,8 @@ import ProductShowcase from '../components/ProductShowcase';
 import Reveal from '../components/Reveal';
 import { MY_BETS, PRODUCTS } from '../lib/nav';
 import { keepMode, type VenueNote } from '../lib/venue';
+import '../styles/dist.css';
+import '../styles/outlook.css';
 import '../styles/landing.css';
 
 /** The product the page goes on to explain in detail; all four shapes are introduced together just under the opening. */
@@ -98,6 +100,50 @@ function Outcomes() {
 // A made-up market and a made-up view of it, each adding to 100%. The view sits higher than the market and is surer of itself.
 const MARKET = [0.02, 0.05, 0.11, 0.19, 0.24, 0.19, 0.11, 0.06, 0.03];
 const VIEW = [0, 0.01, 0.03, 0.09, 0.2, 0.31, 0.23, 0.1, 0.03];
+
+/** The Outlook in one picture, drawn the way the Markets page draws it: a line through the middle of the market's view, widening bands either side. */
+function OutlookFigure() {
+  const W = 360;
+  const start = { x: 6, y: 66 };
+  // Three closing times: how far along, where the middle sits, and the half-heights of the two bands.
+  const closes = [
+    { x: 112, y: 64, even: 9, wide: 19 },
+    { x: 214, y: 61, even: 17, wide: 34 },
+    { x: 354, y: 58, even: 27, wide: 52 },
+  ];
+  const shape = (half: (c: (typeof closes)[number]) => number) =>
+    `M${start.x},${start.y}${closes.map((c) => `L${c.x},${c.y - half(c)}`).join('')}${[...closes].reverse().map((c) => `L${c.x},${c.y + half(c)}`).join('')}Z`;
+  return (
+    <div className="card hunch-demo">
+      <span className="eyebrow">The market’s forecast, by closing time</span>
+      <div role="img" aria-label="A line runs from now through the middle of the market’s view at three closing times. Two bands widen around it the further out it goes: a darker one that holds an even chance and a lighter one that holds four chances in five.">
+        <svg className="hunch-fig" viewBox={`0 0 ${W} 132`} aria-hidden="true" focusable="false">
+          <path className="ol-wide" d={shape((c) => c.wide)} />
+          <path className="ol-even" d={shape((c) => c.even)} />
+          <path className="ol-middle" d={`M${start.x},${start.y}${closes.map((c) => `L${c.x},${c.y}`).join('')}`} />
+          <circle className="ol-start" cx={start.x} cy={start.y} r={3} />
+          {closes.map((c) => (
+            <circle key={c.x} className="ol-dot" cx={c.x} cy={c.y} r={4} />
+          ))}
+        </svg>
+        <div className="hf-axis">
+          <span>Now</span>
+          <span>When the market closes</span>
+          <span>Later</span>
+        </div>
+      </div>
+      <div className="dist-keys ol-keys">
+        <span data-kind="even">
+          <i /> Even chance
+        </span>
+        <span data-kind="wide">
+          <i /> Four chances in five
+        </span>
+      </div>
+      <p className="fine">Illustrative. On the Markets page each band is read from the exchange’s own prices for that closing time.</p>
+    </div>
+  );
+}
 
 /** Hunch in one picture, drawn the way the Hunch page draws it: bars for the market, a stepped line for your view. */
 function HunchFigure() {
@@ -216,6 +262,25 @@ export default function Landing() {
           </Reveal>
           <Reveal delay={120}>
             <HunchFigure />
+          </Reveal>
+        </div>
+      </section>
+
+      <section className="band band-follows" id="outlook">
+        <div className="wrap split">
+          <Reveal>
+            <OutlookFigure />
+          </Reveal>
+          <Reveal delay={120}>
+            <span className="eyebrow">Outlook</span>
+            <h2 className="h-section">See the market’s forecast, then bet on it</h2>
+            <p className="lede">
+              Every closing time has its own ladder. Read side by side, they draw where the market thinks a price is heading and how sure it is. A Range is a bet that the price stays inside a band. A
+              Breakout is a bet that it does not.
+            </p>
+            <Link to={keepMode('/markets')} className="btn btn-ghost">
+              See the outlook
+            </Link>
           </Reveal>
         </div>
       </section>

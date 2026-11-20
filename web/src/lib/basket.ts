@@ -611,6 +611,31 @@ export const listed = (ns: number[]): string =>
     : `${ns.slice(0, -1).join(', ')} and ${ns[ns.length - 1]}`;
 
 /**
+ * The legs that are on a market another leg is on too, by their place in the basket (from 0): one list for each such market,
+ * in the order the legs are placed. A leg with no market yet is in none of them.
+ */
+export function sharedMarkets(tickers: (string | null)[]): number[][] {
+  const byMarket = new Map<string, number[]>();
+  tickers.forEach((t, i) => {
+    if (t) byMarket.set(t, [...(byMarket.get(t) ?? []), i]);
+  });
+  return [...byMarket.values()].filter((legs) => legs.length > 1);
+}
+
+/**
+ * What the ticket says when two or more legs are on one market, or null when every leg has a market to itself. The page lets
+ * legs share a market, and legs are sent one after the other. On the sandbox, baskets of two legs on one market with few
+ * orders stopped after the first: its own orders had moved the prices, and the second leg was turned down. It names the legs
+ * so a person can see which one to move, and it stops nothing.
+ */
+export function sharedMarketNote(tickers: (string | null)[]): string | null {
+  const groups = sharedMarkets(tickers);
+  if (groups.length === 0) return null;
+  const who = groups.length === 1 ? `Legs ${listed(groups[0]!.map((i) => i + 1))}` : 'Some of these legs';
+  return `${who} share a market: the first one’s orders can move the prices the next one needs, so on a market with few orders a later leg can be turned down; legs on different markets avoid this.`;
+}
+
+/**
  * The line under what the orders cost, saying why that figure can sit below the stakes. It is always there, so the ticket
  * does not jump each time a moving price takes a cent off: the executor sizes every bet to cost no more than its stake, and
  * contracts come in hundredths, so a leg often comes in a cent or two under. `reduced` are the legs, from 0, that the market
