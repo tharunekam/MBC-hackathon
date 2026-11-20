@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import type { Bet, CallRecord, Direction, MarketEvent, QuoteResponse, Rung } from '../api/types';
+import DistCard from '../components/DistCard';
 import LadderChart from '../components/LadderChart';
 import MarketPicker from '../components/MarketPicker';
 import ProbBar from '../components/ProbBar';
@@ -56,7 +57,12 @@ export default function Parlay() {
   }, [wanted, showUnpriced, ladders.unpriced]);
 
   const [direction, setDirection] = useState<Direction>(params.get('direction') === 'down' ? 'down' : 'up');
-  const [sel, setSel] = useState<{ c: string; t: string } | null>(null);
+  // The Hunch page links here with a bet already chosen (?condition=&target=). If the ladder no longer has those two prices,
+  // or they are not in the order the direction needs, the effect below falls back to the default pair.
+  const [sel, setSel] = useState<{ c: string; t: string } | null>(() => {
+    const [c, t] = [params.get('condition'), params.get('target')];
+    return c && t ? { c, t } : null;
+  });
   const [stake, setStake] = useState(10);
   const [stakeText, setStakeText] = useState('10');
 
@@ -313,6 +319,8 @@ export default function Parlay() {
               </tbody>
             </table>
           </section>
+
+          {event && cRung && tRung && <DistCard rungs={event.rungs} shape={{ kind: direction, condition: cRung.strike, target: tRung.strike }} />}
 
           {event && (
             <section className="card rungs" aria-label="The ladder">

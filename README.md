@@ -65,6 +65,25 @@ Every bet id carries its product (`dn-` falling, `rg-` range). The id is committ
 with it, so the proof page and the leaderboard can say what a call was without a change to the hash or to the deployed
 program, and nobody can relabel a call after seeing how it went.
 
+### Reading the ladder: the market's view, and yours
+
+- **The market's view.** Each rung is a contract on "finishes at or above this price", so its mid price is the market's
+  chance of that, and the difference between two neighbouring rungs is its chance of finishing between them. Both builders
+  show the ladder that way: one bar per gap between prices, each coloured by what the bet you are building does if the
+  price lands there (win, stake back, lose). Nothing is modelled; the bars are the exchange's prices read another way. A
+  ladder whose prices are momentarily out of order is evened out first, and the card says so.
+- **Hunch.** Say where you think the price finishes and how sure you are, and the page lists the bets on offer that pay
+  best if you are right. Your view is the market's own curve, moved to a new centre and squeezed or widened, so a view that
+  has not been moved is the market's exactly and the page lists nothing: every bet costs a little over what the market
+  thinks it is worth. Each listed bet shows what $1 of its payout is worth under your odds, what you pay for it (spread and
+  fees included, the same number the builder shows), and opens in its builder with one tap. The figures use the odds you
+  entered and never a forecast of ours, and the page says the market may be right.
+- **How a basket's legs move together.** Legs on the same ladder are decided by one finishing price, so the chance that
+  every leg wins is exact: add up the bars where all of them win. The Basket shows it, and names two legs that can never
+  both win (a rising and a falling bet whose winning prices do not overlap). Legs on different ladders are another matter:
+  the exchange's prices do not say how two markets move together, so the page shows the range that holds whatever the
+  relationship is, with the figure for unrelated markets as a reference point, never as the answer.
+
 ### Fees and disclosures
 
 - Gemini's published taker fee is `0.07 × contracts × price × (1 − price)`, rounded up to the cent. The sandbox charges
@@ -88,9 +107,9 @@ web (React/Vite)  ──►  executor (Node)  ──►  Gemini REST + WebSocket
 | Package | Role |
 |---|---|
 | `executor/` | Quotes, the two-leg bet with depth guard and hedge sizing, a ledger written before every order, settlement, and **reconcile to the cent against Gemini** (it counts Gemini's YES/NO netting). A sandbox liquidity seeder, disclosed (below). 208 tests. |
-| `chain/` | Commit and reveal on Solana, the QuickNode webhook, the leaderboard, a public proof endpoint. 120 tests. |
+| `chain/` | Commit and reveal on Solana, the QuickNode webhook, the leaderboard, a public proof endpoint. 121 tests. |
 | `receipts-program/` | `given_receipts`, our Solana program (Anchor): checks each reveal against its commit on chain, refuses a repeat, keeps each handle's score. Deployed on devnet, interface published on chain. 8 tests against the built program. |
-| `web/` | The app: a tab for each product (Return Parlay and Range over a probability ladder with draggable markers, Basket as a list of legs), the quote, a market index, My bets, a leaderboard and a proof page. Pages update on their own over server-sent events. |
+| `web/` | The app: a tab for each product (Return Parlay and Range over a probability ladder with draggable markers, Basket as a list of legs), the quote, the market's view of where the price finishes as a histogram, Hunch (your view against the market's, and the bets that fit it), a market index, My bets, a leaderboard and a proof page. Pages update on their own over server-sent events. |
 | `scripts/` | The dev stack, the hosted-demo server (`serve.mjs`: the built app plus an allowlist of API paths on one port), the deploy checker, the browser end-to-end test, and the rehearsals. A recorder and replayer for the stage (`docs/DEPLOY.md`). 51 tests. |
 | `docs/` | `PLAN.md`, `GIVEN.md` (decision log), `CONTRACTS.md` (interfaces), `GEMINI_API_NOTES.md`, `SUBMISSION.md`. |
 
@@ -128,6 +147,14 @@ alone (`docs/GIVEN.md`, decision 9; details in `chain/README.md`).
 The leaderboard ranks **edge**, not profit or volume: for each revealed call, outcome (1 if the target hit, else 0) minus
 the fair price at entry, summed. Luck on a few calls washes out.
 
+**The leaderboard can be read from the program with no server of ours involved.** Under the table, "Read from the
+program" has your browser ask a Solana node for the program's own score accounts (one `getProgramAccounts` request per
+trusted key, filtered to that kind of account), decode them, and line them up against the table our server built. It
+holds totals only (calls, hits, summed edge) and only for reveals that went through the program; Memo-only reveals are
+on the server's board and not in those accounts. Read from devnet in a browser on 2026-11-19, for the two keys named in
+this README and `docs/PLAN.md`, it returned two handles, one of them 4 calls, 2 hits and an edge of 0.78: the figures the
+server's board showed after the 2026-11-18 run.
+
 ## QuickNode Streams
 
 - **Network:** Solana devnet. **Dataset:** Programs + Logs.
@@ -157,8 +184,8 @@ npm run dev         # whole stack with no keys and no SOL: local test exchange +
 npm run dev:quotes  # REAL Gemini sandbox prices and order books with no keys; every order is refused (read-only)
 node scripts/seed-history.mjs all   # optional: a win, a loss and a refund, committed and revealed
 npm run stop        # stop this project's servers
-npm test            # 599 tests: executor 208, chain service 120, web 220, hosted-demo server and scripts 51
-npm run e2e         # the production build in real Chrome (21 checks, all three products; e2e:sabotage must fail)
+npm test            # 698 tests: executor 208, chain service 121, web 318, hosted-demo server and scripts 51
+npm run e2e         # the production build in real Chrome (23 checks: all three products, the histogram and Hunch; e2e:sabotage must fail)
 npm run e2e:replay  # records a bet through the real app, then replays it with nothing running behind it (7 checks)
 npm run rehearse    # (also rehearse:chaos) the whole golden path through the real clients, Gemini and Solana stood in on the wire
 npm run preflight   # what is ready for the real thing and what is missing, with the fix for each
@@ -207,6 +234,10 @@ against a NO on the same contract and pays $1 a pair early, which the reconcile 
 - The QuickNode Stream itself (above). Without it the leaderboard fills from an RPC backfill, about three minutes behind.
 - Production has never been run. Gemini's sandbox is not production: its books are far thinner and wider.
 - Maker-first pricing and sports ladders. See `docs/PLAN.md`.
+- Hunch, the histogram, the basket's joint chances and the leaderboard read from the program have run on the local test
+  exchange and in the browser checks; Hunch and the histogram have also been looked at on the real sandbox's prices
+  (read-only), where on 2026-11-19 no ladder had a bet on offer and Hunch said so. The program read was run against
+  real devnet. None of them places an order.
 - Built but never run against the real sandbox: the liquidity seeder (it needs a second sandbox account) and a replay
   of a real session (the recorder and replayer work on the local test exchange; a real session has not been recorded).
 

@@ -302,7 +302,7 @@ await check('when the server restarts under an open page, the page recovers by i
 await check('on a phone: no sideways scroll on any page, and the quote follows the chart', async () => {
   await dev('/dev/reset');
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const path of ['/', '/parlay', '/range', '/basket', '/bets', '/markets', '/leaderboard', '/proof']) {
+  for (const path of ['/', '/parlay', '/range', '/basket', '/bets', '/markets', '/hunch', '/leaderboard', '/proof']) {
     await page.goto(base + path);
     await sleep(700);
     const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -437,6 +437,55 @@ await check('Basket: three bets of three kinds are placed in one step, and My be
   need(/Mixed bag/.test(head) && /3 legs/.test(head), `the basket header reads: ${head.replace(/\n/g, ' | ')}`);
   const tags = await page.locator('.bl-basket .bl-tags').allInnerTexts();
   need(/falling/i.test(tags[2] ?? '') && /range/i.test(tags[1] ?? '') && !/falling|range/i.test(tags[0] ?? ''), `the legs are tagged ${tags.join(' / ').replace(/\n/g, ' ')}`);
+});
+
+// ---- 6d. the ladder read as a histogram, and a view set against it
+await check('the builders show the ladder as a histogram coloured by the bet, with the same chances as the quote', async () => {
+  await dev('/dev/reset');
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${base}/parlay`);
+  await placeable();
+  await page.waitForSelector('.dist-card .dc-slot');
+  const zones = await page.evaluate(() => [...document.querySelectorAll('.dist-card .dc-slot')].map((g) => g.getAttribute('data-zone')));
+  need(['win', 'back', 'lose'].every((z) => zones.includes(z)), `a parlay's bars are ${zones.join(',')}`);
+  // back ... lose ... win, left to right, for a bet that a price rises
+  need(zones.join(',').replace(/(\w+)(,\1)+/g, '$1') === 'back,lose,win', `the bars run ${zones.join(',')}`);
+  const pctOf = (t) => Number(/(\d+)%/.exec(t)?.[1]);
+  const keys = (await page.locator('.dist-card .dist-keys span').allInnerTexts()).map(pctOf);
+  need(Math.abs(keys.reduce((a, b) => a + b, 0) - 100) <= 1, `the three chances add up to ${keys.join('+')}`);
+  const quoted = (await page.locator('.pb-key').allInnerTexts()).map(pctOf); // stake back, win, lose
+  need(Math.abs(keys[0] - quoted[1]) <= 1 && Math.abs(keys[1] - quoted[0]) <= 1, `the histogram says win ${keys[0]}% back ${keys[1]}%, the quote says win ${quoted[1]}% back ${quoted[0]}%`);
+  await page.goto(`${base}/range`);
+  await placeable();
+  await page.waitForSelector('.dist-card .dc-slot');
+  const rz = await page.evaluate(() => [...document.querySelectorAll('.dist-card .dc-slot')].map((g) => g.getAttribute('data-zone')));
+  need(rz.includes('win') && !rz.includes('back'), `a range's bars are ${rz.join(',')}`);
+});
+
+await check('Hunch: an unmoved view lists nothing, a view moved up lists rising bets, and one opens in its builder already chosen', async () => {
+  await page.goto(`${base}/hunch`);
+  await page.waitForSelector('.hunch .dc-view');
+  need((await page.locator('.hunch-idea').count()) === 0, 'bets are listed before the view has been moved');
+  need(/your view is the market/i.test(await page.locator('.hunch-none').innerText()), 'the empty list does not say the view is the market’s');
+  // Move the centre most of the way up the ladder, the way a drag does.
+  await page.evaluate(() => {
+    const el = document.getElementById('hunch-center');
+    const value = Number(el.min) + 0.8 * (Number(el.max) - Number(el.min));
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, String(value));
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await page.waitForSelector('.hunch-idea');
+  const first = page.locator('.hunch-idea').first();
+  const title = (await first.locator('h3').innerText()).replace(/\s+/g, ' ');
+  need(/reaches/.test(title), `the best bet for a view above the market is "${title}"`);
+  const [worth, paid] = (await first.locator('.hunch-figs dd').allInnerTexts()).map((t) => Number(/(\d+)/.exec(t)?.[1]));
+  need(worth > paid, `listed a bet worth ${worth}¢ to the view that costs ${paid}¢`);
+  const prices = title.match(/\$[\d,.]+/g) ?? [];
+  await first.getByRole('link', { name: 'Open' }).click();
+  await page.waitForURL(/\/parlay\?.*condition=.*target=/);
+  await placeable();
+  const asked = (await page.locator('.q-sentence').innerText()).replace(/\s+/g, ' ');
+  need(prices.length === 2 && prices.every((p) => asked.includes(p)), `the builder opened on "${asked}", not on ${prices.join(' and ')}`);
 });
 
 // ---- 7. nothing broke quietly

@@ -337,6 +337,82 @@
 .basket-totals [data-kind="lose"] dd {
   color: var(--bad);
 }
+/* How the legs come out together: two figures, a thin bar for the range that is certain, and the small print. */
+.together {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.together-head {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.together-line {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.4;
+  color: var(--soft);
+}
+.together-line b {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--ink);
+}
+.together .fine {
+  margin: 0;
+}
+.together-meter {
+  display: grid;
+  gap: 6px;
+}
+/* The whole width is 0% to 100%. The shaded part is the range; the mark is the figure for unrelated markets. */
+.together-bar {
+  position: relative;
+  height: 6px;
+  margin-top: 4px;
+  border-radius: 3px;
+  background: var(--line);
+}
+.together-range {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 2px;
+  border-radius: 3px;
+  background: var(--accent);
+  transition:
+    left 200ms var(--ease),
+    width 200ms var(--ease);
+}
+/* Taller than the bar, so it reads against the card in both themes and not only against the shading. */
+.together-tick {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--ink);
+  transition: left 200ms var(--ease);
+}
+.together-scale {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
 .basket-notes {
   display: grid;
   gap: 8px;
@@ -449,7 +525,9 @@
 @media (prefers-reduced-motion: reduce) {
   .basket .leg-nums dd,
   .select select,
-  .leg-remove {
+  .leg-remove,
+  .together-range,
+  .together-tick {
     transition: none;
   }
 }

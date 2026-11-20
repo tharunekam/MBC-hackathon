@@ -104,6 +104,19 @@ with sandbox keys must place one of each and then `node src/cli.ts reconcile`. C
 because it is the same bet as "given B, will C"; "across markets" and "without the favourite" stay out because the exchange
 has no contract that links them (`docs/GIVEN.md`: decisions 5 and 7 and the list of other ideas; the three products are decisions 20 to 23).
 
+**Reading the ladder, Thursday 2026-11-19 night (branch `feat/structured-products`; added after the 15:00 freeze, so
+both teammates should look before it is merged).** Four additions, all in the web app plus two response fields on the chain service; none places an order
+or changes how one is placed, so none needs a sandbox run before it can be shown.
+- **The market's view as a histogram** on both builders: one bar per gap between prices, coloured by what the bet being
+  built does there (`web/src/lib/distribution.ts`, `components/DistChart.tsx`).
+- **Hunch** (`/hunch`): a view of where the price finishes, set against the market's, and the bets on offer that pay best
+  if it is right, each opening in its builder already chosen (`?condition=&target=`, `?low=&high=`).
+- **How a basket's legs move together**: exact on one ladder, an honest range across ladders (`web/src/lib/together.ts`).
+- **The leaderboard read from the program's accounts in the browser** (`web/src/lib/programBoard.ts`), which closes the
+  "leaderboard reproduced with no backend" half of T-C5. Read from real devnet in a browser on 2026-11-19: two handles,
+  matching the 2026-11-18 run.
+`npm run e2e` has two more checks for the histogram and Hunch (23 in all).
+
 **Verified by running** (599 tests across the four packages; the golden path and the three products were also driven in a
 real browser against the real executor handler and chain service): bet builder on the probability ladder, quote, place,
 receipt, My bets, settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is and is not verified:

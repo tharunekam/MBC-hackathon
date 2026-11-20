@@ -457,6 +457,13 @@ export interface LeaderboardResponse {
   source: 'quicknode-stream' | 'rpc';
   /** Which chain the rows were read from. `fake` is the in-memory test chain. */
   network: 'devnet' | 'fake';
+  /**
+   * The given_receipts program, which keeps a running score per player in its own accounts, or null when records are
+   * Memos only. With `authorities` it is all a browser needs to read those scores from Solana itself (`lib/programBoard`).
+   */
+  program?: string | null;
+  /** Public keys whose records the rows count. */
+  authorities?: string[];
   rows: LeaderboardRow[];
 }
 

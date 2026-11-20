@@ -720,7 +720,8 @@ export function mockApi(): Api {
         });
       }
       rows.sort((x, y) => y.edge - x.edge);
-      return { asOf: new Date().toISOString(), minCalls: 1, source: 'quicknode-stream', network: 'fake', rows: rows.map((r, i) => ({ rank: i + 1, ...r })) };
+      // No program and no keys: demo rows exist only here, so there is nothing on Solana for the page to read.
+      return { asOf: new Date().toISOString(), minCalls: 1, source: 'quicknode-stream', network: 'fake', program: null, authorities: [], rows: rows.map((r, i) => ({ rank: i + 1, ...r })) };
     },
   };
 }

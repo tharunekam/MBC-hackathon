@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
-import type { MarketEvent, PlaceBasketResponse } from '../api/types';
+import type { MarketEvent, PlaceBasketResponse, Rung } from '../api/types';
 import BasketLeg from '../components/BasketLeg';
 import BasketResult, { type CallProgress } from '../components/BasketResult';
 import StakeField from '../components/StakeField';
@@ -12,6 +12,7 @@ import {
   buildRequest,
   cryptoLegs,
   defaultLevels,
+  inOrder,
   kindOfLeg,
   levelsValid,
   makeLeg,
@@ -28,12 +29,21 @@ import {
   type LegStatus,
 } from '../lib/basket';
 import { betSentence, productName } from '../lib/betKind';
-import { usd, usdSigned } from '../lib/format';
+import { pct, usd, usdSigned } from '../lib/format';
 import { friendly } from '../lib/friendly';
 import { useResource } from '../lib/hooks';
 import { listLadders } from '../lib/ladders';
 import { execLive } from '../lib/liveClients';
 import { assetLabel } from '../lib/markets';
+import {
+  chanceWords,
+  shapeOf,
+  spanWords,
+  together,
+  winsAt,
+  type JointLeg,
+  type Together,
+} from '../lib/together';
 import { useVenue } from '../lib/venue';
 import '../styles/builder.css';
 import '../styles/basket.css';
@@ -235,6 +245,31 @@ export default function Basket() {
     legs.map((l) => ({ stake: l.stake, status: statuses[l.key] })),
   );
   const crypto = cryptoLegs(legs.map((l) => eventOf(l.event)));
+
+  // How the legs come out together, read from the same ladders the legs are built on, so it moves whenever the prices do.
+  // A leg with no market or levels yet goes in as null and is reported as left out.
+  const joint = useMemo(() => {
+    const rungs: Record<string, Rung[]> = {};
+    const shapes = legs.map((l): JointLeg | null => {
+      const ev = eventOf(l.event);
+      const a = ev?.rungs.find((r) => r.symbol === l.a);
+      const b = ev?.rungs.find((r) => r.symbol === l.b);
+      if (!ev || !a || !b || !inOrder(l.kind, a, b)) return null;
+      rungs[ev.ticker] = ev.rungs;
+      return { ticker: ev.ticker, shape: shapeOf(l.kind, a.strike, b.strike) };
+    });
+    return { shapes, result: together(shapes, rungs) };
+  }, [legs, eventOf]);
+  // The tendency is only worth stating about a range, and a range only exists between separate ladders.
+  const cryptoApart = cryptoLegs(
+    Array.from(new Set(legs.map((l) => l.event)), eventOf),
+  );
+  const leaning =
+    !!joint.result.allWin && !joint.result.allWin.exact && cryptoApart >= 2;
+  // The short warning says the legs "can all win", which is wrong once two of them cannot both win, and is already said
+  // at more length when the panel talks about the range.
+  const warnTogether =
+    crypto >= 2 && !leaning && joint.result.impossible.length === 0;
 
   async function place() {
     if (!button.canPlace) return;
@@ -481,12 +516,24 @@ export default function Basket() {
                 </div>
               </dl>
 
+              {legs.length >= MIN_LEGS && (
+                <TogetherPanel
+                  joint={joint.result}
+                  shapes={joint.shapes}
+                  assetOf={(ticker) => {
+                    const ev = eventOf(ticker);
+                    return ev ? assetLabel(ev) : 'the price';
+                  }}
+                  leaning={leaning}
+                />
+              )}
+
               <div className="basket-notes">
                 <p className="fine">
                   A Return Parlay leg gives its stake back if its first level
                   fails. A Range leg always returns part of what it cost.
                 </p>
-                {crypto >= 2 && (
+                {warnTogether && (
                   <p className="fine">
                     Legs on assets that tend to move together can all win or all
                     lose at once.
@@ -519,5 +566,129 @@ export default function Basket() {
         </aside>
       </div>
     </div>
+  );
+}
+
+/** "2", "2 and 3", "1, 2 and 4". */
+const listed = (ns: number[]): string =>
+  ns.length < 2
+    ? ns.join('')
+    : `${ns.slice(0, -1).join(', ')} and ${ns[ns.length - 1]}`;
+
+/**
+ * How the legs come out together. Legs on one ladder get an exact figure, because one finishing price decides them. Legs on
+ * separate ladders get the range that holds however the markets move together, with the figure for unrelated markets marked
+ * inside it as a reference point. The figures are the market's, from the exchange's prices, and show "–" while a leg has none.
+ */
+function TogetherPanel({
+  joint,
+  shapes,
+  assetOf,
+  leaning,
+}: {
+  joint: Together;
+  shapes: (JointLeg | null)[];
+  /** What a ladder's price is of, for a sentence: "Bitcoin". */
+  assetOf: (ticker: string) => string;
+  /** Whether to say which way legs on crypto assets tend to pull the range. */
+  leaning: boolean;
+}) {
+  const { allWin, anyWin, missing, impossible } = joint;
+  const ranged = !!allWin && !allWin.exact;
+  const anyRange = ranged || (!!anyWin && !anyWin.exact);
+  const count = shapes.length;
+
+  // Two legs on one ladder whose winning prices never overlap. The first pair is spelled out; any others are counted.
+  const clash = impossible[0];
+  const first = clash ? shapes[clash.legs[0]] : null;
+  const second = clash ? shapes[clash.legs[1]] : null;
+
+  return (
+    <section className="together" aria-labelledby="together-head">
+      <h3 className="together-head" id="together-head">
+        How the legs move together
+      </h3>
+
+      <p className="together-line">
+        Chance every leg wins: <b>{allWin ? spanWords(allWin) : '–'}</b>
+      </p>
+      {allWin && ranged && (
+        <>
+          <div className="together-meter">
+            <div
+              className="together-bar"
+              role="img"
+              aria-label={`A bar from 0% to 100%, shaded from ${pct(allWin.low)} to ${pct(allWin.high)} and marked at ${pct(allWin.ifUnrelated)}.`}
+            >
+              <span
+                className="together-range"
+                style={{
+                  left: `${allWin.low * 100}%`,
+                  width: `${(allWin.high - allWin.low) * 100}%`,
+                }}
+              />
+              <span
+                className="together-tick"
+                style={{ left: `${allWin.ifUnrelated * 100}%` }}
+              />
+            </div>
+            <div className="together-scale" aria-hidden="true">
+              <span>0%</span>
+              <span>100%</span>
+            </div>
+          </div>
+          <p className="fine">
+            If the markets had nothing to do with each other it would be{' '}
+            {chanceWords(allWin.ifUnrelated)} (the mark on the bar).
+          </p>
+        </>
+      )}
+      <p className="together-line">
+        At least one leg wins: <b>{anyWin ? spanWords(anyWin) : '–'}</b>
+      </p>
+
+      {clash && first && second && (
+        <p className="note note-warn">
+          {count === 2
+            ? 'These two legs'
+            : `Legs ${clash.legs[0] + 1} and ${clash.legs[1] + 1}`}{' '}
+          cannot both win: leg {clash.legs[0] + 1} needs{' '}
+          {assetOf(clash.ticker)} {winsAt(first.shape)} and leg{' '}
+          {clash.legs[1] + 1} needs it {winsAt(second.shape)}.
+          {impossible.length === 2 &&
+            ' One other pair of legs cannot both win either.'}
+          {impossible.length > 2 &&
+            ` ${impossible.length - 1} other pairs of legs cannot both win either.`}{' '}
+          A basket is not all-or-nothing, so each leg still has its own result.
+        </p>
+      )}
+
+      {missing.length > 0 ? (
+        <p className="fine">
+          Waiting for prices on {missing.length === 1 ? 'leg' : 'legs'}{' '}
+          {listed(missing.map((i) => i + 1))}.
+        </p>
+      ) : (
+        <p className="fine">
+          {joint.groups.length === 1 &&
+            (count === 2
+              ? 'Both legs are on the same market, so one finishing price decides both. '
+              : `All ${count} legs are on the same market, so one finishing price decides them all. `)}
+          These are the market’s chances, from the exchange’s prices right now.
+          {anyRange &&
+            ' Those prices do not say how separate markets move together, so a range is all that is certain.'}
+          {joint.adjusted &&
+            ' Some of the prices were out of order, so they were averaged first.'}
+        </p>
+      )}
+      {leaning && (
+        <p className="fine">
+          Crypto prices tend to move together, so legs on them can all win or
+          all lose at once. When the legs point the same way, the chance every
+          leg wins leans toward the top of its range; when they point opposite
+          ways, toward the bottom.
+        </p>
+      )}
+    </section>
   );
 }

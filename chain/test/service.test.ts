@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { FakeChain } from '../src/chain.ts';
 import { commitHash } from '../src/hash.ts';
 import { ServiceError } from '../src/executor.ts';
 import { encode, parseMemo } from '../src/memo.ts';
@@ -267,6 +268,23 @@ test('leaderboard: ranks by total edge, applies the minimum-calls rule, and coun
   const strict = fresh({ minCalls: 2 });
   await strict.backfill();
   assert.deepEqual(strict.leaderboard().rows.map((r) => r.handle), ['calm-fox-11', 'wry-hare-33'], 'one-call players are held back until they have enough calls');
+});
+
+test('leaderboard names the program and the keys it counts, so a browser can read the same scores from Solana itself', async () => {
+  // Without a program, records are Memos only and there are no score accounts to read: the page must be told so.
+  const memosOnly = setup();
+  const plain = memosOnly.service.leaderboard();
+  assert.equal(plain.program, null);
+  assert.deepEqual(plain.authorities, [memosOnly.chain.authority]);
+
+  // With a program and a second trusted key, both keys are named: the rows count reveals signed by either.
+  const program = '8q9jn7HyWs9HCFvS2N3RpRtZBuUdJHCeVq4Yp4Hs1YNK';
+  const extra = 'ExtraAuthority11111111111111111111111111111';
+  const chain = Object.assign(new FakeChain(), { program });
+  const board = setup({ chain, authorities: [chain.authority, extra] }).service.leaderboard();
+  assert.equal(board.program, program);
+  assert.deepEqual(board.authorities, [chain.authority, extra]);
+  assert.deepEqual(board.rows, []);
 });
 
 test('leaderboard source says where the rows came from', async () => {

@@ -519,7 +519,18 @@ export class ChainService {
       .sort((a, b) => b.edge - a.edge || b.calls - a.calls || a.handle.localeCompare(b.handle))
       .map((r, i) => ({ rank: i + 1, ...r }));
     const streamed = Object.values(this.store.data.reveals).some((r) => r.verified && r.via === 'stream');
-    return { asOf: this.now().toISOString(), minCalls: this.minCalls, network: this.chain.network, source: streamed ? ('quicknode-stream' as const) : ('rpc' as const), rows };
+    return {
+      asOf: this.now().toISOString(),
+      minCalls: this.minCalls,
+      network: this.chain.network,
+      source: streamed ? ('quicknode-stream' as const) : ('rpc' as const),
+      // Where a reader can get the same scores without us: the program keeps a running total per handle under each
+      // key, so a browser can ask a Solana node for those accounts and compare. Null when records are Memos only.
+      program: this.chain.program ?? null,
+      /** Every key whose records these rows count. Public keys; they sign records anyone can read on chain. */
+      authorities: [...this.authorities],
+      rows,
+    };
   }
 
   /** Re-reads a call's commit and reveal from the chain and recomputes the hash. For the verify page and for judges. */

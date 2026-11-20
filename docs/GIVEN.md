@@ -132,6 +132,7 @@ our current pick, cheap to change. **Open** = not settled.
 | 21 | A falling parlay is the rising parlay on the mirror of the ladder | Decided | The pairing, offer rule, depth guard, sizing, unwind and settlement are the code the rising bet already has, run on a ladder whose strikes are negated and books flipped; only the order sides differ. One implementation means one set of tests | A ladder whose NO book is not the mirror of its YES book |
 | 22 | A basket is not atomic | Decided | No exchange primitive links the legs. Every leg is checked first, a leg that fails stops the rest, and the app says plainly what was and was not placed | The exchange lists a basket or combined-order primitive |
 | 23 | A bet id carries its product (`dn-` falling, `rg-` range) | Decided | The id is committed on Solana with the call and revealed with it, so the proof page and leaderboard can say what a call was without changing the hash format or the deployed program, and the label cannot be changed after the result | A program upgrade that commits a product field instead |
+| 24 | The ladder is also shown as a histogram, and **Hunch** ranks the bets on offer against a view the person enters | Provisional | A ladder's neighbouring prices differ by the market's chance of finishing between them, so the histogram is exact and needs no model. A person's view is the market's own curve moved and squeezed, so an unmoved view is the market's and nothing is listed: no difference on screen is an artefact of fitting a shape. It adds no order type and touches no order path: every listed bet opens in the builder that already places it | People read "bets that fit your view" as advice from us. The page says the odds are theirs and the market may be right; if that is not enough, drop the ranking and keep the histogram |
 
 ## Open questions
 
@@ -182,7 +183,15 @@ None of these are commitments. Each is a direction someone could pick up.
   Gemini drove this whole design. The "Underdog Stamp" could return as a
   non-monetary receipt for a call made at long odds.
 - **Verify-from-chain page.** Rebuild the leaderboard from Solana alone, with no
-  backend. About an hour, and it makes the Solana case much stronger.
+  backend. **Built 2026-11-19** as "Read from the program" on the leaderboard page: the browser reads the program's score
+  accounts and lines them up against the server's table. It holds totals only; rebuilding each call from Memos alone is
+  still open.
+- **Payoffs with more than two orders.** Any payoff that steps at rungs can be built exactly from one order per step (a bet
+  that pays more the further the price goes is YES on several rising strikes). The ledger, the receipt and the Solana
+  record all assume two named strikes, so it is a new product rather than a setting; the histogram already draws what it
+  would pay.
+- **A protection dial.** Sizing the refund order to return part of the stake, not all of it, trades the refund for a
+  bigger win. It changes what a failed condition means for scoring (today it voids the call), so it needs a rule first.
 
 ## What is verified and what is not
 
