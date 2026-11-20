@@ -15,6 +15,19 @@ be the evidence for the QuickNode bounty, so it is on for a short window only.
 - [ ] `npm run quicknode -- plan` shows the webhook address people really open (`<GIVEN_PUBLIC_URL>/chain/hooks/quicknode`).
 - [ ] `npm run quicknode -- test-filter` says FILTER OK (it runs our filter on QuickNode against a real record; no Stream needed).
 
+## Once, on the machine that holds the Gemini keys, after the 2026-11-20 order-path changes
+
+The executor's order path changed on the last day (a repeated request id places one bet, a lost order answer is looked up by its tag, a sale that cannot be confirmed says so, the page sends a price limit). Everything was proven against the local test exchange, a Gemini wire stand-in and the rehearsal, **not** against the real sandbox, which is the repo's own rule for order-path changes. Ten minutes:
+
+- [ ] `npm run preflight` is green, then `npm run dev:live` (or the hosted image in live mode).
+- [ ] Place one bet of each kind from the app on a ladder that has been open a few minutes: Stake Back up, Stake Back down, Range, Breakout, and a basket of two. Each shows two filled orders.
+- [ ] Press Place bet twice quickly on one of them: exactly one bet appears in My bets.
+- [ ] Cash one of them out and check the sale in My bets.
+- [ ] `cd executor && node src/cli.ts reconcile` reports every order found and a difference of $0.00 (or the page's Proof check says so).
+- [ ] `npm run check:deploy -- <url> --bet` passes.
+
+If any step fails, do not demo live: use the replay (`GIVEN_MODE=replay`, below) and say so.
+
 ## About 30 minutes before presenting or recording
 
 1. Open the app on the phone and the laptop. Pick a ladder that has been open at least 15 minutes (new hourly ladders are
@@ -39,7 +52,7 @@ be the evidence for the QuickNode bounty, so it is on for a short window only.
 | Problem | What to do |
 |---|---|
 | The sandbox has no bettable ladder (top of the hour) | Wait a few minutes, or present from a recorded session: `GIVEN_MODE=replay` plays back a real recorded bet with nothing behind it (`docs/DEPLOY.md`, "Replay"). Say it is a replay |
-| Gemini sandbox is down or slow | The same replay, or `GIVEN_MODE=fake` (the nav says "Test exchange"; present it as the local test exchange, not Gemini; set `FAKE_ROUND_MINUTES=5` so its ladder settles by itself) |
+| Gemini sandbox is down or slow | The same replay, or `GIVEN_MODE=fake` (nothing on screen says it is a test, so say aloud that it is the local test exchange, not Gemini; set `FAKE_ROUND_MINUTES=5` so its ladder settles by itself) |
 | The Stream shows paused or failing | `npm run quicknode -- pitch-on` again. The leaderboard keeps filling from the minute-by-minute read, so nothing on screen breaks |
 | The public address changed (quick tunnel restarted) | Update `GIVEN_PUBLIC_URL`, restart the server, then `npm run quicknode -- pitch-on --recreate` so the Stream points at the new address |
 | The laptop sleeps | Keep it awake while presenting (`caffeinate -dimsu`), or use a host |

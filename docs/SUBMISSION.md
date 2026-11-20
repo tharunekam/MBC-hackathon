@@ -118,8 +118,9 @@ recorded fallback.
 - **Who can see my trades?** Nobody. The commit is a hash. A call becomes public only if the player reveals it, under an
   anonymous handle, never an account.
 - **Can't a player just reveal their winners?** They can keep a call sealed, but not hide that they made it: every call is
-  committed under their handle before the result, so the board shows calls sealed beside calls revealed, and anyone can
-  count the commits on chain. Refunded calls are shown separately, because they can never be revealed.
+  sealed under their handle before the result (the service refuses to seal one after its market has closed), so the board shows calls
+  sealed beside calls revealed, and anyone can count the commits on chain. The rank itself uses the revealed calls, so a hidden loser
+  shows in a player's sealed count, not in their rank. Refunded calls are shown separately, because they can never be revealed.
 - **Why should the leaderboard be trusted?** Every row is a verified commit-reveal pair, signed by our key, re-read from
   Solana. The one thing it takes on trust is the result, which our key attests with Gemini's order IDs as evidence.
 - **Why Solana, and what does the program do?** Cheap, fast records the app can pay for so users never touch a wallet.

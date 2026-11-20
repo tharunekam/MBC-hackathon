@@ -47,7 +47,7 @@ target is reached, and the stake and about $2 more back if the condition fails. 
 never costs more than the stake asked for.
 
 The fair price (no spread, no fees) is 50¢ per $1 and you pay 52.5¢, or 55.4¢ with Gemini's production fees. Every quote
-shows four numbers: the chance both happen, the fair price, what you pay, and what you would get selling right now. The
+shows four numbers: the chance of winning, the fair price, what you pay, and what you would get selling right now. The
 app **refuses** pairs that cost too much over fair (all-in 95¢ or more, or more than 8¢ and 20% over). See
 `executor/README.md` for the rule and the sizing maths.
 
@@ -138,10 +138,10 @@ web (React/Vite)  ──►  executor (Node)  ──►  Gemini REST + WebSocket
 
 | Package | Role |
 |---|---|
-| `executor/` | Quotes, the two-leg bets (parlay either way, range, breakout) with depth guard and sizing, cash-out, a ledger written before every order, settlement, and **reconcile to the cent against Gemini** (it counts Gemini's YES/NO netting). A sandbox liquidity seeder, disclosed (below). 258 tests. |
-| `chain/` | Commit and reveal on Solana, the QuickNode webhook, the leaderboard, a public proof endpoint. 126 tests. |
+| `executor/` | Quotes, the two-leg bets (parlay either way, range, breakout) with depth guard and sizing, cash-out, a ledger written before every order, settlement, and **reconcile to the cent against Gemini** (it counts Gemini's YES/NO netting). A sandbox liquidity seeder, disclosed (below). 399 tests. |
+| `chain/` | Commit and reveal on Solana, the QuickNode webhook, the leaderboard, a public proof endpoint. 152 tests. |
 | `receipts-program/` | `given_receipts`, our Solana program (Anchor): checks each reveal against its commit on chain, refuses a repeat, keeps each handle's score. Deployed on devnet, interface published on chain. 8 tests against the built program. |
-| `web/` | The app: a tab for each product (Stake Back; Range with its Breakout switch, both over a probability ladder with draggable markers; Basket as a list of legs, with what they pay together at each finishing price), the quote, the market's view of where the price finishes as a histogram and as an expected move, Hunch (your view against the market's, and the bets that fit it), a market index, My bets with cash-out, a leaderboard that counts calls sealed beside calls revealed and can be re-read from the program, and a proof page. Pages update on their own over server-sent events. 551 tests. |
+| `web/` | The app: a tab for each product (Stake Back; Range with its Breakout switch, both over a probability ladder with draggable markers; Basket as a list of legs, with what they pay together at each finishing price), the quote, the market's view of where the price finishes as a histogram and as an expected move, Hunch (your view against the market's, and the bets that fit it), a market index, My bets with cash-out, a leaderboard that counts calls sealed beside calls revealed and can be re-read from the program, and a proof page. Pages update on their own over server-sent events. 791 tests. |
 | `scripts/` | The dev stack, the hosted-demo server (`serve.mjs`: the built app plus an allowlist of API paths on one port), the deploy checker, the browser end-to-end test, and the rehearsals. A recorder and replayer for the stage (`docs/DEPLOY.md`). 52 tests. |
 | `docs/` | `PLAN.md`, `GIVEN.md` (decision log), `CONTRACTS.md` (interfaces), `GEMINI_API_NOTES.md`, `SUBMISSION.md`. |
 
@@ -166,7 +166,9 @@ The app is the fee payer, so users never see a wallet, gas or a seed phrase. Rec
 `2QfQ15Ha5VxvvwWqdsDdCyf6n8uxKfVDHh9GHZdFHeHz` (devnet). Only memos signed by that key count; a reveal counts only if it
 reproduces its commit and is the first for it. The **proof page** (`/verify/:signature`) checks all of this in the browser by
 reading the records straight from a Solana node and recomputing the hash with WebCrypto, without asking our server.
-What it proves: the call was fixed before the result. What it does not: the result itself (called it or missed) is
+What it proves: the seal and the reveal are on Solana, the reveal reproduces the seal, and the seal landed before the reveal
+(and, where the market's code carries its close time, before the market closed). The chain service refuses to seal a call once
+its market has closed (HTTP 409 `too_late`), so a seal cannot follow a result that is already known. What it does not: the result itself (won or lost) is
 attested by our key, with Gemini's order IDs as the evidence. Calls whose first half failed are refunded, void, and never
 scored.
 
@@ -226,7 +228,7 @@ npm run dev         # whole stack with no keys and no SOL: local test exchange +
 npm run dev:quotes  # REAL Gemini sandbox prices and order books with no keys; every order is refused (read-only)
 node scripts/seed-history.mjs all   # optional: a win, a loss and a refund, committed and revealed
 npm run stop        # stop this project's servers
-npm test            # 987 tests: executor 258, chain service 126, web 551, hosted-demo server and scripts 52
+npm test            # 1,395 tests: executor 399, chain service 152, web 791, hosted-demo server and scripts 53
 npm run e2e         # the production build in real Chrome (25 checks: every product, cash-out, the histogram and Hunch; e2e:sabotage must fail)
 npm run e2e:replay  # records a bet through the real app, then replays it with nothing running behind it (7 checks)
 npm run rehearse    # (also rehearse:chaos) the whole golden path through the real clients, Gemini and Solana stood in on the wire
@@ -238,7 +240,7 @@ No backend at all: `npm --prefix web run dev` and open http://127.0.0.1:5273/?mo
 demo data (three assets, every product, labelled "Demo data"). CI (`.github/workflows/tests.yml`) runs the typecheck, every
 test, a production build and the rehearsal on each push.
 
-Open http://127.0.0.1:5273. The nav always says what the app is talking to: "Test exchange" with `npm run dev`, "Sandbox · practice money" on Gemini's sandbox, and "Demo data", "Replay", "Quotes only" or "Seeded prices" for the other cases. The footer and the landing page say the same in a sentence.
+Open http://127.0.0.1:5273. The nav carries a label only where what is behind the page changes what you should expect: "Demo data", "Replay", "Quotes only" or "Seeded prices". Gemini's sandbox and the local test exchange (`npm run dev`) carry none, so a bet reads the same on either.
 
 Real services (Gemini sandbox + Solana devnet): put sandbox keys in `.env` (see `executor/README.md`), create the authority
 wallet with `cd chain && npm run keygen`, fund it on devnet, check it with `npm run status`, prove the real path with
