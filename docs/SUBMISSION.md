@@ -20,11 +20,12 @@ the pitch. Items marked **FILL** need something that does not exist yet.*
 ## The five written answers (draft)
 
 **What did you build?**
-Given is a consumer app for "money back if…" bets on Gemini prediction markets. You pick a condition and a target on a live
-price ladder: if the target is reached you win, if the condition fails you get your stake back, if the condition holds
-but the target is missed you lose the stake. Each bet is two real orders in the user's own Gemini account. Every call is
-recorded on Solana, committed before the result and revealed after, so a player can prove they made it first. A
-leaderboard ranks skill against the market's own odds.
+Given is a consumer app for bets on Gemini prediction markets, with three products. A **Return Parlay**: you pick a
+condition and a target on a live price ladder; if the target is reached you win, if the condition fails you get your stake
+back, if it holds but the target is missed you lose the stake (and it works going down as well as up). A **Range**: win if
+a price finishes between two levels. A **Basket**: several of these bets on different assets, placed together. Each bet is
+two real orders in the user's own Gemini account. Every call is recorded on Solana, committed before the result and revealed
+after, so a player can prove they made it first. A leaderboard ranks skill against the market's own odds.
 
 **What problem does it solve?**
 Prediction markets punish you for the half of a hunch you are unsure of. A parlay loses everything when its first leg
@@ -33,7 +34,9 @@ from contracts that already exist, shows exactly what it costs, and keeps all mo
 
 **How does it work?**
 On a ladder of contracts at rising thresholds, buying YES on the higher threshold plus a sized NO on the lower one pays the
-stake back if the lower threshold fails. The executor sizes the hedge so the refund covers the stake and fees, checks the
+stake back if the lower threshold fails; a falling bet is the same thing on the mirror image of the ladder. A range buys YES
+on a lower threshold and NO on a higher one, the same size, so one order always pays a dollar and the bet is the second
+dollar for finishing between them. The executor sizes the hedge so the refund covers the stake and fees, checks the
 book depth, places both orders over Gemini's WebSocket, and keeps a ledger that reconciles to Gemini's balance to the cent.
 A chain service writes a salted hash of each call to Solana and later reveals it; our Solana program, in the same
 transaction, rejects a reveal that does not reproduce its commit. A QuickNode Stream (Solana devnet, Programs + Logs, filtered
@@ -60,6 +63,7 @@ contracts listed by Gemini directly, for which Given is the demand evidence.
 | 0:45 | "How this bet pays" card | "Win, stake back, or lose. The odds are the market's own." |
 | 1:00 | Place bet; receipt with two Gemini order IDs | "That is two real orders in my Gemini account." |
 | 1:20 | Solana step | "The call is fingerprinted on Solana before the result. The fingerprint shows nothing." |
+| 1:25 | Range and Basket tabs | "Same idea, other shapes: win if it finishes between two levels, or put several bets on different assets in one step." |
 | 1:35 | My bets: a win, a refund, a loss | "A win, a refund, and a loss. We keep the loss." |
 | 1:55 | Reveal → proof page → Verify on Solana | "My browser reads both records from Solana and recomputes the fingerprint. Nothing here asks our server." |
 | 2:20 | Proof page: reconcile to the cent; Flow to Gemini | "Our books match Gemini's, and this is the order flow we send them." |

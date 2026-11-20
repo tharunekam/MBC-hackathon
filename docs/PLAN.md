@@ -93,9 +93,21 @@ midnight CST; branch `run/live-sandbox-devnet`).** This is the machine that hold
   metadata carries Victor's personal email address and a machine-local address for Tharun; decide whether that is
   wanted before the repository goes public.
 
-**Verified by running** (130 tests across the three packages; the golden path was also driven in a real browser against
-the real executor handler and chain service): bet builder on the probability ladder, quote, place, receipt, My bets,
-settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is and is not verified: `chain/README.md`.
+**Three products, Thursday 2026-11-19.** The app has a tab for each product. **Return Parlay** goes either way: a falling
+bet is the same engine on the mirror image of the ladder. **Range** wins if a price finishes between two levels. **Basket**
+places two to six of these bets in one request. All of them are placed, settled, committed on Solana, revealed and verified
+through the same code. `npm run rehearse` (33 checks, 34 with injected failures) does it through the real executor and chain
+code, and `npm run e2e` (21 checks in Chrome) places a basket of all three kinds from the page and finds it grouped on My bets.
+The new bets are also tested over the real Gemini client against the wire stand-in, order by order. **Not yet run on the
+real Gemini sandbox:** the three products have only run against the local test exchange and the stand-ins, so the first run
+with sandbox keys must place one of each and then `node src/cli.ts reconcile`. Cut: the "chain" bet (given A, then B, will C)
+because it is the same bet as "given B, will C"; "across markets" and "without the favourite" stay out because the exchange
+has no contract that links them (`docs/GIVEN.md`: decisions 5 and 7 and the list of other ideas; the three products are decisions 20 to 23).
+
+**Verified by running** (599 tests across the four packages; the golden path and the three products were also driven in a
+real browser against the real executor handler and chain service): bet builder on the probability ladder, quote, place,
+receipt, My bets, settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is and is not verified:
+`chain/README.md`.
 
 | Task | State |
 |---|---|
@@ -248,8 +260,7 @@ Office hours (6–7 PM CST, drop-in): Gemini Tue 17 and **Thu 19**; QuickNode
 - **Voice bet entry (ElevenLabs).** The bounty needs voice to be "a core
   feature" and the video must show audio. Prize is 3 months of ElevenLabs Scale
   per member, not cash, so only do it if the frontend is ahead. Decide Wed night.
-- Range bets ("between A and B") and "given below X": the same ladder can express
-  them, and the executor's pair logic mostly covers it.
+- ~~Range bets ("between A and B") and "given below X"~~ **Done 2026-11-19**: the Range and the falling Return Parlay.
 - Read-only sports ladder browser.
 
 ### Cut

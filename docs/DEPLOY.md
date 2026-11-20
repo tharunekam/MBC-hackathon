@@ -92,8 +92,8 @@ post-only first) and often fills only a few dollars. Two things keep a presentat
 - Have a ladder already chosen and checked: open `/app`, confirm the button reads "Place bet", and place the bet before
   the pitch if you can. `npm run check:deploy -- <url> --bet` does the same from a terminal.
 - If the sandbox is unusable, a second deployment with `GIVEN_MODE=fake` and `GIVEN_I_KNOW_THIS_IS_A_TEST=1` runs the
-  whole flow on the local test exchange with an in-memory chain. It labels itself "Local test exchange" in the nav and
-  footer, and **must be presented as exactly that**: it shows the product working, not Gemini. Say so on stage.
+  whole flow on the local test exchange with an in-memory chain. It carries no label on screen, so it **must be presented
+  as exactly that**: it shows the product working, not Gemini. Say so on stage.
 
 ### Replay: a real session, played back with nothing behind it
 

@@ -100,7 +100,8 @@ page.setDefaultTimeout(12_000);
 const problems = [];
 page.on('pageerror', (e) => problems.push(`page error: ${e.message}`));
 page.on('console', (m) => {
-  if (m.type() === 'error') problems.push(`console: ${m.text().slice(0, 140)}`);
+  const url = m.location().url;
+  if (m.type() === 'error') problems.push(`console: ${m.text().slice(0, 140)}${url ? ` (${url.replace(base, '')})` : ''}`);
 });
 const posts = [];
 page.on('request', (r) => {
@@ -369,6 +370,73 @@ await check('with dozens of ladders listed and most unpriced: the builder opens 
   } finally {
     await page.unroute('**/api/markets');
   }
+});
+
+// ---- 6c. the other products, from their own pages
+await check('Return Parlay going down: the switch turns the bet round, and the placed bet is a NO on the lower strike and a YES on the higher', async () => {
+  await dev('/dev/reset');
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${base}/parlay`);
+  await placeable();
+  await page.getByRole('radio', { name: 'Falls lower' }).click();
+  await until('the question to read as a falling bet', async () => /stays below/.test(await page.locator('.q-sentence').first().innerText()), 8_000);
+  await placeable();
+  await button().click();
+  await page.waitForSelector('.receipt');
+  const text = await page.locator('.receipt').innerText();
+  need(/Given below .* fall below/.test(text), `the receipt does not describe a falling bet: ${text.slice(0, 120).replace(/\n/g, ' | ')}`);
+  need(/Order 1 filled/.test(text) && /Order 2 filled/.test(text), 'both orders not shown as filled');
+  const placed = (await api('/api/bets')).bets[0];
+  need(placed.direction === 'down' && /^dn-/.test(placed.id) && placed.status === 'open', `the ledger has ${placed.direction} ${placed.id} ${placed.status}`);
+  need(placed.condition.strike > placed.target.strike, 'a falling bet should have its condition on the higher strike');
+  need(placed.legs[0].outcome === 'no' && placed.legs[0].symbol === placed.target.symbol && placed.legs[1].outcome === 'yes' && placed.legs[1].symbol === placed.condition.symbol, 'the two orders are on the wrong sides');
+});
+
+await check('Range: placed from its page as a YES on the lower strike and a NO on the higher, with what always comes back on the receipt', async () => {
+  await page.goto(`${base}/range`);
+  await placeable();
+  await button().click();
+  await page.waitForSelector('.receipt');
+  const text = await page.locator('.receipt').innerText();
+  need(/Finish between/.test(text) && /comes back whatever happens/.test(text), `the receipt does not describe a range: ${text.slice(0, 120).replace(/\n/g, ' | ')}`);
+  const placed = (await api('/api/bets')).bets[0];
+  need(placed.product === 'range' && /^rg-/.test(placed.id) && placed.status === 'open', `the ledger has ${placed.product} ${placed.id} ${placed.status}`);
+  need(placed.legs[0].outcome === 'yes' && placed.legs[0].symbol === placed.condition.symbol && placed.legs[1].outcome === 'no' && placed.legs[1].symbol === placed.target.symbol, 'the two orders are on the wrong sides');
+  need(placed.legs[0].quantityFilled === placed.legs[1].quantityFilled, 'the two legs are not the same size');
+});
+
+await check('Basket: three bets of three kinds are placed in one step, and My bets lists them as one basket', async () => {
+  await dev('/dev/reset');
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${base}/basket`);
+  const place = page.getByRole('button', { name: /^Place basket/ });
+  const ready = async () => (await place.count()) > 0 && (await place.isEnabled());
+  await until('the basket to be ready to place', ready, 15_000);
+  need((await page.locator('.legs > li').count()) === 2, 'the basket should open on two legs');
+  await page.getByRole('button', { name: 'Add a leg' }).click();
+  await page.getByRole('radiogroup', { name: 'Leg 3 bet type' }).getByRole('radio', { name: 'Return Parlay, falling' }).click();
+  await until('all three legs to be ready', ready, 15_000);
+  await page.getByLabel('Name, optional').fill('Mixed bag');
+  await place.click();
+  await page.waitForSelector('.basket-result');
+  await page.waitForSelector('text=Calls recorded 3 of 3');
+  const result = await page.locator('.basket-result').innerText();
+  // the page sets these words in capitals, and innerText returns them as drawn
+  need((result.match(/placed ·/gi) ?? []).length === 3 && !/not completed|not placed/i.test(result), `the result does not show three placed legs: ${result.slice(0, 160).replace(/\n/g, ' | ')}`);
+
+  const mine = (await api('/api/bets')).bets.filter((b) => b.basket).sort((a, b) => a.basket.index - b.basket.index);
+  need(mine.length === 3 && new Set(mine.map((b) => b.basket.id)).size === 1, `${mine.length} bets carry the basket`);
+  need(mine.every((b) => b.status === 'open' && b.basket.name === 'Mixed bag' && b.basket.size === 3), 'a leg is not open, or lost the basket name');
+  need(!/^(dn|rg)-/.test(mine[0].id) && /^rg-/.test(mine[1].id) && /^dn-/.test(mine[2].id), `the ids ${mine.map((b) => b.id).join(', ')} do not say rising, range, falling`);
+
+  await page.goto(`${base}/bets`);
+  await page.waitForSelector('.bl-basket');
+  need((await page.locator('.bl-basket').count()) === 1, 'the three bets should be one basket, not several');
+  need((await page.locator('.bl-basket [data-bet]').count()) === 3, 'the basket should list its three bets');
+  const head = await page.locator('.bl-basket .bl-bhead').innerText();
+  need(/Mixed bag/.test(head) && /3 legs/.test(head), `the basket header reads: ${head.replace(/\n/g, ' | ')}`);
+  const tags = await page.locator('.bl-basket .bl-tags').allInnerTexts();
+  need(/falling/i.test(tags[2] ?? '') && /range/i.test(tags[1] ?? '') && !/falling|range/i.test(tags[0] ?? ''), `the legs are tagged ${tags.join(' / ').replace(/\n/g, ' ')}`);
 });
 
 // ---- 7. nothing broke quietly

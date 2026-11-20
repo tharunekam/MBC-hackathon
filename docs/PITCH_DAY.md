@@ -39,7 +39,7 @@ be the evidence for the QuickNode bounty, so it is on for a short window only.
 | Problem | What to do |
 |---|---|
 | The sandbox has no bettable ladder (top of the hour) | Wait a few minutes, or present from a recorded session: `GIVEN_MODE=replay` plays back a real recorded bet with nothing behind it (`docs/DEPLOY.md`, "Replay"). Say it is a replay |
-| Gemini sandbox is down or slow | The same replay, or `GIVEN_MODE=fake` (labelled "Local test exchange"; present it as exactly that) |
+| Gemini sandbox is down or slow | The same replay, or `GIVEN_MODE=fake` (it carries no label on screen: present it as the local test exchange, not Gemini) |
 | The Stream shows paused or failing | `npm run quicknode -- pitch-on` again. The leaderboard keeps filling from the minute-by-minute read, so nothing on screen breaks |
 | The public address changed (quick tunnel restarted) | Update `GIVEN_PUBLIC_URL`, restart the server, then `npm run quicknode -- pitch-on --recreate` so the Stream points at the new address |
 | The laptop sleeps | Keep it awake while presenting (`caffeinate -dimsu`), or use a host |

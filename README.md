@@ -2,8 +2,10 @@
 
 **Bet on the second half of your hunch. If the first half doesn't happen, you get your money back.**
 
-Given builds "money back if…" bets on [Gemini](https://www.gemini.com) prediction markets from two ordinary orders in the
-user's own Gemini account, then records each call on Solana so it can be proven later without trusting us.
+Given builds bets on [Gemini](https://www.gemini.com) prediction markets from ordinary orders in the user's own Gemini
+account, then records each call on Solana so it can be proven later without trusting us. There are three products: a
+**Return Parlay** (a parlay that pays your stake back if its first leg misses, going up or going down), a **Range** (win if
+a price finishes between two levels) and a **Basket** (several of these bets, on different assets, placed together).
 
 > Given uses Gemini's prediction market API and is **not affiliated with Gemini**. Everything runs on Gemini's sandbox
 > with practice money. Prediction markets involve risk and can lose the amount you stake.
@@ -43,6 +45,26 @@ shows four numbers: the chance both happen, the fair price, what you pay, and wh
 app **refuses** pairs that cost too much over fair (all-in 95¢ or more, or more than 8¢ and 20% over). See
 `executor/README.md` for the rule and the sizing maths.
 
+### Going down, and the other two products
+
+- **Return Parlay, falling.** Bet that a price stays under a higher level, then falls below a lower one. It is the same bet
+  on the mirror image of the ladder (strikes negated, every book flipped), so the offer rule, the depth guard and the sizing
+  are the ones the rising bet uses; only the order sides change: a NO on the lower level is the bet and a YES on the higher
+  level is the refund.
+- **Range.** Buy YES on a lower level and NO on a higher level, the same number of contracts of each. One of the two always
+  pays $1, so what you really buy is the second dollar for finishing between the levels, and what you risk is what the pair
+  costs above that dollar. With the lower level at 0.80 / 0.82 and the higher at 0.40 / 0.42, $14.20 buys 10 contracts of
+  each (YES at 82¢, NO at 60¢): **+$5.80** if the price finishes inside, **−$4.20** outside, and $10 comes back either way.
+  It is priced and refused by the same rule as a parlay, with the chance of landing inside as the fair price.
+- **Basket.** Two to six of these bets in one request, each on its own ladder with its own two orders and its own result.
+  Every leg is checked against the live market before the first is placed, the placed bets share a basket id, and a leg that
+  cannot be completed stops the rest and is reported. Nothing links the legs on the exchange, so a basket is **not**
+  all-or-nothing, and the app says so.
+
+Every bet id carries its product (`dn-` falling, `rg-` range). The id is committed on Solana with the call and revealed
+with it, so the proof page and the leaderboard can say what a call was without a change to the hash or to the deployed
+program, and nobody can relabel a call after seeing how it went.
+
 ### Fees and disclosures
 
 - Gemini's published taker fee is `0.07 × contracts × price × (1 − price)`, rounded up to the cent. The sandbox charges
@@ -65,11 +87,11 @@ web (React/Vite)  ──►  executor (Node)  ──►  Gemini REST + WebSocket
 
 | Package | Role |
 |---|---|
-| `executor/` | Quotes, the two-leg bet with depth guard and hedge sizing, a ledger written before every order, settlement, and **reconcile to the cent against Gemini** (it counts Gemini's YES/NO netting). A sandbox liquidity seeder, disclosed (below). 169 tests. |
+| `executor/` | Quotes, the two-leg bet with depth guard and hedge sizing, a ledger written before every order, settlement, and **reconcile to the cent against Gemini** (it counts Gemini's YES/NO netting). A sandbox liquidity seeder, disclosed (below). 208 tests. |
 | `chain/` | Commit and reveal on Solana, the QuickNode webhook, the leaderboard, a public proof endpoint. 120 tests. |
 | `receipts-program/` | `given_receipts`, our Solana program (Anchor): checks each reveal against its commit on chain, refuses a repeat, keeps each handle's score. Deployed on devnet, interface published on chain. 8 tests against the built program. |
-| `web/` | The app: a probability ladder with two draggable markers, the four-number quote, bets, leaderboard, proof page. Pages update on their own over server-sent events. 109 tests. |
-| `scripts/` | The dev stack, the hosted-demo server (`serve.mjs`: the built app plus an allowlist of API paths on one port), the deploy checker, the browser end-to-end test, and the rehearsals. A recorder and replayer for the stage (`docs/DEPLOY.md`). 50 tests. |
+| `web/` | The app: a tab for each product (Return Parlay and Range over a probability ladder with draggable markers, Basket as a list of legs), the quote, a market index, My bets, a leaderboard and a proof page. Pages update on their own over server-sent events. |
+| `scripts/` | The dev stack, the hosted-demo server (`serve.mjs`: the built app plus an allowlist of API paths on one port), the deploy checker, the browser end-to-end test, and the rehearsals. A recorder and replayer for the stage (`docs/DEPLOY.md`). 51 tests. |
 | `docs/` | `PLAN.md`, `GIVEN.md` (decision log), `CONTRACTS.md` (interfaces), `GEMINI_API_NOTES.md`, `SUBMISSION.md`. |
 
 ### Gemini endpoints used
@@ -135,15 +157,15 @@ npm run dev         # whole stack with no keys and no SOL: local test exchange +
 npm run dev:quotes  # REAL Gemini sandbox prices and order books with no keys; every order is refused (read-only)
 node scripts/seed-history.mjs all   # optional: a win, a loss and a refund, committed and revealed
 npm run stop        # stop this project's servers
-npm test            # 448 tests: executor 169, chain service 120, web 109, hosted-demo server and scripts 50
-npm run e2e         # the production build in real Chrome (18 checks; e2e:sabotage must fail)
+npm test            # 599 tests: executor 208, chain service 120, web 220, hosted-demo server and scripts 51
+npm run e2e         # the production build in real Chrome (21 checks, all three products; e2e:sabotage must fail)
 npm run e2e:replay  # records a bet through the real app, then replays it with nothing running behind it (7 checks)
 npm run rehearse    # (also rehearse:chaos) the whole golden path through the real clients, Gemini and Solana stood in on the wire
 npm run preflight   # what is ready for the real thing and what is missing, with the fix for each
 npm run build && npm start   # the hosted-demo server on one port (see docs/DEPLOY.md); npm run check:deploy -- <url> checks a deployment
 ```
 
-Open http://127.0.0.1:5273. The nav shows what the app is talking to; with `npm run dev` it says "Local test exchange".
+Open http://127.0.0.1:5273. The nav labels a session that is not the ordinary case ("Demo data", "Replay", "Quotes only" or "Seeded prices"); with `npm run dev` the exchange is a local test double and carries no label.
 
 Real services (Gemini sandbox + Solana devnet): put sandbox keys in `.env` (see `executor/README.md`), create the authority
 wallet with `cd chain && npm run keygen`, fund it on devnet, check it with `npm run status`, prove the real path with
@@ -165,8 +187,13 @@ on the sandbox yet** (it needs a second sandbox account), so nothing shown so fa
 
 ## What has been run for real
 
-On 2026-11-18 the whole stack ran on the **real Gemini sandbox and real Solana devnet** together: three bets placed from the
-web app as two filled orders each, each call committed on devnet through our program, then settled at expiry: one won, one
+The falling parlay, the range and the basket were added after this run. They have been placed, settled, committed, revealed
+and verified end to end through the real executor and chain code against a local Gemini stand-in and a local Solana stand-in
+(`npm run rehearse`, also with injected failures), and through the real Gemini client on the wire stand-in; they have **not**
+yet been placed on the real sandbox.
+
+On 2026-11-18 the whole stack ran on the **real Gemini sandbox and real Solana devnet** together: three bets (all rising
+parlays) placed from the web app as two filled orders each, each call committed on devnet through our program, then settled at expiry: one won, one
 lost and one refunded (its reveal correctly refused as void). The two scored calls were revealed, re-verified from chain, and
 reached the leaderboard, and the reconcile tied to $0.00 before and after. That run found one real bug: Gemini nets a YES
 against a NO on the same contract and pays $1 a pair early, which the reconcile now counts. Details: `docs/PLAN.md` and

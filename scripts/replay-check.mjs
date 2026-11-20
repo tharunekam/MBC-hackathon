@@ -119,8 +119,8 @@ async function session(page, base, live) {
   await until('the bet to show Won without a reload', async () => (await page.locator('text=Won').count()) >= 1, 45_000);
   await page.getByRole('button', { name: 'Reveal on Solana' }).first().click();
   await page.waitForSelector('text=Edge scored');
-  await page.locator('summary', { hasText: 'Orders and proof' }).first().click();
-  const details = await page.locator('article').first().innerText();
+  await page.getByRole('button', { name: /Orders and proof/ }).first().click();
+  const details = await page.locator('[data-bet]').first().innerText();
 
   await page.getByRole('link', { name: 'Leaderboard' }).first().click();
   await page.waitForURL('**/leaderboard');
@@ -178,11 +178,10 @@ await check('nothing is running behind the replay', async () => {
   }
 });
 
-await check('the app says it is a replay, in the nav and in the footer, and does not claim to be live', async () => {
+await check('the app says it is a replay in the nav, and does not claim to be live', async () => {
   await page.goto(`${replay.base}/parlay`);
   await page.waitForFunction(() => /^Place bet/.test(document.querySelector('.btn-primary.btn-wide')?.textContent ?? ''));
   need((await page.locator('header .chip', { hasText: 'Replay' }).count()) >= 1, 'no "Replay" label in the nav');
-  need(/A recording of a real session on Local test exchange \(not Gemini\)/.test(await page.locator('footer').innerText()), 'the footer does not say it is a recording');
   need((await page.locator('.live[data-state="live"]').count()) === 0, 'it shows the live badge');
 });
 

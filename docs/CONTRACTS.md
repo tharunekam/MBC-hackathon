@@ -1,6 +1,6 @@
 # Interfaces between the web app, the executor and the chain service
 
-*Last updated 2026-11-17 (night). The TypeScript source of truth is `web/src/api/types.ts`. The in-browser mock
+*Last updated 2026-11-19 (night). The TypeScript source of truth is `web/src/api/types.ts`. The in-browser mock
 (`web/src/api/mock.ts`) implements the same shapes. An integration test (`chain/test/e2e.test.ts`) drives the real
 executor handler and the real chain service over HTTP, and caught two mismatches between these types and the executor
 (`settlement.pnl`, not `profit`; the per-bet flow field names), so the types below are checked against the real thing.*
@@ -16,17 +16,19 @@ or if the executor URL answers as something other than the Given executor. Anoth
 8787, the executor's historic default, which is why dev uses 8741.
 
 `?live` in the address bar (or `VITE_API_MODE=live`, which `npm run dev` sets) switches the web app from the mock to
-the real services. The nav shows what it is talking to: "Demo data", "Local test exchange", or nothing for Gemini's
-sandbox.
+the real services. The nav labels a session that is not the ordinary case: "Demo data", "Replay", "Quotes only" or
+"Seeded prices". Gemini's sandbox and a local test exchange carry no label.
 
 ## Executor (built; behaviour in `executor/README.md`)
 
 | Endpoint | Used by | Notes |
 |---|---|---|
 | `GET /health` | venue label | `service: "given-executor"`; the chain service checks this at startup. `readOnly: true` when started with `GIVEN_READONLY=1` (real prices, no account): `POST /bets`, `POST /settle` and `GET /reconcile` then answer 403 `read_only` |
-| `GET /markets` | ladder chart | Polled every 4 s. Rungs carry `bid`/`ask`; pairs carry the offer quote |
-| `GET /quote?event&condition&target&stake` | quote panel | Authoritative. The UI shows its own estimate (`web/src/lib/pricing.ts`, pinned to the README example by a test) until this answers |
-| `POST /bets` | place bet | ~4 s on the sandbox. A refusal is HTTP 422 with `code` and `quote` |
+| `GET /markets` | ladder chart, Markets | Polled every 4 s. Rungs carry `bid`/`ask`; pairs carry the offer quote. `down` lists the same for a parlay that a price falls: its condition is the higher strike and its target the lower, rungs are the real ones |
+| `GET /quote?event&condition&target&stake[&direction=down]` | Return Parlay | Authoritative. The UI shows its own estimate (`web/src/lib/pricing.ts`, pinned to the README example by a test) until this answers |
+| `GET /quote?product=range&event&low&high&stake` | Range | The chance of finishing inside, the price of the second dollar, the offer verdict, and for a stake: contracts, cost, what always comes back, and what each result nets |
+| `POST /bets` | place bet | ~4 s on the sandbox. A refusal is HTTP 422 with `code` and `quote`. `{ ..., direction: "down" }` places a falling parlay; `{ product: "range", user, event, low, high, stake }` places a range |
+| `POST /baskets` | Basket | `{ user, name?, legs: [...] }`, 2 to 6 legs, each a parlay (`condition`, `target`, `direction?`) or a range (`product: "range"`, `low`, `high`) with its own `stake`. Every leg is checked first: a leg that is not on offer refuses the whole basket (422, `leg` is its index, nothing bought). Otherwise 201 `{ basket: { id, name, size, failed }, bets }`; `failed` is null or the leg that could not be completed, and the legs before it stay placed |
 | `GET /bets` | My bets, chain service | Newest first. The chain service reads bets from here and never from the browser |
 | `POST /settle` | "Check results" | |
 | `GET /flow` | Proof page | |
@@ -88,8 +90,12 @@ Reveal: every input of the hash plus the salt and the outcome. The hash preimage
 written elsewhere can reproduce it. No Gemini account id and no price feed goes on chain; handles are a keyed hash of the
 user name.
 
-**Edge** for a revealed call = `outcome − fairPriceAtEntry`: outcome is 1 if the target hit, 0 if the condition held and
-the target missed. A refunded call (condition failed) is `void` and not scored. Rank by the sum and show the number of
+The `betId` in the preimage says what kind of bet it was (`executor/src/bet-id.ts`: `dn-` falling parlay, `rg-` range,
+no marker for a rising parlay). It is committed and revealed with the call, so the public reveal and each leaderboard call
+carry it. A range's "condition" is its lower strike and its "target" its higher one.
+
+**Edge** for a revealed call = `outcome − fairPriceAtEntry`: outcome is 1 if the target hit (for a range, if the price
+finished inside), 0 if the condition held and the target missed (a range has no condition that can fail, so is never void). A refunded call (condition failed) is `void` and not scored. Rank by the sum and show the number of
 calls. No volume, no profit.
 
 **Trust model.** Only memos signed by our authority key count. A reveal counts only if it reproduces its commit, names

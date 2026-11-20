@@ -49,6 +49,22 @@ Every quote shows four numbers, in plain words:
 
 The app refuses pairs that are poor value (see "The cost problem").
 
+## The products
+
+All three are plain orders on contracts that already exist, so nothing here needs anything from Gemini that the first bet
+did not.
+
+- **Return Parlay.** The bet above. It goes either way: a rising parlay bets that a price reaches a higher level given that
+  it first holds a lower one; a falling parlay bets that it falls to a lower level given that it first stays under a higher
+  one. A falling parlay is the rising bet on the mirror image of the ladder, so it shares every check and every line of
+  sizing code with it.
+- **Range.** Win if the price finishes between two levels. YES on the lower level and NO on the higher, the same number of
+  contracts of each. One of the two always pays $1, so the bet is the second dollar for landing inside, and its price is what
+  the pair costs above that dollar. At least one dollar per contract comes back whatever happens.
+- **Basket.** Two to six of the above, on any ladders, placed in one request. A basket adds two things: every leg is checked
+  against the live market before the first is placed, and the placed bets are shown together. It is not atomic: nothing on
+  the exchange links the legs.
+
 ## How value reaches Gemini
 
 - **Order flow.** Two real orders per bet. On a $100 bet that is roughly 240
@@ -112,6 +128,10 @@ our current pick, cheap to change. **Open** = not settled.
 | 17 | Both teammates attend the Nov 21 finals in person | Decided (needs D4 confirmation) | Rules: presence in person is required to qualify for any prize, bounties included | The organizers confirm a remote option in writing |
 | 18 | We run a **sandbox liquidity seeder** and disclose it | Provisional | Sandbox books are ~20¢ wide, so quotes and depth look nothing like production without it | Gemini tightens the sandbox, or says seeding is not allowed |
 | 19 | Priority order: Gemini bounty, then Consumer track, Solana, QuickNode, Official | Provisional | Gemini 1st is a finalist slot; Gemini's judges value real API use and order flow most | The Gemini office-hours answers change what they want to see |
+| 20 | Three products: Return Parlay (rising or falling), Range, Basket | Decided | Each is two plain orders per bet on contracts that already exist, so each is as exchange-friendly as the first bet. Built and tested on the local test exchange and through the real client on the wire stand-in; not yet run on the real sandbox | Gemini says a third-party app may not place a user's own orders (the same as decision 1) |
+| 21 | A falling parlay is the rising parlay on the mirror of the ladder | Decided | The pairing, offer rule, depth guard, sizing, unwind and settlement are the code the rising bet already has, run on a ladder whose strikes are negated and books flipped; only the order sides differ. One implementation means one set of tests | A ladder whose NO book is not the mirror of its YES book |
+| 22 | A basket is not atomic | Decided | No exchange primitive links the legs. Every leg is checked first, a leg that fails stops the rest, and the app says plainly what was and was not placed | The exchange lists a basket or combined-order primitive |
+| 23 | A bet id carries its product (`dn-` falling, `rg-` range) | Decided | The id is committed on Solana with the call and revealed with it, so the proof page and leaderboard can say what a call was without changing the hash format or the deployed program, and the label cannot be changed after the result | A program upgrade that commits a product field instead |
 
 ## Open questions
 
@@ -147,9 +167,10 @@ None of these are commitments. Each is a direction someone could pick up.
   169 events on 2026-11-17, almost all sports totals and spreads (strike types
   `over` and `spread`). The executor only handles `above`. A read-only quote
   browser over production would show breadth without trading.
-- **Other bets one ladder can express.** Any payoff decided by single contracts
-  on one ladder can be built exactly: range bets ("between A and B"), "given
-  below X", three-strike chains.
+- **Other bets one ladder can express.** Range bets and the falling parlay are
+  built (see "The products"). A three-strike chain adds nothing: "given A, then B,
+  will C" is the same bet as "given B, will C", because a failure at B already
+  refunds a failure at A.
 - **Draw no bet / without the favourite.** The same idea on winner lists. Needs
   a market where exactly one outcome wins, and a clear void rule.
 - **True cross-market bets.** If Gemini opens combo creation, "given X, will Y?"
