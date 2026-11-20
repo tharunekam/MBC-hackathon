@@ -173,7 +173,8 @@ passing) and run with the real ledger. **This is evidence about that snapshot, n
 if the order path changes again before the commit, run it again.**
 
 - **A bet no longer costs more than its stake.** A $5 rising parlay (`ec823ff4`, SOL $69 then $74) cost $4.9956, and
-  two $3 breakouts cost $2.9988 and $3.00. Under the old sizing the same parlay would have come to a few cents over $5.
+  two $3 breakouts cost $2.9988 and $3.00. The old sizing ran a few cents over (a $10 bet cost $10.05 on the test
+  exchange and $10.04 in the browser run).
 - **Breakout placed for the first time, as designed**: `bo-a6e6e593` and `bo-1d2e32ad` each bought a YES on the higher
   strike and a NO on the lower, equal size, both filled.
 - **A breakout cashed out**: `bo-1d2e32ad`, $3.00, quoted $1.04 and sold for $1.04 in two filled sells.
