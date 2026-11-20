@@ -100,9 +100,44 @@ through the same code. `npm run rehearse` (33 checks, 34 with injected failures)
 code, and `npm run e2e` (21 checks in Chrome) places a basket of all three kinds from the page and finds it grouped on My bets.
 The new bets are also tested over the real Gemini client against the wire stand-in, order by order. **Not yet run on the
 real Gemini sandbox:** the three products have only run against the local test exchange and the stand-ins, so the first run
-with sandbox keys must place one of each and then `node src/cli.ts reconcile`. Cut: the "chain" bet (given A, then B, will C)
+with sandbox keys must place one of each and then `node src/cli.ts reconcile`. (That run happened later the same night:
+see "Cash-out, and the three products on the real sandbox" below.) Cut: the "chain" bet (given A, then B, will C)
 because it is the same bet as "given B, will C"; "across markets" and "without the favourite" stay out because the exchange
 has no contract that links them (`docs/GIVEN.md`: decisions 5 and 7 and the list of other ideas; the three products are decisions 20 to 23).
+
+**Cash-out, and the three products on the real sandbox, Thursday night (branch `feat/cash-out`, Victor's laptop).**
+
+- **Cash-out is built.** An open bet can be sold back from My bets: `GET /cashout` prices both orders at the live bids
+  and sends nothing, `POST /cashout` sells them as two immediate-or-cancel orders, held to the price shown less two
+  cents. Refused before any order when a market is not taking orders, a leg has no bid, less rests at the best price
+  than the bet holds, or another open bet holds the other side of a contract. Decisions 25 and 26 in `docs/GIVEN.md`;
+  how it works in `executor/README.md`, "Cashing out".
+- **Run on the real Gemini sandbox, 02:22 to 02:29 UTC on 11-20.** A rising parlay, a falling parlay and a range were
+  each placed and cashed out, a fourth over HTTP, and `reconcile` tied out after every step (to $0.000085: one fill
+  reported a rounded average price). **This was also the first time a falling parlay and a range were placed on the
+  sandbox at all**; both went in as designed (a NO on the lower strike and a YES on the higher; a YES on the lower and
+  a NO on the higher, equal size).
+- **A falling parlay, a range and a basket leg settled on the sandbox (03:00 UTC).** The three bets left open were
+  settled by `settle` 75 seconds after expiry with clean results: the range finished outside and paid $1.78 on 1.78
+  contracts (the dollar that always comes back), the falling parlay and the basket's parlay leg lost, and `reconcile`
+  tied out again. None of the three happened to win or be refunded, so those two results are still only seen for a
+  rising parlay.
+- **A basket was only half proven.** Three baskets reached the sandbox and each stopped after its first leg, twice
+  because the ladder had gone out of order by the time the second leg was checked and once because the first leg's
+  hedge could not be filled and it was sold back. The legs that were placed are in the ledger and reconciled, so the
+  "not all-or-nothing" behaviour is seen for real, but **no basket has yet been placed whole on the sandbox**.
+- **Found and fixed on that run:** a basket whose first leg was refused before any order answered 201 with no bets in
+  it; it is now a 422 like any refused basket. `npm run install:all` skipped the root package, so `npm run e2e` failed
+  on this machine until the root was installed; it now installs it.
+- **What the sandbox's books mean for the demo.** With the offer rule on, **0 of 590 pairs were on offer** at 02:21
+  UTC; every bet above needed `GIVEN_SANDBOX_WAIVE_MARKUP=1`. The books are about 20 cents wide, so a parlay cashed out
+  at once returned a third to a half of its stake ($0.58 sold for $0.19; $1.00 for $0.55), and the range $2.68 of
+  $2.99. Recording the video on these books shows cash-out working and losing most of the stake. The seeder (T-V4,
+  needs a second sandbox account) is what makes the numbers look like production.
+- **Not proven on the sandbox:** a sale that stops part-way (only the fake exchange has exercised it), and cashing out
+  a bet Gemini has netted against another (it is refused).
+- Tests: 229 executor, 121 chain, 227 web, 51 scripts; `npm run rehearse` 33 checks; `npm run e2e` 22 checks, the new
+  one selling a bet from My bets through the production build; `npm run e2e:replay` 7 checks.
 
 **Verified by running** (599 tests across the four packages; the golden path and the three products were also driven in a
 real browser against the real executor handler and chain service): bet builder on the probability ladder, quote, place,

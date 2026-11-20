@@ -536,5 +536,7 @@ Until then the wire-level test only shows the pieces fit Gemini's documented pro
   given and is meant for a local frontend with pre-connected demo accounts.
 - Cut from the project: conditional orders across markets, combos, and "given
   the favourite doesn't win" bets.
-- The falling parlay, the range and the basket have not been placed on the real Gemini sandbox yet. They are covered by the
-  unit tests on the in-memory exchange, by the real client against the wire stand-in, and by `npm run rehearse`.
+- A basket placed whole on the real Gemini sandbox. The falling parlay and the range were placed, cashed out and
+  settled there on 2026-11-20 (see "Cashing out" and `docs/PLAN.md`); three baskets each stopped after their first leg
+  on a thin ladder. A whole basket is covered by the unit tests on the in-memory exchange, by the real client against
+  the wire stand-in, and by `npm run rehearse`.
