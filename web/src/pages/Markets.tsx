@@ -7,7 +7,7 @@ import { useNow, useResource } from '../lib/hooks';
 import { hasPrices } from '../lib/ladders';
 import { execLive } from '../lib/liveClients';
 import { categoriesOf, closesIn, filterGroups, updatedLabel } from '../lib/marketFilter';
-import { closesLabel, groupByAsset, strikeSpan } from '../lib/markets';
+import { closesLabel, groupByAsset, parlaysOnOffer, strikeSpan } from '../lib/markets';
 import { PRODUCTS } from '../lib/nav';
 import '../styles/markets.css';
 
@@ -99,7 +99,7 @@ export default function Markets() {
           <dl className="mk-stats" aria-label="Summary">
             <Stat label="Ladders" value={totals.ladders} />
             <Stat label="With prices" value={totals.priced} />
-            <Stat label="Bets available" value={totals.offers} />
+            <Stat label="Parlays on offer" value={totals.offers} />
             <Stat label="Assets" value={totals.assets} />
           </dl>
 
@@ -177,7 +177,7 @@ export default function Markets() {
                           <th role="columnheader" scope="col" className="mk-c-closes">Closes</th>
                           <th role="columnheader" scope="col" className="mk-c-num">Strikes</th>
                           <th role="columnheader" scope="col" className="mk-c-num mk-c-rungs">Rungs</th>
-                          <th role="columnheader" scope="col" className="mk-c-num">Bets available</th>
+                          <th role="columnheader" scope="col" className="mk-c-num">Parlays on offer</th>
                           <th role="columnheader" scope="col" className="mk-c-state">State</th>
                           <th role="columnheader" scope="col" className="mk-c-act">
                             <span className="sr-only">Action</span>
@@ -201,8 +201,8 @@ export default function Markets() {
                               <td role="cell" className="mk-num mk-rungs" data-label="Rungs">
                                 {e.rungs.length}
                               </td>
-                              <td role="cell" className="mk-num" data-label="Bets available">
-                                {e.offerableCount > 0 ? e.offerableCount : <span className="mk-none">None</span>}
+                              <td role="cell" className="mk-num" data-label="Parlays on offer">
+                                {parlaysOnOffer(e) > 0 ? parlaysOnOffer(e) : <span className="mk-none">None</span>}
                               </td>
                               <td role="cell" className="mk-state-cell" data-label="State">
                                 <span className="mk-dot" data-state={st} aria-hidden="true" />
@@ -210,10 +210,17 @@ export default function Markets() {
                               </td>
                               <td role="cell" className="mk-act">
                                 {hasPrices(e) ? (
-                                  <Link className="mk-link" to={`${PRODUCTS[0]!.to}?market=${encodeURIComponent(e.ticker)}`}>
-                                    Build a bet <span aria-hidden="true">→</span>
-                                    <span className="sr-only"> on {g.label}, {closesLabel(e.expiry, now)}</span>
-                                  </Link>
+                                  <span className="mk-links">
+                                    {PRODUCTS.slice(0, 2).map((p) => (
+                                      <Link key={p.id} className="mk-link" to={`${p.to}?market=${encodeURIComponent(e.ticker)}`}>
+                                        {p.id === 'parlay' ? 'Parlay' : p.short}
+                                        <span className="sr-only">
+                                          {' '}
+                                          on {g.label}, {closesLabel(e.expiry, now)}
+                                        </span>
+                                      </Link>
+                                    ))}
+                                  </span>
                                 ) : (
                                   <span className="mk-wait">Waiting for prices</span>
                                 )}

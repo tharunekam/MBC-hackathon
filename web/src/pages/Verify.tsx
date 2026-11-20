@@ -1,13 +1,15 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { ApiError } from '../api/client';
 import { explorerTx } from '../api/types';
-import { cents, money, trunc } from '../lib/format';
+import { kindLabel } from '../lib/betsView';
+import { cents, trunc } from '../lib/format';
 import { useAsync } from '../lib/hooks';
 import { savePng, shareCardSvg } from '../lib/shareCard';
-import { assetOf, solanaRpc, strikeOf, verifyOnChain } from '../lib/verify';
+import { callQuestion, solanaRpc, verifyOnChain } from '../lib/verify';
 import type { Verification } from '../lib/verify';
+import '../styles/bets.css';
 
 const RPC: string = import.meta.env.VITE_SOLANA_RPC ?? 'https://api.devnet.solana.com';
 
@@ -58,7 +60,7 @@ export default function Verify() {
     const notFound = call.error instanceof ApiError && call.error.status === 404;
     return (
       <div className="page narrow">
-        <div className="card empty-card">
+        <div className="pf-empty">
           <h1 className="h-card">{notFound ? 'This call is not public' : 'We could not load this call'}</h1>
           <p>{notFound ? 'It may not exist, or its owner has not revealed it yet.' : (call.error?.message ?? 'Try again in a moment.')}</p>
           <Link to="/leaderboard" className="btn btn-ghost">
@@ -70,9 +72,8 @@ export default function Verify() {
   }
 
   const won = c.outcome === 1;
-  const cond = strikeOf(c.condition);
-  const targ = strikeOf(c.target);
-  const asset = assetOf(c.event);
+  // Everything the card says comes from what was committed on Solana: the bet id names the product.
+  const q = callQuestion(c);
   const real = c.network === 'devnet';
 
   const edgeText = `${c.edge > 0 ? '+' : c.edge < 0 ? '−' : ''}${Math.abs(c.edge).toFixed(2)}`;
@@ -85,7 +86,8 @@ export default function Verify() {
       const svg = shareCardSvg({
         handle: c.handle,
         won,
-        question: `Given ${asset} at ${cond !== null ? money(cond) : c.condition} or above, will it reach ${targ !== null ? money(targ) : c.target}?`,
+        question: q.text,
+        result: q.result,
         fair: cents(c.fairPrice),
         paid: cents(c.entryPrice),
         edge: edgeText,
@@ -112,16 +114,19 @@ export default function Verify() {
         </div>
       </header>
 
-      <article className="card proofcard" data-outcome={won ? 'won' : 'missed'} aria-label="The call">
+      <article className="proofcard" data-outcome={won ? 'won' : 'missed'} data-product={q.kind.product} aria-label="The call">
         <div className="pc-top">
-          <span className="eyebrow">{c.handle}</span>
+          <span className="pc-who">
+            <span className="eyebrow">{c.handle}</span>
+            <span className="kind-tag">{kindLabel(q.kind)}</span>
+          </span>
           <span className="chip chip-quiet">{real ? 'Solana devnet' : 'Test chain'}</span>
         </div>
         <p className="pc-verdict">{won ? 'Called it' : 'Missed'}</p>
-        <h2 className="q-sentence">
-          Given <em>{asset}</em> at <em>{cond !== null ? money(cond) : c.condition}</em> or above, will it reach <em>{targ !== null ? money(targ) : c.target}</em>?
+        <h2 className="q-sentence pc-question">
+          {q.parts.map((p, i) => (p.em ? <em key={i}>{p.text}</em> : <Fragment key={i}>{p.text}</Fragment>))}
         </h2>
-        <dl className="nums">
+        <dl className="pc-nums">
           <div>
             <dt>Fair price at the time</dt>
             <dd>{cents(c.fairPrice)}</dd>
@@ -132,7 +137,7 @@ export default function Verify() {
           </div>
           <div>
             <dt>Result</dt>
-            <dd className={won ? 'good' : 'bad'}>{won ? 'Target reached' : 'Fell short'}</dd>
+            <dd className={won ? 'good' : 'bad'}>{q.result}</dd>
           </div>
           <div>
             <dt>Edge</dt>
@@ -154,9 +159,11 @@ export default function Verify() {
         </div>
       </article>
 
-      <section className="card verify" aria-live="polite">
+      <section className="verify" aria-labelledby="pf-check">
         <span className="eyebrow">Independent check</span>
-        <h2 className="h-card">Check it on Solana</h2>
+        <h2 id="pf-check" className="h-card">
+          Check it on Solana
+        </h2>
         {real ? (
           <>
             <p>
@@ -178,6 +185,7 @@ export default function Verify() {
           <p>This call is on a test chain, so there is no Solana transaction to check. On devnet, your browser reads both records from Solana and recomputes the fingerprint itself.</p>
         )}
 
+        <div className="pc-live" aria-live="polite">
         {problem && (
           <p className="note note-bad" role="alert">
             {problem}
@@ -206,6 +214,7 @@ export default function Verify() {
             </p>
           </>
         )}
+        </div>
 
         {real && (
           <div className="links">

@@ -200,13 +200,13 @@
   border-radius: 2px;
   background: var(--faint);
 }
-.scen [data-kind='win'] i {
+.scen [data-kind='win'] td:first-child i {
   background: var(--good);
 }
-.scen [data-kind='back'] i {
+.scen [data-kind='back'] td:first-child i {
   background: var(--accent);
 }
-.scen [data-kind='lose'] i {
+.scen [data-kind='lose'] td:first-child i {
   background: var(--bad);
 }
 .scen [data-kind] td:last-child {

@@ -10,8 +10,10 @@ export interface ShareCard {
   /** The pseudonymous handle. Never an account. */
   handle: string;
   won: boolean;
-  /** "Given BTC at $62,500 or above, will it reach $63,500?" */
+  /** The proof page's own sentence: "Given BTC at $62,500 or above, will it reach $63,500?" */
   question: string;
+  /** The result in the product's words, as the page shows it ("Finished inside"). Defaults to a parlay's. */
+  result?: string;
   /** Already formatted, as the proof page shows them: "41¢", "44¢", "+0.59". */
   fair: string;
   paid: string;
@@ -82,7 +84,7 @@ export function shareCardSvg(c: ShareCard): string {
     ...lines.map((l, i) => `<text x="88" y="${qTop + i * 56}" font-family="${SERIF}" font-size="44" fill="#17150f">${esc(l)}</text>`),
     cell(88, 'Fair price at the time', c.fair),
     cell(368, 'Paid', c.paid),
-    cell(568, 'Result', c.won ? 'Target reached' : 'Fell short', verdictColor),
+    cell(568, 'Result', c.result ?? (c.won ? 'Target reached' : 'Fell short'), verdictColor),
     cell(988, 'Edge', c.edge, c.edgeGood ? '#1e6c43' : '#a83a25'),
     // how to check it
     `<line x1="88" y1="528" x2="1112" y2="528" stroke="#17150f" stroke-opacity="0.12"/>`,

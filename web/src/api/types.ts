@@ -4,8 +4,8 @@
  * Executor types mirror `executor/src/api.ts` and `executor/src/ledger.ts`
  * (hosted service that places the two Gemini orders). Chain types describe the
  * service that commits and reveals calls on Solana and serves the leaderboard.
- * Anything marked "planned" does not exist on the executor yet; the mock
- * implements it so the UI can be built against it.
+ * The demo data in `mock.ts` returns the same shapes, so every page can be built
+ * and checked without either service running.
  */
 
 /** The kinds of bet. A parlay refunds the stake if its first condition fails; a range wins if the price finishes between two levels. */
@@ -77,8 +77,11 @@ export interface MarketEvent {
   offerableCount: number;
   refusedCount: number;
   refusedByReason: Record<string, number>;
-  /** The same for a parlay that a price falls: the condition is the higher strike and the target the lower. */
-  down: { pairs: Pair[]; offerableCount: number; refusedCount: number };
+  /**
+   * The same for a parlay that a price falls: the condition is the higher strike and the target the lower. Absent in a session
+   * recorded before falling bets existed; the page then starts a falling bet from the rungs alone.
+   */
+  down?: { pairs: Pair[]; offerableCount: number; refusedCount: number };
 }
 
 export interface MarketsResponse {
@@ -359,7 +362,7 @@ export interface ApiErrorBody {
   leg?: number;
 }
 
-// ------------------------------------------------------------------ executor: planned
+// ------------------------------------------------------------------ executor: reconcile
 
 /** `GET /reconcile`: executor `ReconcileReport` plus the order counts. */
 export interface ReconcileResponse {
@@ -387,7 +390,7 @@ export interface ReconcileResponse {
   ok: boolean;
 }
 
-// ------------------------------------------------------------------ chain service (planned)
+// ------------------------------------------------------------------ chain service: calls and leaderboard
 
 export type CallState = 'committed' | 'revealed' | 'void';
 

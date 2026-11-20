@@ -1,7 +1,7 @@
 import type { MarketEvent } from '../api/types';
 import { timeLeft } from './format';
 import { hasPrices } from './ladders';
-import type { AssetGroup } from './markets';
+import { parlaysOnOffer, type AssetGroup } from './markets';
 
 /** What the Markets page's toolbar narrows the list to. `cat` is '' for every category. */
 export interface MarketFilter {
@@ -28,7 +28,7 @@ export function filterGroups(groups: AssetGroup[], f: MarketFilter): AssetGroup[
     if (f.cat && g.category !== f.cat) continue;
     const events = g.events.filter((e) => (!f.priced || hasPrices(e)) && matches(g, e, f.q));
     if (events.length === 0) continue;
-    out.push({ ...g, events, priced: events.filter(hasPrices).length, offers: events.reduce((n, e) => n + e.offerableCount, 0) });
+    out.push({ ...g, events, priced: events.filter(hasPrices).length, offers: events.reduce((n, e) => n + parlaysOnOffer(e), 0) });
   }
   return out;
 }

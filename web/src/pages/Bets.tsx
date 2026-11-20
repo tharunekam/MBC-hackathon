@@ -4,23 +4,223 @@ import { api } from '../api';
 import { ApiError } from '../api/client';
 import type { Bet, CallRecord } from '../api/types';
 import { explorerTx } from '../api/types';
+import { betTitle, kindOf } from '../lib/betKind';
+import { basketSummary, filterEntries, groupBets, ifItComesOff, isSettled, kindLabel, orderLine, outcomeOf, realised, statusWords, summarize } from '../lib/betsView';
+import type { Entry, Filter } from '../lib/betsView';
 import { ago, cents, money, trunc, usd, usdSigned } from '../lib/format';
-import { useResource } from '../lib/hooks';
+import { useNow, useResource } from '../lib/hooks';
 import { chainLive, execLive } from '../lib/liveClients';
+import { PRODUCTS } from '../lib/nav';
+import '../styles/bets.css';
 
-type Outcome = 'open' | 'won' | 'back' | 'lost' | 'review' | 'other';
+const tone = (n: number) => (n > 0.004 ? 'good' : n < -0.004 ? 'bad' : '');
+const edgeText = (e: number) => `${e > 0 ? '+' : e < 0 ? '−' : ''}${Math.abs(e).toFixed(2)}`;
 
-function outcomeOf(b: Bet): Outcome {
-  if (b.status === 'needs_review') return 'review';
-  if (b.status === 'open' || b.status === 'unhedged' || b.status === 'placing') return 'open';
-  if (b.status === 'settled' && b.settlement) {
-    if (b.settlement.conditionResolved === 'no') return 'back';
-    return b.settlement.targetResolved === 'yes' ? 'won' : 'lost';
-  }
-  return 'other';
+const FILTERS: { id: Filter; name: string }[] = [
+  { id: 'all', name: 'All' },
+  { id: 'open', name: 'Open' },
+  { id: 'settled', name: 'Settled' },
+];
+
+interface RowProps {
+  bet: Bet;
+  call: CallRecord | undefined;
+  revealing: string | null;
+  onReveal: (callId: string) => void;
+  /** Shown in a basket: the leg number goes before the bet. */
+  leg?: number;
 }
 
-const LABEL: Record<Outcome, string> = { open: 'Open', won: 'Won', back: 'Money back', lost: 'Lost', review: 'Needs review', other: 'Not placed' };
+/** The result column: what the bet paid, what it pays if it comes off, or nothing yet. */
+function Result({ bet }: { bet: Bet }) {
+  const o = outcomeOf(bet);
+  const paid = realised(bet);
+  if (o === 'back') return <b className="back">Stake back</b>;
+  if (o === 'open') {
+    const p = ifItComesOff(bet);
+    return (
+      <>
+        <b className="bl-pending">{usdSigned(p.amount)}</b>
+        <small>{p.condition}</small>
+      </>
+    );
+  }
+  if (o === 'review')
+    // Not a win amount: the market is over. Show what was actually paid once someone has entered it.
+    return (
+      <>
+        <b className={paid ? tone(paid.pnl) : ''}>{paid ? usdSigned(paid.pnl) : '–'}</b>
+        <small>{paid ? 'entered by hand' : 'being checked'}</small>
+      </>
+    );
+  if (paid) return <b className={tone(paid.pnl)}>{usdSigned(paid.pnl)}</b>;
+  return <b className="bl-none">–</b>;
+}
+
+function BetRow({ bet, call, revealing, onReveal, leg }: RowProps) {
+  const [open, setOpen] = useState(false);
+  const o = outcomeOf(bet);
+  const kind = kindOf(bet);
+  const hand = bet.review?.resolved ?? null;
+  const detailId = `bet-${bet.id}-orders`;
+
+  return (
+    <div className="bl-row" data-bet={bet.id} data-outcome={o}>
+      <div className="bl-line">
+        <div className="bl-what">
+          <div className="bl-tags">
+            {leg !== undefined && <span className="bl-leg">Leg {leg}</span>}
+            <span className="kind-tag">{kindLabel(kind)}</span>
+          </div>
+          <p className="bl-title">{betTitle(bet)}</p>
+          <p className="bl-meta">
+            {bet.eventTitle} · {ago(bet.createdAt)}
+          </p>
+        </div>
+        <div className="bl-fig bl-stake">
+          <span className="bl-k">Stake</span>
+          <b>{usd(bet.cost)}</b>
+        </div>
+        <div className="bl-fig bl-state">
+          <span className="bl-k">Status</span>
+          <span className="bl-chip" data-outcome={o}>
+            {statusWords(bet)}
+          </span>
+        </div>
+        <div className="bl-fig bl-res">
+          <span className="bl-k">Result</span>
+          <Result bet={bet} />
+        </div>
+      </div>
+
+      {call && call.state === 'committed' && (o === 'won' || o === 'lost') && (
+        <div className="bl-foot">
+          <p>Reveal this call to put it on the leaderboard. It shows the bet and the result, never your account.</p>
+          <button type="button" className="btn btn-ghost bl-btn" disabled={revealing === call.id} onClick={() => onReveal(call.id)}>
+            {revealing === call.id ? 'Revealing' : 'Reveal on Solana'}
+          </button>
+        </div>
+      )}
+      {call?.state === 'revealed' && call.reveal && (
+        <div className="bl-foot">
+          <p>
+            Revealed on Solana. Edge scored <b className={call.reveal.edge !== null ? tone(call.reveal.edge) : ''}>{call.reveal.edge !== null ? edgeText(call.reveal.edge) : '–'}</b>
+          </p>
+          <div className="bl-links">
+            <Link to={`/verify/${call.reveal.signature}`}>Proof page</Link>
+            <Link to="/leaderboard">Leaderboard</Link>
+          </div>
+        </div>
+      )}
+      {o === 'back' && (
+        <div className="bl-foot">
+          <p>The first level failed, so your stake came back. This call is not scored.</p>
+        </div>
+      )}
+      {o === 'review' && (
+        <div className="bl-foot">
+          <p>
+            Gemini settled this market without a plain yes or no. {hand ? `It paid ${usd(hand.payout)}, read from the account and entered by hand.` : 'We are checking what it paid.'} This call is not scored.
+          </p>
+        </div>
+      )}
+
+      <button type="button" className="bl-expand" aria-expanded={open} aria-controls={detailId} onClick={() => setOpen(!open)}>
+        <span className="bl-caret" aria-hidden="true" />
+        Orders and proof
+      </button>
+      <div id={detailId} className="bl-detail" hidden={!open}>
+        <ol className="bl-orders" aria-label="Orders on Gemini">
+          {bet.legs.map((l) => {
+            const w = orderLine(bet, l);
+            return (
+              <li key={l.clientOrderId}>
+                <span className="bl-k">{w.label}</span>
+                <span className="bl-order">
+                  <span>{w.bets}</span>
+                  <span className="bl-fill">
+                    {l.quantityFilled} {w.side}
+                    {w.strike !== null ? ` on ${money(w.strike)}` : ''} at {l.avgPrice !== null ? cents(l.avgPrice) : '–'}
+                    {l.status !== 'filled' ? ` · ${l.status}` : ''}
+                  </span>
+                </span>
+                {l.orderId ? <code className="bl-id">{trunc(l.orderId, 6, 4)}</code> : <span className="bl-id bl-none">No order id</span>}
+              </li>
+            );
+          })}
+          {bet.legs.length === 0 && <li className="bl-none">No orders were sent.</li>}
+        </ol>
+        <dl className="bl-proof">
+          <div>
+            <dt className="bl-k">Bet id</dt>
+            <dd>
+              <code className="bl-id">{bet.id}</code>
+            </dd>
+          </div>
+          {call && (
+            <div>
+              <dt className="bl-k">On Solana</dt>
+              <dd>
+                {call.state === 'revealed' ? 'Revealed' : call.state === 'void' ? 'Refunded, not scored' : 'Committed'}
+                {call.network === 'devnet' ? (
+                  <a className="bl-id" href={explorerTx(call.commitSignature)} target="_blank" rel="noreferrer">
+                    {trunc(call.commitSignature, 8, 6)} ↗<span className="sr-only"> (opens the explorer in a new tab)</span>
+                  </a>
+                ) : (
+                  <code className="bl-id">{trunc(call.commitSignature, 8, 6)} · test chain</code>
+                )}
+              </dd>
+            </div>
+          )}
+        </dl>
+      </div>
+    </div>
+  );
+}
+
+function BasketPanel({ entry, all, ...rest }: { entry: Extract<Entry, { type: 'basket' }>; all: Extract<Entry, { type: 'basket' }> } & Omit<RowProps, 'bet' | 'call' | 'leg'> & { callFor: (id: string) => CallRecord | undefined }) {
+  // The header always describes the whole basket, even when a filter shows only some of its legs.
+  const s = basketSummary(all);
+  const { callFor, ...row } = rest;
+  return (
+    <li className="bl-panel bl-basket">
+      <header className="bl-bhead">
+        <div>
+          <span className="kind-tag">Basket</span>
+          <h2 className="bl-bname">{all.name ?? 'Basket'}</h2>
+          <p className="bl-meta">
+            Placed {ago(s.placedAt)} · {s.legs === s.size ? `${s.legs} legs` : `${s.legs} of ${s.size} legs placed`}
+          </p>
+        </div>
+        <dl className="bl-bfigs">
+          <div>
+            <dt className="bl-k">Staked</dt>
+            <dd>{usd(s.stake)}</dd>
+          </div>
+          <div>
+            <dt className="bl-k">Settled</dt>
+            <dd>
+              {s.settled} of {s.legs}
+            </dd>
+          </div>
+          {s.net !== null && (
+            <div>
+              <dt className="bl-k">Net so far</dt>
+              <dd className={tone(s.net)}>{usdSigned(s.net)}</dd>
+            </div>
+          )}
+        </dl>
+      </header>
+      <ol className="bl-legs">
+        {entry.legs.map((b) => (
+          <li key={b.id}>
+            <BetRow bet={b} call={callFor(b.id)} leg={(b.basket?.index ?? 0) + 1} {...row} />
+          </li>
+        ))}
+      </ol>
+    </li>
+  );
+}
 
 export default function Bets() {
   const bets = useResource('bets', () => api.bets(), { live: [[execLive, 'bets']], pollMs: 8000 });
@@ -29,20 +229,15 @@ export default function Bets() {
   const [note, setNote] = useState<string | null>(null);
   const [revealing, setRevealing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter>('all');
+  useNow(30_000); // keeps "12 min ago" current
 
-  const list = bets.data?.bets ?? [];
+  const list = useMemo(() => bets.data?.bets ?? [], [bets.data]);
   const callFor = (id: string): CallRecord | undefined => calls.data?.calls.find((c) => c.betId === id);
-
-  const totals = useMemo(() => {
-    const placed = list.filter((b) => outcomeOf(b) !== 'other');
-    const settled = list.filter((b) => b.status === 'settled' && b.settlement);
-    const staked = placed.reduce((n, b) => n + b.cost, 0);
-    // A bet Gemini settled without a plain yes or no counts once what it paid has been entered by hand.
-    const reviewed = list.filter((b) => b.status === 'needs_review' && b.review?.resolved);
-    const returned = settled.reduce((n, b) => n + (b.settlement?.payout ?? 0), 0) + reviewed.reduce((n, b) => n + (b.review?.resolved?.payout ?? 0), 0);
-    const net = settled.reduce((n, b) => n + (b.settlement?.pnl ?? 0), 0) + reviewed.reduce((n, b) => n + (b.review?.resolved?.pnl ?? 0), 0);
-    return { count: placed.length, staked, returned, net, open: placed.filter((b) => outcomeOf(b) === 'open').length };
-  }, [list]);
+  const totals = useMemo(() => summarize(list), [list]);
+  const entries = useMemo(() => groupBets(list), [list]);
+  const shown = useMemo(() => filterEntries(entries, filter), [entries, filter]);
+  const counts: Record<Filter, number> = { all: list.length, open: list.filter((b) => outcomeOf(b) === 'open').length, settled: list.filter(isSettled).length };
 
   async function check() {
     setChecking(true);
@@ -73,15 +268,18 @@ export default function Bets() {
     }
   }
 
+  const loading = bets.loading && !bets.data;
+  const failed = !bets.data && bets.error;
+
   return (
-    <div className="page">
+    <div className="page bets">
       <header className="page-head">
         <div>
           <span className="eyebrow">Your positions</span>
           <h1 className="h-page">My bets</h1>
-          <p className="lede">Every bet is two orders in your Gemini account. Here is how each one landed.</p>
+          <p className="lede">Each bet is a pair of orders in your own Gemini account. Results arrive here as markets settle.</p>
         </div>
-        <button className="btn btn-ghost" onClick={check} disabled={checking}>
+        <button type="button" className="btn btn-ghost" onClick={check} disabled={checking}>
           {checking ? (
             <>
               <span className="spin" aria-hidden="true" /> Checking
@@ -92,145 +290,105 @@ export default function Bets() {
         </button>
       </header>
 
-      <div className="stats">
-        <div className="card stat">
-          <span>Bets</span>
-          <b>{totals.count}</b>
-        </div>
-        <div className="card stat">
-          <span>Staked</span>
-          <b>{usd(totals.staked)}</b>
-        </div>
-        <div className="card stat">
-          <span>Returned</span>
-          <b>{usd(totals.returned)}</b>
-        </div>
-        <div className="card stat">
-          <span>Net</span>
-          <b className={totals.net > 0.004 ? 'good' : totals.net < -0.004 ? 'bad' : ''}>{usdSigned(totals.net)}</b>
-        </div>
-      </div>
-
       {(note || error) && (
         <p className={`note ${error ? 'note-bad' : 'note-info'}`} role={error ? 'alert' : 'status'}>
           {error ?? note}
         </p>
       )}
 
-      {bets.loading && !bets.data ? (
-        <div className="stack">
+      {loading ? (
+        <div className="bl-skels" aria-busy="true" aria-label="Loading your bets">
+          <div className="bl-skel bl-skel-sum" />
           {[0, 1, 2].map((i) => (
-            <div key={i} className="skeleton row-skel" />
+            <div key={i} className="bl-skel bl-skel-row" />
           ))}
         </div>
-      ) : list.length === 0 ? (
-        <div className="card empty-card">
-          <h2 className="h-card">No bets yet</h2>
-          <p>Build your first one. It takes a few seconds.</p>
-          <Link to="/app" className="btn btn-primary">
-            Build a bet
-          </Link>
+      ) : failed ? (
+        <div className="bl-empty" role="alert">
+          <h2 className="h-card">We could not load your bets</h2>
+          <p>{bets.error?.message ?? 'The service did not answer.'} Your orders are safe in your Gemini account either way.</p>
+          <button type="button" className="btn btn-ghost" onClick={() => bets.reload()}>
+            Try again
+          </button>
         </div>
       ) : (
-        <div className="stack">
-          {list.map((b) => {
-            const o = outcomeOf(b);
-            const call = callFor(b.id);
-            const result = b.settlement;
-            const hand = b.review?.resolved ?? null;
-            return (
-              <article key={b.id} className="card bet" data-outcome={o}>
-                <div className="bet-main">
-                  <div>
-                    <span className="eyebrow">{b.eventTitle}</span>
-                    <h2 className="bet-title">
-                      Given <em>{money(b.condition.strike)}</em>, reach <em>{money(b.target.strike)}</em>
-                    </h2>
-                    <p className="fine">
-                      {usd(b.cost)} · {ago(b.createdAt)}
-                    </p>
-                  </div>
-                  <div className="bet-result">
-                    <span className="status" data-outcome={o}>
-                      {LABEL[o]}
-                    </span>
-                    {o === 'review' ? (
-                      // Not "Wins +$x": the market is over. Show what was actually paid once someone has entered it.
-                      <b className={hand ? (hand.pnl > 0.004 ? 'good' : hand.pnl < -0.004 ? 'bad' : 'back') : ''}>{hand ? usdSigned(hand.pnl) : '–'}</b>
-                    ) : (
-                      <b className={result ? (o === 'back' ? 'back' : result.pnl > 0.004 ? 'good' : result.pnl < -0.004 ? 'bad' : 'back') : ''}>
-                        {result ? (o === 'back' ? 'Stake back' : usdSigned(result.pnl)) : usdSigned(b.payoffs?.ifBothHit ?? 0)}
-                      </b>
-                    )}
-                    {/* "Wins" would claim a result that is not in yet: say what it takes to get this number. */}
-                    {!result && o === 'open' && <small className="fine">if it reaches {money(b.target.strike)}</small>}
-                  </div>
-                </div>
+        <>
+          {list.length > 0 && (
+            <dl className="bl-sum" aria-label="Summary">
+              <div>
+                <dt className="eyebrow">Bets</dt>
+                <dd>{totals.count}</dd>
+                <dd className="bl-unit">
+                  {totals.open} open · {totals.settled} settled
+                </dd>
+              </div>
+              <div>
+                <dt className="eyebrow">Staked</dt>
+                <dd>{usd(totals.staked)}</dd>
+                <dd className="bl-unit">USD, every bet placed</dd>
+              </div>
+              <div>
+                <dt className="eyebrow">Returned</dt>
+                <dd>{usd(totals.returned)}</dd>
+                <dd className="bl-unit">USD, paid by settled bets</dd>
+              </div>
+              <div>
+                <dt className="eyebrow">Net</dt>
+                <dd className={tone(totals.net)}>{usdSigned(totals.net)}</dd>
+                <dd className="bl-unit">USD, settled bets only</dd>
+              </div>
+            </dl>
+          )}
 
-                <details className="orders">
-                  <summary>Orders and proof</summary>
-                  <div className="orders-body">
-                    {b.legs.map((l) => (
-                      <p key={l.clientOrderId}>
-                        <span>{l.role === 'outcome' ? 'Order 1' : 'Order 2'}</span> {l.quantityFilled} contracts {l.outcome === 'yes' ? 'YES' : 'NO'} at {l.avgPrice !== null ? cents(l.avgPrice) : '–'}
-                        {l.orderId && <code className="mono-chip">{trunc(l.orderId, 6, 4)}</code>}
-                      </p>
-                    ))}
-                    {call && (
-                      <p>
-                        <span>On Solana</span> {call.state === 'revealed' ? 'Revealed' : call.state === 'void' ? 'Refunded, not scored' : 'Committed'}
-                        {call.network === 'devnet' ? (
-                          <a className="mono-chip link" href={explorerTx(call.commitSignature)} target="_blank" rel="noreferrer">
-                            {trunc(call.commitSignature, 8, 6)} ↗
-                          </a>
-                        ) : (
-                          <code className="mono-chip">{trunc(call.commitSignature, 8, 6)} · test chain</code>
-                        )}
-                      </p>
-                    )}
-                  </div>
-                </details>
-
-                {call && call.state === 'committed' && (o === 'won' || o === 'lost') && (
-                  <div className="bet-foot">
-                    <p>Reveal this call to put it on the leaderboard. It shows the bet and the result, never your account.</p>
-                    <button className="btn btn-ghost" disabled={revealing === call.id} onClick={() => reveal(call.id)}>
-                      {revealing === call.id ? 'Revealing' : 'Reveal on Solana'}
+          {list.length === 0 ? (
+            <div className="bl-empty">
+              <h2 className="h-card">No bets yet</h2>
+              <p>A bet you place shows up here at once, with both of its orders and how it settles.</p>
+              <ul className="bl-start">
+                {PRODUCTS.map((p) => (
+                  <li key={p.id}>
+                    <Link to={p.to}>
+                      <b>{p.name}</b>
+                      <span>{p.tagline}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <>
+              <div className="bl-bar">
+                <div className="switch" role="group" aria-label="Show">
+                  {FILTERS.map((f) => (
+                    <button key={f.id} type="button" className={filter === f.id ? 'is-on' : undefined} aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>
+                      {f.name} <span className="bl-count">{counts[f.id]}</span>
                     </button>
-                  </div>
-                )}
-                {call?.state === 'revealed' && call.reveal && (
-                  <div className="bet-foot">
-                    <p>
-                      Revealed. Edge scored: <b>{call.reveal.edge !== null ? `${call.reveal.edge > 0 ? '+' : '−'}${Math.abs(call.reveal.edge).toFixed(2)}` : '–'}</b>.
-                    </p>
-                    <div className="row-actions">
-                      <Link to={`/verify/${call.reveal.signature}`} className="btn btn-ghost">
-                        Proof page
-                      </Link>
-                      <Link to="/leaderboard" className="btn btn-ghost">
-                        Leaderboard
-                      </Link>
-                    </div>
-                  </div>
-                )}
-                {o === 'back' && (
-                  <div className="bet-foot">
-                    <p>The first half failed, so your stake came back and this call does not count either way.</p>
-                  </div>
-                )}
-                {o === 'review' && (
-                  <div className="bet-foot">
-                    <p>
-                      Gemini settled this market without a plain yes or no.{' '}
-                      {hand ? `It paid ${usd(hand.payout)}, which we read from the account and entered by hand.` : 'We are checking what it paid.'} This call does not count either way.
-                    </p>
-                  </div>
-                )}
-              </article>
-            );
-          })}
-        </div>
+                  ))}
+                </div>
+                <span className="bl-cols" aria-hidden="true">
+                  <span>Stake</span>
+                  <span>Status</span>
+                  <span>Result</span>
+                </span>
+              </div>
+              {shown.length === 0 ? (
+                <p className="bl-none-line">{filter === 'open' ? 'No open bets right now.' : 'No settled bets yet.'}</p>
+              ) : (
+                <ul className="bets-list">
+                  {shown.map((e) =>
+                    e.type === 'single' ? (
+                      <li key={e.bet.id} className="bl-panel">
+                        <BetRow bet={e.bet} call={callFor(e.bet.id)} revealing={revealing} onReveal={reveal} />
+                      </li>
+                    ) : (
+                      <BasketPanel key={e.id} entry={e} all={entries.find((x): x is Extract<Entry, { type: 'basket' }> => x.type === 'basket' && x.id === e.id) ?? e} callFor={callFor} revealing={revealing} onReveal={reveal} />
+                    ),
+                  )}
+                </ul>
+              )}
+            </>
+          )}
+        </>
       )}
     </div>
   );

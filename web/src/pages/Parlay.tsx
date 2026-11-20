@@ -84,16 +84,20 @@ export default function Parlay() {
   }, [cRung, tRung, feeCoef, direction]);
 
   const dStake = useDebounced(stake, 350);
-  const dSel = useDebounced(sel, 200);
+  // What to ask the executor, debounced as one snapshot of direction, ladder and pair: a switch of direction or ladder then
+  // never sends the old pair to the new one. Empty until the pair is in the order the direction needs.
+  const asked = event && sel && cRung && tRung && inOrder(cRung, tRung, direction) ? `${direction}|${event.ticker}|${sel.c}|${sel.t}` : '';
+  const dAsked = useDebounced(asked, 200);
+  const [dDirection, dTicker, dC, dT] = dAsked.split('|') as [Direction, string, string, string];
   // One cached answer per pair and stake: going back to a pair you looked at is instant, and prices that move refresh it.
   const quoteQ = useResource<QuoteResponse | null>(
-    `quote:${direction}:${event?.ticker}:${dSel?.c}:${dSel?.t}:${dStake}`,
-    () => (event && dSel ? api.quote({ event: event.ticker, condition: dSel.c, target: dSel.t, stake: dStake, direction }) : Promise.resolve(null)),
+    `quote:${dAsked}:${dStake}`,
+    () => (dAsked ? api.quote({ event: dTicker, condition: dC, target: dT, stake: dStake, direction: dDirection }) : Promise.resolve(null)),
     { live: [[execLive, 'markets']], pollMs: 5000, minGapMs: 1500 },
   );
   const server = quoteQ.data && sel && quoteQ.data.condition.symbol === sel.c && quoteQ.data.target.symbol === sel.t ? quoteQ.data : null;
   // The button may rely on the executor's answer only when it is for this pair AND this stake, not one a moment ago.
-  const current = !!server && dSel?.c === sel?.c && dSel?.t === sel?.t && dStake === stake;
+  const current = !!server && dAsked === asked && dStake === stake;
   const settling = !server; // showing the estimate
 
   const offer = server?.quote;

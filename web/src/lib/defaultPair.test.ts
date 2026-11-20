@@ -75,6 +75,14 @@ describe('the pair a falling parlay starts on', () => {
     expect(defaultPair(ev, 'down')).toEqual({ c: 'S64000', t: 'S63000' });
   });
 
+  it('starts from the rungs alone when the session predates falling pairs', () => {
+    const ev = { ...event(ladder(mids)), down: undefined };
+    const p = defaultPair(ev, 'down')!;
+    const c = ev.rungs.find((r) => r.symbol === p.c)!;
+    const t = ev.rungs.find((r) => r.symbol === p.t)!;
+    expect(c.strike).toBeGreaterThan(t.strike);
+  });
+
   it('is not disturbed by the rising pairs', () => {
     const rungs = ladder(mids);
     const up = { condition: rungs[2]!, target: rungs[4]!, quote: { offerable: true, chanceCondition: 0.85, chanceBothHappen: 0.38 } } as unknown as Pair;

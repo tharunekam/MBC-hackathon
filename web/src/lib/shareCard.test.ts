@@ -53,6 +53,16 @@ describe('the picture of a call', () => {
     expect(svg).toContain('Solana devnet · Nov 18, 2026');
   });
 
+  it('a range says what the page says: its own question and inside or outside', () => {
+    const svg = shareCardSvg(card({ question: 'Will BTC finish between $61,500 and $62,500?', result: 'Finished inside' }));
+    expect(svg).toContain('Will BTC finish between $61,500 and');
+    expect(svg).toContain('Finished inside');
+    expect(svg).not.toContain('Target reached');
+    const missed = shareCardSvg(card({ won: false, question: 'Will BTC finish between $61,500 and $62,500?', result: 'Finished outside', edge: '−0.40', edgeGood: false }));
+    expect(missed).toContain('Finished outside');
+    expect(missed).not.toContain('Fell short');
+  });
+
   it('a call on the test chain is labelled as one', () => {
     expect(shareCardSvg(card({ network: 'Test chain' }))).toContain('Test chain');
     expect(shareCardSvg(card({ network: 'Test chain' }))).not.toContain('Solana devnet');

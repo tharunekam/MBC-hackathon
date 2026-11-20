@@ -9,6 +9,10 @@
  * What it does not: the outcome is attested by our authority key (no hash can cover a result that did not exist yet).
  */
 
+import { kindOfBetId } from './betKind';
+import type { BetKind } from './betKind';
+import { money } from './format';
+
 export const MEMO_PROGRAM_ID = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr';
 
 export interface CallFields {
@@ -165,3 +169,48 @@ export const strikeOf = (symbol: string): number | null => {
 
 /** `BTC2611190100` -> `BTC` */
 export const assetOf = (event: string): string => /^[A-Z]+/.exec(event)?.[0] ?? event;
+
+/** A piece of the question on a proof card. `em` marks the asset and the levels, which the card sets in weight. */
+export interface Part {
+  text: string;
+  em?: boolean;
+}
+
+export interface CallQuestion {
+  kind: BetKind;
+  parts: Part[];
+  /** The same sentence as plain text, for the picture. */
+  text: string;
+  /** The result in the product's words. */
+  result: string;
+}
+
+/**
+ * The question a revealed call asked, from what is on Solana only: the bet id (which carries the product, see
+ * `kindOfBetId`), the event and the two committed symbols. For a falling parlay the condition symbol is the higher strike;
+ * for a range the condition is the lower strike and the target the higher one.
+ */
+export function callQuestion(call: { betId: string; event: string; condition: string; target: string; outcome: 0 | 1 }): CallQuestion {
+  const kind = kindOfBetId(call.betId);
+  const level = (symbol: string): Part => {
+    const s = strikeOf(symbol);
+    return { text: s !== null ? money(s) : symbol, em: true };
+  };
+  const asset: Part = { text: assetOf(call.event), em: true };
+  const c = level(call.condition);
+  const t = level(call.target);
+  const won = call.outcome === 1;
+  let parts: Part[];
+  let result: string;
+  if (kind.product === 'range') {
+    parts = [{ text: 'Will ' }, asset, { text: ' finish between ' }, c, { text: ' and ' }, t, { text: '?' }];
+    result = won ? 'Finished inside' : 'Finished outside';
+  } else if (kind.direction === 'down') {
+    parts = [{ text: 'Given ' }, asset, { text: ' stays below ' }, c, { text: ', will it fall below ' }, t, { text: '?' }];
+    result = won ? 'Target reached' : 'Fell short';
+  } else {
+    parts = [{ text: 'Given ' }, asset, { text: ' at ' }, c, { text: ' or above, will it reach ' }, t, { text: '?' }];
+    result = won ? 'Target reached' : 'Fell short';
+  }
+  return { kind, parts, text: parts.map((p) => p.text).join(''), result };
+}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { OfferQuote, QuoteResponse, RefusalCode, Rung, StakePlan } from '../api/types';
-import { buttonState, firstReason, localRefusal, type BetInputs } from './betState';
-import { estimate } from './pricing';
+import type { OfferQuote, QuoteResponse, RangeQuote, RangeQuoteResponse, RangeStakePlan, RefusalCode, Rung, StakePlan } from '../api/types';
+import { buttonState, firstReason, localRefusal, rangeButtonState, type BetInputs, type RangeInputs } from './betState';
+import { estimate, rangeEstimate } from './pricing';
 
 const rung = (strike: number, bid: number | null, ask: number | null, open = true): Rung => ({
   symbol: `S${strike}`,
@@ -200,5 +200,195 @@ describe('"not open" says what kind of not open', () => {
     const s = buttonState(base({ answer: null, target: closed('mystery') }));
     expect(s.blockedBy).toBe('market_closed');
     expect(s.notice?.text).not.toMatch(/few minutes|reopen/);
+  });
+});
+
+// ------------------------------------------------------------------ range
+
+describe('the place bet button for a range', () => {
+  const LO = rung(62000, 0.74, 0.76);
+  const HI = rung(64000, 0.3, 0.32);
+
+  const rangeQuote = (over: Partial<RangeQuote> = {}): RangeQuote => ({
+    verdict: 'ok',
+    reasons: [],
+    warnings: [],
+    offerable: true,
+    overridden: false,
+    chanceInRange: 0.44,
+    fairPrice: 0.44,
+    pricePaid: 0.46,
+    allInPrice: 0.47,
+    markup: 0.02,
+    markupPct: 0.05,
+    cashOutPer100: 96,
+    cashOutPer100AtProductionFees: 95,
+    feeCoefCharged: 0,
+    ...over,
+  });
+
+  const rangePlan = (over: Partial<RangeStakePlan> = {}): RangeStakePlan => ({
+    requested: 10,
+    reduced: false,
+    contracts: 6.84,
+    cost: 10,
+    backAlways: 6.84,
+    ifInRange: 3.68,
+    ifOutside: -3.16,
+    feesAtProductionRates: 0.14,
+    cashOutNow: 9.6,
+    ...over,
+  });
+
+  const rangeAnswer = (q: Partial<RangeQuote> = {}, p: RangeStakePlan | null = rangePlan()): RangeQuoteResponse => ({
+    venue: 'test',
+    asOf: '2026-11-18T00:00:00Z',
+    product: 'range',
+    event: { ticker: 'E', title: 'E', expiry: null },
+    low: { symbol: LO.symbol, label: LO.label, strike: LO.strike, bid: LO.bid, ask: LO.ask },
+    high: { symbol: HI.symbol, label: HI.label, strike: HI.strike, bid: HI.bid, ask: HI.ask },
+    quote: rangeQuote(q),
+    stake: p,
+    depth: { outcomeAvailable: 100, conditionAvailable: 100, maxStake: 60 },
+  });
+
+  const estOf = (lo: Rung, hi: Rung) => rangeEstimate({ bid: lo.bid, ask: lo.ask }, { bid: hi.bid, ask: hi.ask }, 0);
+
+  const rbase = (over: Partial<RangeInputs> = {}): RangeInputs => ({
+    phase: 'idle',
+    readOnly: false,
+    stake: 10,
+    low: LO,
+    high: HI,
+    answer: rangeAnswer(),
+    answerError: false,
+    est: estOf(LO, HI),
+    ...over,
+  });
+
+  const rangeRefused = (code: RefusalCode, message = 'x') => rangeAnswer({ offerable: false, verdict: 'refuse', reasons: [{ code, message }] }, null);
+
+  it('is live for the executor answer to this range and stake, and shows the real cost', () => {
+    expect(rangeButtonState(rbase())).toMatchObject({ canPlace: true, label: 'Place bet · $10.00', notice: null, blockedBy: null });
+    expect(rangeButtonState(rbase({ answer: rangeAnswer({}, rangePlan({ cost: 4.5, reduced: true })) }))).toMatchObject({ canPlace: true, label: 'Place bet · $4.50' });
+  });
+
+  it('is off while placing, with no notice', () => {
+    expect(rangeButtonState(rbase({ phase: 'placing' }))).toMatchObject({ canPlace: false, label: 'Placing both orders', notice: null, blockedBy: 'placing' });
+  });
+
+  it('is off when bets are switched off', () => {
+    expect(rangeButtonState(rbase({ readOnly: true }))).toMatchObject({ canPlace: false, blockedBy: 'readonly', label: 'Bets are switched off' });
+  });
+
+  it('waits for prices while either level is missing', () => {
+    expect(rangeButtonState(rbase({ low: undefined }))).toMatchObject({ canPlace: false, blockedBy: 'loading', label: 'Loading prices' });
+    expect(rangeButtonState(rbase({ high: undefined }))).toMatchObject({ canPlace: false, blockedBy: 'loading' });
+  });
+
+  it('asks for at least the minimum stake', () => {
+    const s = rangeButtonState(rbase({ stake: 0.5 }));
+    expect(s).toMatchObject({ canPlace: false, blockedBy: 'stake', label: 'Stake at least $1' });
+    expect(s.notice?.tone).toBe('info');
+    expect(rangeButtonState(rbase({ stake: Number.NaN })).blockedBy).toBe('stake');
+  });
+
+  const cases: Array<[RefusalCode, RegExp, RegExp]> = [
+    ['no_price', /further apart/i, /no sensible price/],
+    ['price_too_high', /further apart/i, /cost too much/],
+    ['markup_too_high', /other levels/i, /too far apart for a fair deal/],
+    ['ladder_out_of_order', /out of step/i, /out of order/],
+    ['one_sided_book', /no market/i, /Nobody is buying or selling/],
+  ];
+  for (const [code, label, text] of cases) {
+    it(`an executor refusal (${code}) names its cause and the way out`, () => {
+      const s = rangeButtonState(rbase({ answer: rangeRefused(code) }));
+      expect(s.canPlace).toBe(false);
+      expect(s.blockedBy).toBe(code);
+      expect(s.label).toMatch(label);
+      expect(s.notice?.tone).toBe('bad');
+      expect(s.notice?.text).toMatch(text);
+      expect(`${s.label} ${s.notice?.text}`).not.toMatch(/target|condition|closer/i);
+    });
+  }
+
+  it('market_closed says what kind of not open, from the levels themselves', () => {
+    const postOnly = { ...HI, open: false, state: 'active/post_only' };
+    const s = rangeButtonState(rbase({ high: postOnly, answer: rangeRefused('market_closed') }));
+    expect(s).toMatchObject({ canPlace: false, blockedBy: 'market_closed' });
+    expect(s.label).toMatch(/not open for bets yet/i);
+    expect(s.notice?.text).toMatch(/few minutes/);
+
+    const settled = { ...LO, open: false, state: 'settled' };
+    const t = rangeButtonState(rbase({ low: settled, answer: rangeRefused('market_closed') }));
+    expect(t.label).toMatch(/has closed/i);
+    expect(t.notice?.text).not.toMatch(/few minutes/);
+  });
+
+  it('a closed market is named first when several things are wrong', () => {
+    const a = rangeAnswer({ offerable: false, verdict: 'refuse', reasons: [{ code: 'markup_too_high', message: 'x' }, { code: 'market_closed', message: 'y' }] }, null);
+    expect(rangeButtonState(rbase({ answer: a })).blockedBy).toBe('market_closed');
+  });
+
+  it('a refusal with no known code still says something', () => {
+    const a = rangeAnswer({ offerable: false, verdict: 'refuse', reasons: [] }, null);
+    const s = rangeButtonState(rbase({ answer: a }));
+    expect(s).toMatchObject({ canPlace: false, label: 'Not on offer' });
+    expect(s.notice?.text).toMatch(/range/);
+  });
+
+  it('never shows a zero price: a range the book cannot fill is refused as thin', () => {
+    for (const p of [rangePlan({ cost: 0, contracts: 0, backAlways: 0 }), rangePlan({ cost: 0.62, contracts: 0.42, reduced: true })]) {
+      const s = rangeButtonState(rbase({ answer: rangeAnswer({}, p) }));
+      expect(s).toMatchObject({ canPlace: false, blockedBy: 'thin', label: 'Not enough on the market' });
+      expect(s.label).not.toMatch(/\$0\.00/);
+      expect(s.notice?.text).toMatch(/other levels/);
+    }
+    expect(rangeButtonState(rbase({ answer: rangeAnswer({}, rangePlan({ cost: 0.62, contracts: 0.42 })) })).notice?.text).toMatch(/\$0\.62/);
+  });
+
+  it('an offerable answer with no stake plan is still being checked', () => {
+    expect(rangeButtonState(rbase({ answer: rangeAnswer({}, null) }))).toMatchObject({ canPlace: false, blockedBy: 'checking' });
+  });
+
+  it('is not live on an estimate alone, however good it looks', () => {
+    expect(rangeButtonState(rbase({ answer: null }))).toMatchObject({ canPlace: false, blockedBy: 'checking', label: 'Checking the price', notice: null });
+  });
+
+  it('refuses early on what the local numbers already settle', () => {
+    const shut = { ...HI, open: false, state: 'active/post_only' };
+    expect(rangeButtonState(rbase({ answer: null, high: shut })).blockedBy).toBe('market_closed');
+
+    const oneSided = { ...LO, bid: null };
+    expect(rangeButtonState(rbase({ answer: null, low: oneSided, est: null })).blockedBy).toBe('one_sided_book');
+
+    // No sensible price at all (the levels are the wrong way round on the book).
+    const flat = rung(64000, 0.8, 0.82);
+    expect(rangeButtonState(rbase({ answer: null, high: flat, est: estOf(LO, flat) })).blockedBy).toBe('no_price');
+
+    // A spread too wide to be fair.
+    const wide = rung(64000, 0.05, 0.6);
+    const e = estOf(LO, wide);
+    expect(e?.code).toBe('markup_too_high');
+    const s = rangeButtonState(rbase({ answer: null, high: wide, est: e }));
+    expect(s.blockedBy).toBe('markup_too_high');
+    expect(s.notice?.text).toMatch(/other levels/);
+
+    // An unknown state makes no promise about reopening.
+    const odd = { ...HI, open: false, state: 'mystery' };
+    expect(rangeButtonState(rbase({ answer: null, high: odd })).notice?.text).not.toMatch(/few minutes|reopen/);
+  });
+
+  it('an early refusal outranks a failed quote request, and a failed request alone says so', () => {
+    const shut = { ...HI, open: false, state: 'active/post_only' };
+    expect(rangeButtonState(rbase({ answer: null, answerError: true, high: shut })).blockedBy).toBe('market_closed');
+    const s = rangeButtonState(rbase({ answer: null, answerError: true }));
+    expect(s).toMatchObject({ canPlace: false, blockedBy: 'unreachable', label: 'Prices unavailable' });
+    expect(s.notice?.text).toMatch(/connection/);
+    expect(s.notice?.text).toMatch(/range/);
+  });
+
+  it('an executor refusal overrules a hopeful estimate', () => {
+    expect(rangeButtonState(rbase({ answer: rangeRefused('price_too_high') })).canPlace).toBe(false);
   });
 });

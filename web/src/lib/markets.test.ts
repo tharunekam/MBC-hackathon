@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MarketEvent, Rung } from '../api/types';
-import { assetKey, assetLabel, assetName, closesLabel, groupByAsset, horizonOf, strikeSpan } from './markets';
+import { assetKey, assetLabel, assetName, closesLabel, groupByAsset, horizonOf, parlaysOnOffer, strikeSpan } from './markets';
 
 const rung = (strike: number, bid: number | null = 0.4, ask: number | null = 0.5): Rung => ({ symbol: `S${strike}`, label: `${strike}`, strike, bid, ask, open: true, state: 'open' });
 const ev = (ticker: string, title: string, expiry: string | null, over: Partial<MarketEvent> = {}): MarketEvent => ({
@@ -62,6 +62,12 @@ describe('groupByAsset', () => {
     expect(groups[1]!.events.map((e) => e.ticker)).toEqual(['ETH2611200100', 'ETH2611302200']);
     expect(groups[0]!.offers).toBe(4);
     expect(groups[1]!.priced).toBe(2);
+  });
+  it('counts the parlays on offer going either way', () => {
+    const up = ev('BTC2611200100', 'BTC price today', '2026-11-20T01:00:00Z', { offerableCount: 3, down: { pairs: [], offerableCount: 2, refusedCount: 0 } });
+    expect(parlaysOnOffer(up)).toBe(5);
+    expect(parlaysOnOffer({ ...up, down: undefined })).toBe(3); // a session recorded before falling bets existed
+    expect(groupByAsset([up])[0]!.offers).toBe(5);
   });
   it('counts a ladder with no two-sided prices as unpriced', () => {
     const g = groupByAsset([ev('BTC2611200100', 'BTC price today', '2026-11-20T01:00:00Z', { rungs: [rung(1, null, null), rung(2, null, null)] })]);

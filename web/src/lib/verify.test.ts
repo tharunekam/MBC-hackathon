@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import realCall from './fixtures/devnet-program-call.json';
-import { assetOf, commitHash, memoTx, preimage, strikeOf, verifyOnChain } from './verify';
+import { assetOf, callQuestion, commitHash, memoTx, preimage, strikeOf, verifyOnChain } from './verify';
 import type { CallFields, Rpc } from './verify';
 
 // The same vector as chain/test/memo.test.ts. The hash literal was produced by chain/src/hash.ts, so if either side
@@ -156,5 +156,36 @@ describe('real Solana devnet records', () => {
     const v = await verifyOnChain(node, real.revealSignature, 'SomeOtherAuthority1111111111111111111111111', real.program);
     expect(v.ok).toBe(false);
     expect(v.checks.at(-1)?.id).toBe('reveal-signer');
+  });
+});
+
+describe('the question a call asked, from what is on Solana', () => {
+  const sym = (n: number) => `GEMI-BTC2611190100-HI${n}`;
+  const base = { event: 'BTC2611190100', outcome: 1 as const };
+
+  it('a rising parlay: given the lower strike, will it reach the higher', () => {
+    const q = callQuestion({ ...base, betId: 'd1a2b3', condition: sym(62500), target: sym(63500) });
+    expect(q.text).toBe('Given BTC at $62,500 or above, will it reach $63,500?');
+    expect(q.result).toBe('Target reached');
+    expect(q.parts.filter((p) => p.em).map((p) => p.text)).toEqual(['BTC', '$62,500', '$63,500']);
+  });
+
+  it('a falling parlay: its condition is the higher strike', () => {
+    const q = callQuestion({ ...base, betId: 'dn-d1a2b3', condition: sym(64000), target: sym(62500), outcome: 0 });
+    expect(q.kind).toEqual({ product: 'parlay', direction: 'down' });
+    expect(q.text).toBe('Given BTC stays below $64,000, will it fall below $62,500?');
+    expect(q.result).toBe('Fell short');
+  });
+
+  it('a range: the first strike is the lower, and the result is inside or outside', () => {
+    const q = callQuestion({ ...base, betId: 'rg-d1a2b3', condition: sym(62500), target: sym(64000) });
+    expect(q.kind.product).toBe('range');
+    expect(q.text).toBe('Will BTC finish between $62,500 and $64,000?');
+    expect(q.result).toBe('Finished inside');
+    expect(callQuestion({ ...base, betId: 'rg-x', condition: sym(1), target: sym(2), outcome: 0 }).result).toBe('Finished outside');
+  });
+
+  it('a symbol it cannot read is shown as committed', () => {
+    expect(callQuestion({ ...base, betId: 'x', condition: 'odd', target: sym(2) }).text).toBe('Given BTC at odd or above, will it reach $2?');
   });
 });

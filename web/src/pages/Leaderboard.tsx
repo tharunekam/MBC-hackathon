@@ -2,11 +2,14 @@ import { Fragment, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import type { LeaderboardRow } from '../api/types';
+import { kindOfBetId } from '../lib/betKind';
+import { kindLabel } from '../lib/betsView';
 import { ago, pct } from '../lib/format';
 import { useResource } from '../lib/hooks';
 import { chainLive } from '../lib/liveClients';
 import { MY_BETS, PRODUCTS } from '../lib/nav';
 import '../styles/leaderboard.css';
+import '../styles/bets.css';
 
 const edgeText = (e: number) => `${e > 0 ? '+' : e < 0 ? '−' : ''}${Math.abs(e).toFixed(2)}`;
 const tone = (e: number) => (e > 0 ? 'good' : e < 0 ? 'bad' : '');
@@ -128,7 +131,10 @@ export default function Leaderboard() {
                                       {c.outcome === 1 ? 'Won' : 'Lost'}
                                     </span>
                                     <span className={`lb-edge ${tone(c.edge)}`}>{edgeText(c.edge)}</span>
-                                    <span className="lb-when">{ago(c.revealedAt)}</span>
+                                    <span className="lb-when">
+                                      {/* Inside the time cell, so the row keeps its four columns. */}
+                                      {ago(c.revealedAt)} <span className="kind-tag">{kindLabel(kindOfBetId(c.betId))}</span>
+                                    </span>
                                     <Link to={`/verify/${c.signature}`}>Check it on Solana</Link>
                                   </li>
                                 ))}
@@ -172,6 +178,7 @@ export default function Leaderboard() {
               <dd className="lb-none">Not scored</dd>
             </div>
           </dl>
+          <p className="fine">A range call has no refund: finishing inside the range scores as a hit, outside it as a miss.</p>
         </figure>
       </section>
     </div>

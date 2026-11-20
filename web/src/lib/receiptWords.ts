@@ -35,7 +35,7 @@ export function receiptWords(bet: Pick<Bet, 'product' | 'direction' | 'condition
       secondWhy: 'One of the two orders always pays a dollar, so the most you can lose is what the pair cost above that.',
       outcomes: [
         { kind: 'win', label: `If it finishes between ${money(c)} and ${money(t)}` },
-        { kind: 'lose', label: `If it finishes below ${money(c)} or at ${money(t)} and above` },
+        { kind: 'lose', label: 'If it finishes outside the range' },
       ],
     };
   }

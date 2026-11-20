@@ -6,7 +6,7 @@ import { mirrorBook } from './pricing';
  * For a falling parlay the pair is chosen the same way on the mirror of the ladder, where "falls below" is "reaches".
  */
 export function defaultPair(ev: MarketEvent, direction: Direction = 'up'): { c: string; t: string } | null {
-  const pairs = direction === 'down' ? ev.down.pairs : ev.pairs;
+  const pairs = direction === 'down' ? (ev.down?.pairs ?? []) : ev.pairs;
   const ok = pairs.filter((p) => p.quote.offerable && p.quote.chanceBothHappen !== null);
   if (ok.length === 0) {
     // Nothing is on offer right now (a closed or brand-new ladder). Still start somewhere sensible: a likely condition and a

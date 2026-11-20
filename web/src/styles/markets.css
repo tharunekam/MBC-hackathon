@@ -196,7 +196,7 @@
   font-size: 15px;
 }
 .mk-table .mk-c-closes {
-  width: 26%;
+  width: 24%;
 }
 .mk-table .mk-c-num {
   width: 18%;
@@ -208,7 +208,7 @@
   width: 15%;
 }
 .mk-table .mk-c-act {
-  width: 14%;
+  width: 16%;
 }
 .mk-table th {
   padding: 10px 16px;
@@ -291,6 +291,10 @@
   background: var(--accent);
 }
 
+.mk-links {
+  display: inline-flex;
+  gap: 16px;
+}
 .mk-link {
   display: inline-flex;
   align-items: center;
@@ -436,6 +440,10 @@
     grid-row: 1;
     align-self: start;
     text-align: right;
+  }
+  .mk-table td.mk-act .mk-links {
+    align-items: center;
+    gap: 20px;
   }
   .mk-table td.mk-act .mk-link,
   .mk-table td.mk-act .mk-wait {

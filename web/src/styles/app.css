@@ -85,14 +85,6 @@ em {
 }
 
 /* ------------------------------------------------------------ type */
-.h-hero {
-  font-family: var(--font-display);
-  font-weight: 500;
-  font-size: clamp(39px, 5.2vw, 67px);
-  line-height: 1;
-  letter-spacing: -0.028em;
-  margin: 16px 0 24px;
-}
 .h-section {
   font-family: var(--font-display);
   font-weight: 500;
@@ -122,10 +114,6 @@ em {
   max-width: 56ch;
   font-size: 17px;
 }
-.lede-lg {
-  font-size: 19px;
-  margin-bottom: 32px;
-}
 .eyebrow {
   display: block;
   font-family: var(--font-mono);
@@ -139,9 +127,6 @@ em {
   font-size: 13px;
   color: var(--muted);
   line-height: 1.5;
-}
-.center {
-  text-align: center;
 }
 .good {
   color: var(--good);
@@ -288,14 +273,6 @@ button.chip:hover {
   border-radius: var(--r-lg);
   box-shadow: var(--shadow);
   padding: 24px;
-}
-.empty-card {
-  text-align: center;
-  padding: 56px 24px;
-  display: grid;
-  gap: 12px;
-  justify-items: center;
-  color: var(--muted);
 }
 .empty {
   padding: 48px 0;
@@ -890,16 +867,6 @@ button.chip:hover {
 .chart-card {
   padding: 24px 24px 20px;
 }
-.chart-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.chart-head > * {
-  min-width: 0;
-}
 .seg {
   display: inline-flex;
   position: relative; /* the tabs measure their place in the strip from here */
@@ -931,25 +898,6 @@ button.chip:hover {
 .seg button.is-on {
   background: var(--surface);
   color: var(--ink);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
-}
-/* One market is a title, not a choice, so it drops the strip and the raised tab. */
-.seg[data-solo] {
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-.seg[data-solo] button {
-  height: auto;
-  padding: 0;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--ink);
-  cursor: default;
-}
-.seg[data-solo] button.is-on {
-  background: transparent;
-  box-shadow: none;
 }
 .more-markets {
   display: block;
@@ -1366,60 +1314,7 @@ button.chip:hover {
   line-height: 1.5;
 }
 
-/* ------------------------------------------------------------ bets */
-.stats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-  margin-bottom: 24px;
-}
-.stat {
-  padding: 20px;
-  display: grid;
-  gap: 4px;
-  box-shadow: none;
-}
-.stat span {
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  color: var(--muted);
-}
-.stat b {
-  font-family: var(--font-ui);
-  font-size: 24px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-}
-.bet {
-  display: grid;
-  gap: 16px;
-  padding: 24px;
-}
-.bet-main {
-  display: flex;
-  justify-content: space-between;
-  gap: 24px;
-}
-.bet-title {
-  font-family: var(--font-display);
-  font-weight: 500;
-  font-size: 22px;
-  line-height: 1.15;
-  margin: 6px 0 4px;
-}
-.bet-result {
-  display: grid;
-  justify-items: end;
-  align-content: start;
-  gap: 8px;
-  text-align: right;
-}
-.bet-result b {
-  font-family: var(--font-ui);
-  font-size: 20px;
-  font-weight: 500;
-}
+/* ------------------------------------------------------------ status (leaderboard) */
 .status {
   display: inline-flex;
   align-items: center;
@@ -1447,42 +1342,6 @@ button.chip:hover {
   border-color: transparent;
   color: var(--bad);
 }
-.orders summary {
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
-  width: max-content;
-}
-.orders summary:hover {
-  color: var(--ink);
-}
-.orders-body {
-  display: grid;
-  gap: 8px;
-  margin-top: 12px;
-  font-size: 14px;
-  color: var(--soft);
-}
-.orders-body span {
-  display: inline-block;
-  min-width: 72px;
-  color: var(--muted);
-}
-.orders-body .mono-chip {
-  margin: 0 0 0 8px;
-}
-.bet-foot {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
-  font-size: 14px;
-  color: var(--muted);
-}
-
 /* ------------------------------------------------------------ proof */
 .proof-grid {
   display: grid;
@@ -1617,9 +1476,6 @@ button.chip:hover {
   .how {
     grid-template-columns: 1fr;
   }
-  .stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .proof-grid {
     grid-template-columns: 1fr;
   }
@@ -1662,18 +1518,6 @@ button.chip:hover {
   }
   .q-sentence {
     font-size: 26px;
-  }
-  .bet-main {
-    flex-direction: column;
-    gap: 12px;
-  }
-  .bet-result {
-    justify-items: start;
-    text-align: left;
-  }
-  .bet-foot {
-    flex-direction: column;
-    align-items: flex-start;
   }
   .stake-row {
     grid-template-columns: 1fr;
@@ -1754,109 +1598,9 @@ button.chip:hover {
 .page.narrow {
   width: min(720px, 100% - 48px);
 }
-.proofcard {
-  display: grid;
-  gap: 20px;
-  padding: 32px;
-}
-.pc-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.pc-verdict {
-  font-family: var(--font-display);
-  font-size: clamp(37px, 5.9vw, 54px);
-  line-height: 1;
-  letter-spacing: -0.028em;
-  color: var(--good);
-}
-.proofcard[data-outcome='missed'] .pc-verdict {
-  color: var(--bad);
-}
-.pc-foot {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
-}
-.pc-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.verify {
-  margin-top: 24px;
-  display: grid;
-  gap: 4px;
-}
-.verify > p {
-  color: var(--soft);
-  margin-bottom: 12px;
-}
-.verify .btn {
-  justify-self: start;
-}
-.checks {
-  display: grid;
-  gap: 4px;
-  margin: 20px 0 8px;
-}
-.checks li {
-  display: grid;
-  grid-template-columns: 28px 1fr;
-  gap: 12px;
-  padding: 10px 0;
-  border-top: 1px solid var(--line);
-}
-.checks .mark {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  font-size: 13px;
-  font-weight: 600;
-  background: var(--good-soft);
-  color: var(--good);
-}
-.checks li[data-ok='false'] .mark {
-  background: var(--bad-soft);
-  color: var(--bad);
-}
-.checks li[data-optional='true'][data-ok='false'] .mark {
-  background: var(--bg-2);
-  color: var(--muted);
-}
-.checks b {
-  font-weight: 600;
-  font-size: 15px;
-}
-.checks p {
-  color: var(--muted);
-  font-size: 13px;
-}
-.verify .links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 8px 0 12px;
-}
-.verify .links .mono-chip {
-  margin-top: 0;
-}
 @media (max-width: 720px) {
   .page.narrow {
     width: calc(100% - 32px);
-  }
-  .proofcard {
-    padding: 20px;
-  }
-  .pc-foot {
-    flex-direction: column;
-    align-items: flex-start;
   }
 }
 
@@ -1945,63 +1689,6 @@ button.chip:hover {
 @media (min-width: 961px) {
   .split.flip > :first-child {
     order: 2;
-  }
-}
-.suite-head {
-  display: grid;
-  gap: 12px;
-  margin-bottom: 48px;
-}
-.suite {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-top: 1px solid var(--line);
-  border-left: 1px solid var(--line);
-}
-.suite li {
-  border-right: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-}
-.suite a {
-  display: grid;
-  grid-template-rows: auto 1fr auto;
-  gap: 8px;
-  height: 100%;
-  min-height: 176px;
-  padding: 24px;
-  text-decoration: none;
-  transition: background 160ms var(--ease);
-}
-.suite a:hover {
-  background: var(--surface);
-}
-.suite b {
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-.suite-line {
-  max-width: 34ch;
-  font-size: 15px;
-  line-height: 1.45;
-  color: var(--muted);
-}
-.suite-go {
-  margin-top: 16px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--accent-text);
-}
-.suite-go span {
-  display: inline-block;
-  transition: translate 160ms var(--ease);
-}
-.suite a:hover .suite-go span {
-  translate: 4px 0;
-}
-@media (max-width: 760px) {
-  .suite {
-    grid-template-columns: minmax(0, 1fr);
   }
 }
 .closing-in {

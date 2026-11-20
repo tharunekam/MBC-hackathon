@@ -55,6 +55,9 @@ export interface AssetGroup {
   offers: number;
 }
 
+/** Return Parlays a ladder offers right now, going either way. */
+export const parlaysOnOffer = (e: MarketEvent): number => e.offerableCount + (e.down?.offerableCount ?? 0);
+
 const closes = (e: MarketEvent): number => (e.expiry ? new Date(e.expiry).getTime() : Infinity);
 
 /** Groups ladders by asset. Assets with something to bet on come first, then by how many offers, then by name. */
@@ -70,7 +73,7 @@ export function groupByAsset(events: MarketEvent[]): AssetGroup[] {
     }
     g.events.push(e);
     if (hasPrices(e)) g.priced += 1;
-    g.offers += e.offerableCount;
+    g.offers += parlaysOnOffer(e);
   }
   const groups = [...byKey.values()];
   for (const g of groups) g.events.sort((a, b) => closes(a) - closes(b) || a.ticker.localeCompare(b.ticker));
