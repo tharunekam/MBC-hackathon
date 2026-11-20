@@ -266,8 +266,11 @@ function pairsFor(rungs: Rung[], direction: Direction): Pair[] {
   return out;
 }
 
-function buildEvent(a: Asset, t: number): MarketEvent {
-  const expiry = nextHour(new Date(t));
+/** Each asset lists this many hourly markets, as the real exchange does, so the time picker has real choices. */
+const HOURLY_MARKETS = 4;
+
+function buildEvent(a: Asset, t: number, later = 0): MarketEvent {
+  const expiry = new Date(nextHour(new Date(t)).getTime() + later * 3_600_000);
   const ticker = `${a.key}${expiry.toISOString().slice(2, 13).replace(/[-T]/g, '')}00`;
   const rungs = buildRungs(a, ticker, t);
   const pairs = pairsFor(rungs, 'up');
@@ -348,7 +351,8 @@ export function mockApi(): Api {
   const calls: CallRecord[] = [];
   let seeded = false;
 
-  const events = (t = Date.now()) => ASSETS.map((a) => buildEvent(a, t));
+  // The first market of every asset comes first, in the assets' own order (the seeded bets below pick from the front), then the later hours.
+  const events = (t = Date.now()) => Array.from({ length: HOURLY_MARKETS }, (_, k) => ASSETS.map((a) => buildEvent(a, t, k))).flat();
   const eventOf = (ticker: string): MarketEvent => {
     const ev = events().find((e) => e.ticker === ticker);
     if (!ev) throw new ApiError(404, { error: `Gemini has no event "${ticker}".`, code: 'unknown_event' }, 'unknown');

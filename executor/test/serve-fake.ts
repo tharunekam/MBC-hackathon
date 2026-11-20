@@ -110,6 +110,18 @@ function build() {
     extraSpot.set(c, OTHER[c].spot);
     ex.addEvent(extraTicker(c), extraRungs(c, OTHER[c].spot), { title: extraTitle(c, round.closesAt), expiryDate: round.closesAt.toISOString() });
   }
+  // With the other assets on (npm run dev), each asset also lists the next three hours, so the time picker has real choices.
+  // They are ordinary markets with their own ladders; only the first closes and settles with the demo round.
+  if (EXTRA.length > 0) {
+    for (let k = 0; k <= 3; k++) {
+      const closes = new Date(nextHour.getTime() + k * 3_600_000);
+      // The first hour is already the demo round's ticker, so its twin takes minute 01 (the same close, a different code).
+      const code = (c: string) => `${c}${closes.toISOString().slice(2, 13).replace(/[-T]/g, '')}${k === 0 ? '01' : '00'}`;
+      const meta = (c: string) => ({ title: titleFor(closes).replace('BTC', c), expiryDate: closes.toISOString() });
+      ex.addEvent(code('BTC'), rungsAt(SPOT), meta('BTC'));
+      for (const c of EXTRA) ex.addEvent(code(c), extraRungs(c, OTHER[c].spot), meta(c));
+    }
+  }
   return ex;
 }
 
