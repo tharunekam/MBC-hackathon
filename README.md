@@ -2,6 +2,8 @@
 
 **Bet on the second half of your hunch. If the first half doesn't happen, you get your money back.**
 
+**Live demo (frontend):** https://stakeback-nine.vercel.app
+
 > **Naming.** The product is called Stakeback (renamed from Given on 2026-11-20). The repository, the `GIVEN_*` settings, the deployed `given_receipts` Solana program, the `given-*` package names and the sealed-call format still say Given; they are internal and unchanged.
 
 Stakeback builds bets on [Gemini](https://www.gemini.com) prediction markets from ordinary orders in the user's own Gemini
