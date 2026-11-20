@@ -146,8 +146,10 @@ Hosts: sandbox REST `https://api.sandbox.gemini.com`, sandbox WebSocket
   caused it (it was suspected on 11-18 too), but the same ladder also went out
   of order in that window with no order of ours, so the bot's requoting alone
   may explain it. Either way: in a demo, put a basket's legs on different
-  ladders. **No full basket has been placed on the sandbox yet** (see
-  `docs/PLAN.md`).
+  ladders. A basket with one leg on BTC and one on XRP, 14 minutes after
+  those ladders were listed, went in whole on its second try.
+- **[verified 2026-11-20]** The 04:00 UTC ladders were taking orders by 03:14
+  (BTC and XRP both had pairs on offer under the waiver).
 - **[verified 2026-11-18]** A contract's state can be `active/post_only`: the
   book is visible but taker orders are not accepted, so the offer rule refuses
   the pair as `market_closed`. What we saw on the sandbox's hourly ladders:

@@ -122,10 +122,16 @@ has no contract that links them (`docs/GIVEN.md`: decisions 5 and 7 and the list
   contracts (the dollar that always comes back), the falling parlay and the basket's parlay leg lost, and `reconcile`
   tied out again. None of the three happened to win or be refunded, so those two results are still only seen for a
   rising parlay.
-- **A basket was only half proven.** Three baskets reached the sandbox and each stopped after its first leg, twice
-  because the ladder had gone out of order by the time the second leg was checked and once because the first leg's
-  hedge could not be filled and it was sold back. The legs that were placed are in the ledger and reconciled, so the
-  "not all-or-nothing" behaviour is seen for real, but **no basket has yet been placed whole on the sandbox**.
+- **A basket was placed whole on the sandbox at 03:14 UTC, after three that stopped part-way.** `bk-a1e4e8d3`: a parlay on the BTC
+  ladder and one on the XRP ladder, four filled orders, `reconcile` tied out (46 of 46 orders matched). The three
+  before it, all on one SOL ladder in its last 40 minutes, each stopped after the first leg: twice because the ladder
+  had gone out of order by the time the second leg was checked, once because the first leg's hedge could not be filled
+  and it was sold back. Those legs are in the ledger and reconciled, so the "not all-or-nothing" behaviour is seen for
+  real too. **For the demo, put a basket's legs on different ladders, and not in a ladder's last half hour.**
+- **The cash check drifts by a hundredth of a cent per odd fill.** When a fill spans two price levels Gemini reports
+  a rounded average, and each one has moved the cash difference by about $0.000085 (two so far: $0.00017). The check
+  passes within half a cent, so it would take dozens of such fills to fail it. Worth knowing before seeding a long
+  history on the demo account; reading each fill's own price from the trade history would remove it.
 - **Found and fixed on that run:** a basket whose first leg was refused before any order answered 201 with no bets in
   it; it is now a 422 like any refused basket. `npm run install:all` skipped the root package, so `npm run e2e` failed
   on this machine until the root was installed; it now installs it.
