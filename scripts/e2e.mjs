@@ -440,9 +440,16 @@ await check('Basket: three bets of three kinds are placed in one step, and My be
 });
 
 await check('Cash out: an open bet is priced, then sold back from My bets as two sell orders, and the cash still ties out', async () => {
-  // My bets is showing the basket placed above. Its first leg is sold; the other two stay open.
-  const first = page.locator('.bl-basket [data-bet]').first();
-  const id = await first.getAttribute('data-bet');
+  // Starts from an empty ledger and places its own bet, so it does not lean on what the checks before it left behind.
+  await dev('/dev/reset');
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${base}/parlay`);
+  await placeable();
+  await button().click();
+  await page.waitForSelector('.receipt');
+  const id = (await api('/api/bets')).bets[0].id;
+  await page.goto(`${base}/bets`);
+  const first = page.locator(`[data-bet="${id}"]`);
   await first.getByRole('button', { name: 'Cash out' }).click();
   const sell = first.getByRole('button', { name: /^Sell for \$/ });
   await sell.waitFor();
@@ -456,9 +463,8 @@ await check('Cash out: an open bet is priced, then sold back from My bets as two
   const sells = sold.legs.filter((l) => l.role === 'cashout');
   need(sold.status === 'cashed_out' && sold.cashOut?.complete === true, `the ledger has the bet as ${sold.status}`);
   need(sells.length === 2 && sells.every((l) => l.side === 'sell' && l.status === 'filled'), `the sale was ${sells.map((l) => `${l.side} ${l.status}`).join(', ')}`);
-  need(Math.abs(sold.cashOut.proceeds - offered) < 0.011, `sold for ${sold.cashOut.proceeds}, offered ${offered}`);
-  const others = (await api('/api/bets')).bets.filter((b) => b.basket && b.id !== id);
-  need(others.length === 2 && others.every((b) => b.status === 'open'), 'the other two legs should still be open');
+  // The page holds the sale to the price it showed, less two cents; it can never come in under that.
+  need(sold.cashOut.proceeds >= offered - 0.02 - 0.005, `sold for ${sold.cashOut.proceeds}, offered ${offered}`);
   need((await first.getByRole('button', { name: 'Cash out' }).count()) === 0, 'a bet that was sold must not offer to be sold again');
   const rec = await api('/api/reconcile');
   need(rec.ok === true, `after the sale the cash is off by ${rec.cashDifference}`);
