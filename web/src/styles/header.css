@@ -82,24 +82,14 @@
   padding: 0 12px;
   white-space: nowrap;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 450;
   color: var(--muted);
   text-decoration: none;
-  transition: color 160ms var(--ease);
+  transition: color var(--t-fast) var(--ease-ui);
 }
 .nav-link:hover,
 .nav-link.is-on {
   color: var(--ink);
-}
-/* The current section is marked by a rule that sits on the bar's own bottom edge. */
-.nav-link.is-on::after {
-  content: '';
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: -1px;
-  height: 2px;
-  background: var(--accent);
 }
 /* Products to the left of the rule, tools to the right. */
 .nav-sep {
@@ -121,21 +111,30 @@
   place-items: center;
   width: 36px;
   height: 36px;
-  border-radius: var(--r-md);
+  border-radius: var(--r-ctl);
   border: 1px solid var(--line);
   background: transparent;
   color: var(--soft);
   cursor: pointer;
-  transition: background 160ms var(--ease), border-color 160ms var(--ease);
+  transition: background var(--t-fast) var(--ease-ui), border-color var(--t-fast) var(--ease-ui), color var(--t-fast) var(--ease-ui);
+}
+.icon-btn svg {
+  transition: transform var(--t-med) var(--ease);
 }
 .icon-btn:hover {
   background: var(--surface);
   border-color: var(--line-strong);
+  color: var(--ink);
+}
+.icon-btn:hover svg {
+  transform: rotate(18deg);
+}
+.icon-btn:active svg {
+  transform: rotate(18deg) scale(0.9);
 }
 .btn.btn-sm {
   height: 36px;
   padding: 0 16px;
-  border-radius: var(--r-md);
   font-size: 14px;
 }
 .bets-link.is-on {
@@ -155,23 +154,11 @@
   }
 }
 
-/* On the landing page the bar floats over the dark hero, then settles into the usual bar once the page moves. Over the hero
-   it takes the dark band's colours, so every control in it reads against the dark whatever the theme. */
-.nav[data-home] {
-  position: fixed;
-  inset: 0 0 auto 0;
-}
-.nav[data-home][data-over] {
-  --ink: #f3efe6;
-  --soft: #d4cebf;
-  --muted: #a39c8b;
-  --line: rgba(243, 239, 230, 0.18);
-  --line-strong: rgba(243, 239, 230, 0.32);
-  --surface: rgba(243, 239, 230, 0.08);
-  color: var(--ink);
+/* At the very top of a page the bar is part of the page: no rule and no blur until something scrolls under it. */
+.nav[data-top] {
   border-bottom-color: transparent;
 }
-.nav[data-home][data-over]::before {
+.nav[data-top]::before {
   opacity: 0;
 }
 
@@ -180,11 +167,8 @@
   padding: 2px 6px;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
-  font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12.5px;
   font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   line-height: 1.4;
   color: var(--muted);
 }
@@ -195,7 +179,7 @@
   height: 36px;
   padding: 0 16px;
   border: 1px solid var(--line-strong);
-  border-radius: var(--r-md);
+  border-radius: var(--r-ctl);
   background: transparent;
   font: inherit;
   font-size: 14px;
@@ -228,11 +212,8 @@
 }
 .sheet-label {
   padding: 24px 0 8px;
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--muted);
 }
 .sheet-list {
@@ -248,7 +229,7 @@
 }
 .sheet-list b {
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: -0.01em;
 }
 .sheet-list span {
@@ -286,10 +267,6 @@
   }
   .nav-link {
     padding: 0 10px;
-  }
-  .nav-link.is-on::after {
-    left: 10px;
-    right: 10px;
   }
 }
 /* The tabs fold into the menu at 1080px, not later: with the live badge and the venue label beside them, seven tabs do not
@@ -339,7 +316,7 @@
   .nav-right .live {
     display: none;
   }
-  /* The landing page's bar already holds "Enter app" and the menu, and the page says the same thing under its first buttons. */
+  /* The landing page's bar already holds "Open the app" and the menu, and the page says the same thing under its first screen. */
   .nav[data-home] .venue {
     display: none;
   }
@@ -377,5 +354,11 @@
 @media (prefers-reduced-motion: reduce) {
   .sheet {
     animation: none;
+  }
+}
+/* Where the bar cannot hold three controls, the way into the app is in the Menu. */
+@media (max-width: 420px) {
+  .nav-right > .btn-primary {
+    display: none;
   }
 }

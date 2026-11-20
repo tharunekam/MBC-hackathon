@@ -343,7 +343,6 @@ export default function Bets() {
     <div className="page bets">
       <header className="page-head">
         <div>
-          <span className="eyebrow">Open and settled</span>
           <h1 className="h-page">My bets</h1>
           <p className="lede">Each bet is a pair of orders placed on {venue.place}. Results arrive here as markets settle.</p>
         </div>

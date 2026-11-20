@@ -122,7 +122,6 @@ export default function Verify() {
     <div className="page narrow">
       <header className="page-head">
         <div>
-          <span className="eyebrow">Check a call</span>
           <h1 className="h-page">Proof of a call</h1>
           <p className="lede">{real ? 'Made before the result, and checkable on Solana by anyone.' : 'Made before the result. This one is on a test chain; on Solana devnet anyone can check a call from their own browser.'}</p>
         </div>

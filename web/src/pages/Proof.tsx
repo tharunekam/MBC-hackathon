@@ -147,17 +147,15 @@ export default function Proof() {
     <div className="page">
       <header className="page-head">
         <div>
-          <span className="eyebrow">Check our books</span>
           <h1 className="h-page">Proof</h1>
-          <p className="lede">Books that tie to the cent, the orders that were sent, and calls sealed before their result. The first two are checks our server runs. The third is built so you need not take our word for it.</p>
+          <p className="lede">Three things to check: our books tie to the exchange’s to the cent, the orders that were sent, and that every call was sealed before its result. Our server runs the first two checks. The third is built so you don’t have to take our word for it.</p>
         </div>
       </header>
 
       <div className="proof-grid">
         <section className="card" aria-labelledby="pf-books">
-          <span className="eyebrow">Books match the account</span>
           <h2 id="pf-books" className="h-card">
-            Reconcile to the cent
+            Our books match the exchange’s, to the cent
           </h2>
           <p>
             Our server compares every order it recorded with the exchange’s own order history, then its cash with what the account holds. {where.books}
@@ -247,9 +245,8 @@ export default function Proof() {
         </section>
 
         <section className="card" aria-labelledby="pf-orders">
-          <span className="eyebrow">What this account’s bets sent</span>
           <h2 id="pf-orders" className="h-card">
-            Orders sent
+            What this account’s bets have sent
           </h2>
           <p>{where.orders}</p>
           {f ? (
@@ -294,14 +291,13 @@ export default function Proof() {
         </section>
 
         <section className="card wide" aria-labelledby="pf-calls">
-          <span className="eyebrow">Made before the result</span>
           <h2 id="pf-calls" className="h-card">
-            Commit, then reveal
+            Every call is made before its result
           </h2>
           <ol className="how">
             <li>
               <b>When you bet</b>
-              <span>The call is sealed{onSolana ? ' on Solana' : ''} under your handle. What is written is a fingerprint of the call, a hash, so it shows nothing about the bet or about you.</span>
+              <span>Your call is sealed{onSolana ? ' on Solana' : ''} under your handle. What’s written is a fingerprint of the call, a hash, so it shows nothing about the bet or about you.</span>
             </li>
             <li>
               <b>After it settles</b>

@@ -18,8 +18,8 @@ export default function LadderTable({ rungs, picked, rowClass }: Props) {
   return (
     <details className="card rungs">
       <summary className="card-head">
-        <h2 className="h-card">The ladder</h2>
-        <span className="fine">Every price this market lists</span>
+        <h2 className="h-card">Every price in this market</h2>
+        <span className="fine">With its chance, and what it costs to buy or sell</span>
       </summary>
       <table className="scen">
         <thead>

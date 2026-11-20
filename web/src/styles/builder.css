@@ -12,11 +12,20 @@
   color: var(--soft);
   text-decoration: none;
   white-space: nowrap;
-  transition: color 160ms var(--ease), border-color 160ms var(--ease);
+  transition: color var(--t-fast) var(--ease-ui), border-color var(--t-fast) var(--ease-ui);
+}
+.head-link::after {
+  content: '→';
+  display: inline-block;
+  margin-left: 6px;
+  transition: transform var(--t-med) var(--ease);
 }
 .head-link:hover {
   color: var(--ink);
   border-color: var(--ink);
+}
+.head-link:hover::after {
+  transform: translateX(3px);
 }
 
 .builder .build-grid {
@@ -28,7 +37,6 @@
 }
 .builder .card {
   padding: 24px;
-  box-shadow: none;
 }
 .card-head {
   display: flex;
@@ -40,7 +48,7 @@
 .card-head .h-card {
   margin: 0;
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: -0.01em;
 }
 
@@ -89,8 +97,8 @@
   left: 12px;
   right: 12px;
   bottom: 0;
-  height: 2px;
-  background: var(--accent);
+  height: 1px;
+  background: var(--ink);
 }
 .expiry-row {
   display: flex;
@@ -99,7 +107,7 @@
   gap: 16px;
   padding: 10px 24px;
   border-top: 1px solid var(--line);
-  background: var(--bg-2);
+  background: var(--surface-2);
 }
 .expiry {
   display: flex;
@@ -113,7 +121,7 @@
   flex: none;
   display: flex;
   align-items: center;
-  height: 28px;
+  height: 30px;
   padding: 0;
   border: 0;
   background: none;
@@ -123,18 +131,24 @@
 .expiry button span {
   display: flex;
   align-items: center;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-ctl);
   background: var(--surface);
   font-size: 13px;
+  font-weight: 500;
   color: var(--soft);
   white-space: nowrap;
-  transition: border-color 160ms var(--ease), background 160ms var(--ease);
+  transition: border-color var(--t-fast) var(--ease-ui), background var(--t-fast) var(--ease-ui), color var(--t-fast) var(--ease-ui),
+    transform var(--t-fast) var(--ease-ui);
 }
 .expiry button:hover span {
-  border-color: var(--line-strong);
+  border-color: color-mix(in srgb, var(--ink) 38%, transparent);
+  color: var(--ink);
+}
+.expiry button:active span {
+  transform: scale(0.97);
 }
 .expiry button.is-on span {
   border-color: var(--ink);
@@ -146,8 +160,7 @@
   flex: none;
   align-items: center;
   gap: 16px;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 12.5px;
   color: var(--muted);
   white-space: nowrap;
 }
@@ -179,12 +192,9 @@
 .scen th {
   padding: 10px 0 8px;
   border-bottom: 1px solid var(--line);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 12.5px;
   font-weight: 500;
-  letter-spacing: 0.1em;
   text-align: left;
-  text-transform: uppercase;
   color: var(--muted);
 }
 .scen td {
@@ -198,8 +208,9 @@
 .scen .n {
   padding-left: 12px;
   text-align: right;
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 0.93em;
 }
 .scen th.n {
   text-align: right;
@@ -222,7 +233,7 @@
   background: var(--bad);
 }
 .scen [data-kind] td:last-child {
-  font-weight: 600;
+  font-weight: 500;
 }
 .scen [data-kind='win'] td:last-child {
   color: var(--good);
@@ -282,12 +293,19 @@
 .rungs .scen th {
   padding-left: 0;
 }
-.rungs .is-picked td {
-  background: var(--bg-2);
+.scen tbody tr {
+  transition: background var(--t-fast) var(--ease-ui);
+}
+.rungs .scen tbody tr:hover td {
+  background: var(--surface-2);
+}
+.rungs .is-picked td,
+.rungs .scen tbody tr.is-picked:hover td {
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
 }
 .rungs .is-picked td:first-child {
   padding-left: 10px;
-  font-weight: 600;
+  font-weight: 500;
 }
 .rungs .is-picked td:last-child {
   padding-right: 10px;
@@ -314,24 +332,21 @@
   font-size: 21px;
   line-height: 1.2;
 }
+/* Four tiles on a wash, with no rules between them: the numbers are the furniture. */
 .builder .nums {
-  gap: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  gap: 6px;
 }
 .builder .nums > div {
   display: grid;
-  gap: 6px;
+  align-content: space-between;
+  gap: 8px;
   padding: 14px 16px;
-}
-.builder .nums > div:nth-child(odd) {
-  border-right: 1px solid var(--line);
-}
-.builder .nums > div:nth-child(-n + 2) {
-  border-bottom: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
 }
 .builder .nums dd {
-  font-size: 22px;
+  font-size: 24px;
+  font-weight: 500;
   line-height: 1;
 }
 .builder .stake-row {
@@ -339,30 +354,45 @@
   gap: 10px;
 }
 .builder .field {
+  height: 52px;
   border-radius: var(--r-md);
+  background: var(--surface);
+}
+.builder .field input {
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
 }
 /* The box is as tall as its frame, so a tap anywhere in the frame lands in it. */
 .builder .field input {
   align-self: stretch;
 }
+/* The quick amounts are one track with a raised thumb on the chosen one. */
 .builder .presets {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 0;
-  overflow: hidden;
+  gap: 2px;
+  padding: 3px;
   border: 1px solid var(--line-strong);
-  border-radius: var(--r-md);
+  border-radius: var(--r-ctl);
+  background: var(--surface);
 }
 .builder .presets .chip {
   justify-content: center;
-  height: 38px;
+  height: 34px;
   border: 0;
-  border-right: 1px solid var(--line);
-  border-radius: 0;
+  border-radius: 6px;
+  background: none;
   font-weight: 500;
+  color: var(--muted);
 }
-.builder .presets .chip:last-child {
-  border-right: 0;
+.builder .presets .chip:hover:not(.is-on) {
+  color: var(--ink);
+}
+.builder .presets .chip.is-on {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 500;
 }
 /* A quick amount above the venue's cap on one bet. */
 .builder .presets .chip:disabled {
@@ -373,8 +403,8 @@
   background: none;
 }
 .builder .btn-wide {
-  height: 48px;
-  font-size: 15px;
+  height: 50px;
+  font-size: 16px;
 }
 
 @media (max-width: 960px) {
@@ -414,7 +444,7 @@
   }
   /* The quote has to sit within a screen of the chart on a phone, so the ticket is set tighter here. */
   .builder .quote-card {
-    gap: 14px;
+    gap: 12px;
     padding: 16px;
   }
   .builder .q-title .eyebrow {
@@ -434,20 +464,28 @@
     padding: 8px 12px;
     font-size: 13px;
   }
-  /* The amount and its quick amounts share one row: the chips are a full 44px tall and the ticket is shorter than when
-     they sat on a row of their own. */
+  /* The amount and its quick amounts share one row, so the ticket is shorter than when they sat on a row of their own.
+     The track is as tall as the box beside it, and each quick amount fills it. */
   .builder .quote-card .stake-row {
     grid-template-columns: 96px minmax(0, 1fr);
     gap: 8px;
     align-items: stretch;
   }
-  .builder .quote-card .field {
-    height: auto;
-    min-height: 44px;
+  .builder .field {
+    height: 46px;
   }
-  .builder .quote-card .presets .chip {
-    height: 44px;
+  .builder .field input {
+    font-size: 18px;
+  }
+  .builder .presets .chip {
+    height: 38px;
     padding: 0;
+  }
+  .builder .nums {
+    gap: 4px;
+  }
+  .builder .direction {
+    margin-top: 12px;
   }
   .builder .btn-wide {
     height: 46px;
@@ -467,6 +505,13 @@
     margin-bottom: -12px;
   }
 }
+/* Narrower than any current phone, such as a slim side pane: four quick amounts no longer fit beside the box, so they go
+   back to a row of their own under it. */
+@media (max-width: 360px) {
+  .builder .quote-card .stake-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 
 /* ------------------------------------------------------------ direction */
 .builder .direction {
@@ -476,33 +521,39 @@
   gap: 16px;
   margin-top: 16px;
 }
+/* A two-way switch: a wash track, and the chosen side is a raised white thumb. */
 .switch {
   display: inline-flex;
-  overflow: hidden;
+  gap: 2px;
+  padding: 3px;
   border: 1px solid var(--line-strong);
-  border-radius: var(--r-md);
+  border-radius: var(--r-ctl);
+  background: var(--surface);
 }
 .switch button {
-  height: 34px;
+  height: 32px;
   padding: 0 14px;
   border: 0;
+  border-radius: 6px;
   background: none;
   font: inherit;
   font-size: 13.5px;
   font-weight: 500;
   color: var(--muted);
   cursor: pointer;
-  transition: color 160ms var(--ease), background 160ms var(--ease);
-}
-.switch button + button {
-  border-left: 1px solid var(--line);
+  transition: color var(--t-fast) var(--ease-ui), background var(--t-fast) var(--ease-ui), box-shadow var(--t-fast) var(--ease-ui),
+    transform var(--t-fast) var(--ease-ui);
 }
 .switch button:hover:not(.is-on):not(:disabled) {
   color: var(--ink);
 }
+.switch button:active:not(:disabled) {
+  transform: scale(0.97);
+}
 .switch button.is-on {
-  background: var(--ink);
-  color: var(--bg);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 500;
 }
 .switch button:disabled {
   cursor: not-allowed;

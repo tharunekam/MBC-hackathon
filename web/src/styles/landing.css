@@ -1,117 +1,620 @@
-/* This sheet loads before app.css, so a rule here that changes one of app.css's own needs the stronger selector. */
+/* The landing page. One example bet runs through it: the first screen draws it on a price line you can drag, and the sections
+   below take it apart. Headings are two-tone: the first sentence says the thing, the grey one says what it means. */
 
-/* ------------------------------------------------------------ opening */
-/* What this copy of the app is really talking to, under the first buttons. Two lines are held for it on a phone, so the
-   opening does not jump when the answer arrives. */
-.hero .hero-note {
-  max-width: 78ch;
-  min-height: 1.5em;
-  text-wrap: balance;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--muted);
-  animation: hero-in 1.1s var(--ease) 560ms both;
+/* ------------------------------------------------------------ first screen */
+.hero {
+  padding: clamp(40px, 6vw, 84px) 0 clamp(56px, 7vw, 96px);
+  overflow-x: clip;
 }
-@media (max-width: 720px) {
-  .hero .hero-note {
-    min-height: 3em;
+.hero-title {
+  max-width: 21ch;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(32px, 4.7vw, 60px);
+  line-height: 1.08;
+  letter-spacing: -0.038em;
+}
+/* The first screen arrives in order, once. */
+.hero-title,
+.hero-stage,
+.hero-note {
+  animation: hero-in 800ms var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 90ms + 40ms);
+}
+@keyframes hero-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
   }
 }
 
-/* ------------------------------------------------------------ product showcase */
-.showcase-head {
+/* ------------------------------------------------------------ stage */
+/* A stage is a flat panel, dotted like graph paper, that a piece of the product is shown on. */
+.stage {
+  --mx: -400px;
+  --my: -400px;
+  position: relative;
+  isolation: isolate;
+  padding: clamp(14px, 3.4vw, 44px);
+  border-radius: 16px;
+  background-color: var(--stage);
+  background-image: radial-gradient(var(--stage-dot) 1px, transparent 1.5px);
+  background-size: 18px 18px;
+}
+/* A second, brighter set of the same dots, shown only in a circle around the pointer. */
+.stage::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  background-image: radial-gradient(var(--accent) 1.2px, transparent 1.8px);
+  background-size: 18px 18px;
+  -webkit-mask-image: radial-gradient(circle 150px at var(--mx) var(--my), #000 0%, transparent 100%);
+  mask-image: radial-gradient(circle 150px at var(--mx) var(--my), #000 0%, transparent 100%);
+  opacity: 0;
+  transition: opacity 400ms var(--ease-ui);
+  pointer-events: none;
+}
+@media (hover: hover) {
+  .stage:hover::before {
+    opacity: 0.9;
+  }
+}
+.stage-panel,
+.stage > .card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+.stage-panel {
+  padding: clamp(18px, 2.6vw, 32px);
+}
+.hero-stage {
+  margin-top: clamp(32px, 4.4vw, 56px);
+}
+/* What this copy of the app is really talking to, under the line. Room is held for it, so the first screen does not jump
+   when the answer arrives. */
+.hero-note {
+  max-width: 78ch;
+  min-height: 1.5em;
+  margin-top: 16px;
+  text-wrap: balance;
+}
+@media (max-width: 720px) {
+  .hero-note {
+    min-height: 3em;
+  }
+}
+/* ------------------------------------------------------------ the price line */
+/* The whole bet on one line of prices, cut at its two prices into the three outcomes. The zone the marker is in is solid;
+   the other two are a wash of the same colour. */
+.line {
   display: grid;
-  gap: 12px;
-  margin-bottom: 48px;
+  grid-template-columns: minmax(0, 1fr); /* not 1fr: the zones' labels must not be able to push the line wider than its panel */
+  gap: 18px;
+}
+.line-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px 24px;
+}
+/* Which bet the line draws: a two-way switch, the chosen side in the accent. */
+.line-pick {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-ctl);
+}
+.line-pick button {
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--t-fast) var(--ease-ui), color var(--t-fast) var(--ease-ui), transform var(--t-fast) var(--ease-ui);
+}
+.line-pick button:hover:not(.is-on) {
+  color: var(--ink);
+}
+.line-pick button:active {
+  transform: scale(0.97);
+}
+.line-pick button.is-on {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.line-q {
+  font-family: var(--font-display);
+  font-size: clamp(17px, 1.8vw, 22px);
+  font-weight: 400;
+  letter-spacing: -0.022em;
+  line-height: 1.25;
+  color: var(--muted);
+}
+.line-q em {
+  font-weight: 500;
+  color: var(--ink);
+}
+.line-note,
+.ticket-kicker {
+  font-size: 13px;
+  color: var(--muted);
+}
+.line-track {
+  --grip: 44px;
+  position: relative;
+  padding-top: 44px; /* room for the price above the marker */
+}
+.line-zones {
+  display: flex;
+  gap: 3px;
+  height: clamp(100px, 11vw, 128px);
+}
+.line-zones li {
+  flex-basis: 0;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 3px;
+  color: var(--muted);
+  transition: background var(--t-med) var(--ease-ui), color var(--t-med) var(--ease-ui);
+}
+.line-zones li:first-child {
+  border-radius: 8px 3px 3px 8px;
+}
+.line-zones li:last-child {
+  border-radius: 3px 8px 8px 3px;
+}
+.line-zones b {
+  font-family: var(--font-display);
+  font-size: clamp(18px, 2.3vw, 28px);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  white-space: nowrap;
+}
+.line-zones span {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.25;
+}
+.line-zones [data-kind='back'] {
+  background: var(--accent-soft);
+}
+.line-zones [data-kind='lose'] {
+  background: var(--bad-soft);
+}
+.line-zones [data-kind='win'] {
+  background: var(--good-soft);
+}
+.line-zones [data-kind='back'][data-on] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.line-zones [data-kind='lose'][data-on] {
+  background: var(--bad);
+  color: var(--panel);
+}
+.line-zones [data-kind='win'][data-on] {
+  background: var(--good);
+  color: var(--panel);
+}
+/* The marker: the finishing price above, a rule down through the line, and a grip on it. */
+.line-marker {
+  position: absolute;
+  top: 0;
+  bottom: -8px;
+  width: 0;
+  pointer-events: none;
+  transition: left 90ms linear;
+}
+.line-marker::before {
+  content: '';
+  position: absolute;
+  top: 32px;
+  bottom: 0;
+  left: -1px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--ink);
+}
+.line-marker::after {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 58px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 2px solid var(--ink);
+  transition: transform var(--t-fast) var(--ease-ui);
+}
+.line-track:hover .line-marker::after {
+  transform: scale(1.2);
+}
+.line-track:active .line-marker::after {
+  transform: scale(0.9);
+}
+.line-marker output {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translateX(-50%);
+  height: 28px;
+  padding: 0 11px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--bg);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+/* The real control is a range input laid over the line. Its thumb is as wide as a fingertip and invisible, and the input
+   overhangs the line by half a thumb each side, so the thumb's centre runs exactly from one end of the line to the other. */
+.line-track input[type='range'] {
+  position: absolute;
+  top: 0;
+  bottom: -8px;
+  left: calc(var(--grip) / -2);
+  width: calc(100% + var(--grip));
+  height: auto;
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: grab;
+  touch-action: pan-y;
+}
+.line-track input[type='range']:active {
+  cursor: grabbing;
+}
+.line-track input[type='range']::-webkit-slider-runnable-track {
+  height: 100%;
+  background: transparent;
+}
+.line-track input[type='range']::-moz-range-track {
+  height: 100%;
+  background: transparent;
+}
+.line-track input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: var(--grip);
+  height: 100%;
+  background: transparent;
+  border: 0;
+}
+.line-track input[type='range']::-moz-range-thumb {
+  width: var(--grip);
+  height: 100%;
+  background: transparent;
+  border: 0;
+}
+.line-track input[type='range']:focus-visible {
+  outline: none;
+}
+.line-track:has(input:focus-visible) .line-marker output {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.line-foot {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  gap: 8px clamp(24px, 4vw, 56px);
+  align-items: start;
+  margin-top: 4px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.line-result {
+  font-size: clamp(16px, 1.5vw, 19px);
+  line-height: 1.4;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+}
+.line-result b {
+  font-weight: 500;
+}
+.line-result span {
+  color: var(--muted);
+}
+.line[data-zone='back'] .line-result b {
+  color: var(--accent-text);
+}
+.line[data-zone='lose'] .line-result b {
+  color: var(--bad);
+}
+.line[data-zone='win'] .line-result b {
+  color: var(--good);
+}
+
+/* ------------------------------------------------------------ sections */
+.band {
+  position: relative;
+  padding: clamp(72px, 8vw, 120px) 0;
+  border-top: 1px solid var(--line);
+}
+.band {
+  scroll-margin-top: 60px; /* the bar above stays put, so a link to a section lands just under it */
+}
+.band .h-section {
+  font-size: clamp(25px, 2.7vw, 34px);
+  text-wrap: pretty;
+}
+/* Each idea is numbered, in the mono face, the way a spec numbers its parts. */
+.step-n {
+  display: block;
+  margin-bottom: 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+.band-note {
+  max-width: 56ch;
+  margin-top: 16px;
+}
+.band-note a {
+  color: var(--ink);
+  text-underline-offset: 3px;
+}
+/* In a section the grey half starts its own line. */
+.band .h-section .dim,
+.closing-title .dim {
+  display: block;
+}
+.showcase-head .h-section {
+  max-width: 34ch;
+}
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: clamp(36px, 5vw, 72px);
+  align-items: center;
+}
+@media (min-width: 961px) {
+  .split.flip {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  }
+  .split.flip > :first-child {
+    order: 2;
+  }
+}
+.band .lede {
+  margin-top: 4px;
+  font-size: 16px;
+}
+.band .row-actions {
+  margin-top: 28px;
+}
+/* A plain list on rules, the way a spec sheet reads. */
+.ticks {
+  display: grid;
+  margin-top: 24px;
+  border-top: 1px solid var(--line);
+}
+.ticks li {
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 15px;
+  color: var(--soft);
+}
+
+/* The two orders behind the example. */
+.orders {
+  display: grid;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+.order-slips li {
+  display: grid;
+  gap: 4px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--line);
+}
+.order-n {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+.order-slips b {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+.order-slips p {
+  color: var(--muted);
+  font-size: 14.5px;
+}
+.orders-odds {
+  display: grid;
+  gap: 14px;
+  padding: 20px 24px 22px;
+}
+.quad {
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+}
+.quad .nums {
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.quad .nums > div {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.quad .nums > div:nth-child(odd) {
+  border-right: 1px solid var(--line);
+}
+.quad .nums > div:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+.quad .nums dd {
+  font-size: 30px;
+  font-weight: 400;
+  letter-spacing: -0.035em;
+  margin-top: 6px;
+}
+.proof-list {
+  counter-reset: step;
+  display: grid;
+  border-top: 1px solid var(--line);
+}
+.proof-list li {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 2px 0;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--line);
+}
+.proof-list li::before {
+  content: '0' counter(step);
+  grid-row: 1 / span 2;
+  padding-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+.proof-list b {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 17px;
+  letter-spacing: -0.018em;
+}
+.proof-list span {
+  color: var(--muted);
+  font-size: 14.5px;
+}
+
+/* ------------------------------------------------------------ the four shapes */
+.showcase-head {
+  margin-bottom: 36px;
 }
 .showcase {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  border-top: 1px solid var(--line);
-  border-left: 1px solid var(--line);
+  gap: 12px;
 }
-/* Each cell is one link: the name is the link and it is stretched over the cell, so its name stays short for a screen reader
-   and the picture keeps its own description. */
+/* Each card is one target: its name is the link, stretched over the card, so the link's name stays short for a screen
+   reader and the picture keeps its own description. */
 .showcase li {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 24px 24px 28px;
-  border-right: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  transition: background 160ms var(--ease);
-}
-.showcase li:hover {
-  background: var(--surface);
+  gap: 6px;
+  height: 100%;
+  padding: 14px 14px 18px;
+  border-radius: 16px;
+  background: var(--stage);
+  transition: background var(--t-med) var(--ease-ui);
 }
 .showcase li:has(a:focus-visible) {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
 }
-.showcase-index {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  color: var(--muted);
+.showcase li > :not(.fig-box) {
+  padding-inline: 8px;
 }
 /* The name comes first for a screen reader and second to the eye, under its picture. */
 .showcase .fig-box {
-  order: 1;
+  order: -1;
 }
 .showcase-name {
-  order: 2;
-  margin-top: 6px;
-  font-size: 19px;
-  font-weight: 600;
+  margin-top: 10px;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 500;
   line-height: 1.25;
   letter-spacing: -0.02em;
 }
 .showcase-name a {
+  color: inherit;
   text-decoration: none;
 }
 .showcase-name a::after {
   content: '';
   position: absolute;
   inset: 0;
+  border-radius: inherit;
 }
 .showcase-name a:focus-visible {
   outline: none;
 }
 .showcase-line {
-  order: 3;
-  flex: 1; /* "Open" sits at the foot of every cell, whatever the line above it takes */
-  font-size: 15px;
+  flex: 1; /* the way in sits at the foot of every card, whatever the line above it takes */
+  font-size: 14.5px;
   line-height: 1.45;
   color: var(--muted);
 }
+/* The way in is a small square with an arrow in it, which fills when the card is hovered. */
 .showcase-go {
-  order: 4;
-  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
   font-size: 14px;
   font-weight: 500;
-  color: var(--accent-text);
+  color: var(--ink);
 }
-.showcase-go span {
-  display: inline-block;
-  transition: transform 160ms var(--ease);
+.showcase-go i {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  font-style: normal;
+  transition: background var(--t-fast) var(--ease-ui), color var(--t-fast) var(--ease-ui), border-color var(--t-fast) var(--ease-ui),
+    transform var(--t-med) var(--ease);
 }
-.showcase li:hover .showcase-go span {
-  transform: translateX(3px);
+@media (hover: hover) {
+  .showcase li:hover .showcase-go i {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+    transform: translateX(3px);
+  }
 }
 .showcase-note {
   max-width: 76ch;
   margin-top: 16px;
 }
 
-/* The four pictures. Every box keeps one proportion, so the names under them line up across a row. */
+/* The four pictures, each on a small panel. Every panel keeps one proportion, so the names under them line up across a row. */
 .fig-box {
   display: grid;
   align-content: center;
   gap: 6px;
   width: 100%;
-  aspect-ratio: 240 / 104;
-  margin: 8px 0 4px;
+  aspect-ratio: 240 / 112;
+  padding: 14px 14px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
 }
 .fig {
   display: block;
@@ -126,7 +629,7 @@
 }
 .fig path {
   fill: none;
-  stroke-width: 1.75;
+  stroke-width: 2;
   stroke-linecap: round;
 }
 .fig-join {
@@ -134,7 +637,7 @@
   stroke-width: 1;
 }
 .fig-back {
-  stroke: var(--accent-text);
+  stroke: var(--accent);
 }
 .fig-lose {
   stroke: var(--bad);
@@ -142,17 +645,16 @@
 .fig-win {
   stroke: var(--good);
 }
-/* The words under each stretch of the line. They are type, not part of the drawing, so they stay one size as the cell grows. */
+/* The words under each stretch of the line. They are type, not part of the drawing, so they stay one size as the card grows. */
 .fig-labels {
   display: grid;
   padding: 0 3.33%; /* the drawing starts and ends 8 units in from a 240-unit box */
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 10.5px;
   line-height: 1.4;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   text-align: center;
   white-space: nowrap;
+  color: var(--muted);
 }
 .fig-labels [data-kind='back'] {
   color: var(--accent-text);
@@ -173,11 +675,9 @@
   grid-template-rows: repeat(3, 1fr);
   align-items: center;
   font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
+  font-size: 10.5px;
   color: var(--muted);
 }
-
 /* The lines draw themselves in once, left to right, when the section comes into view. */
 .js [data-reveal] .fig path,
 .js [data-reveal] .hf-view {
@@ -189,70 +689,12 @@
 .js [data-reveal].in .hf-view {
   stroke-dashoffset: 0;
 }
-@media (prefers-reduced-motion: reduce) {
-  .js [data-reveal] .fig path,
-  .js [data-reveal] .hf-view {
-    stroke-dashoffset: 0;
-    transition: none;
-  }
-}
-/* ?still: the settled page, for screenshots. (The root element is the one carrying both `js` and `data-still`.) */
-:root[data-still='1'] [data-reveal] .fig path,
-:root[data-still='1'] [data-reveal] .hf-view {
-  stroke-dashoffset: 0;
-  transition: none;
-}
-
-@media (max-width: 1099px) {
-  .showcase {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-@media (max-width: 560px) {
-  .showcase {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  /* One to a row, four cells make a long scroll on a phone. Each gives up its number and some of its picture's size. */
-  .showcase li {
-    gap: 8px;
-    padding: 16px 20px 20px;
-  }
-  .showcase-index {
-    display: none;
-  }
-  .showcase .fig-box {
-    max-width: 264px;
-    margin-top: 0;
-  }
-}
-
-/* ------------------------------------------------------------ bands */
-/* A light band straight after another light band: one stretch of page, so it does not open with a second full gap. */
-.band.band-follows {
-  padding-top: 0;
-  scroll-margin-top: 96px; /* with no padding of its own, a link to it would land under the bar */
-}
-.band .lede + .row-actions {
-  margin-top: 24px;
-}
-/* A second, quieter paragraph under a band's list. */
-.band-note {
-  max-width: 56ch;
-  margin-top: 24px;
-  font-size: 15px;
-  color: var(--muted);
-}
-.band-note a {
-  color: var(--accent-text);
-  text-underline-offset: 3px;
-}
 
 /* ------------------------------------------------------------ hunch */
 .hunch-demo {
   display: grid;
   gap: 16px;
-  max-width: 600px; /* the drawing scales with the card, and past this its bars and line grow heavy */
-  padding: 28px;
+  padding: 24px;
 }
 .hunch-fig {
   display: block;
@@ -280,10 +722,7 @@
   justify-content: space-between;
   gap: 12px;
   margin-top: 8px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 12px;
   color: var(--muted);
 }
 .hf-keys {
@@ -314,8 +753,161 @@
   background: none;
   border-top: 2.5px solid var(--accent);
 }
-@media (max-width: 720px) {
-  .hunch-demo {
-    padding: 20px;
+
+/* ------------------------------------------------------------ the way in, at the end */
+.closing {
+  padding: 0 0 clamp(64px, 7vw, 96px);
+}
+/* The one dark panel on the page, in both themes. Inside it the tokens are the dark theme's. */
+.closing-in {
+  --ink: #fafafa;
+  --muted: #8b8b8d;
+  --line: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(255, 255, 255, 0.22);
+  display: grid;
+  justify-items: start;
+  gap: 32px;
+  padding: clamp(32px, 5vw, 64px);
+  border-radius: 20px;
+  background: var(--band-dark-bg);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--ink);
+}
+.closing-title {
+  max-width: 26ch;
+  font-family: var(--font-display);
+  font-size: clamp(28px, 4vw, 48px);
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: -0.036em;
+}
+
+/* ------------------------------------------------------------ smaller screens */
+@media (max-width: 1099px) {
+  .showcase {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+@media (max-width: 960px) {
+  .line-foot,
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .showcase {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .showcase li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 16px;
+    align-content: start;
+  }
+  .showcase li > .fig-box {
+    grid-row: 1 / span 3;
+    grid-column: 2;
+    align-self: center;
+  }
+  .showcase li > :not(.fig-box) {
+    grid-column: 1;
+  }
+}
+@media (max-width: 560px) {
+  .stage {
+    border-radius: 16px;
+  }
+  .line-zones {
+    height: 92px;
+  }
+  .line-zones li {
+    padding: 10px 9px;
+  }
+  .line-zones span {
+    font-size: 10.5px;
+  }
+  .line-zones b {
+    font-size: 14px;
+    line-height: 1.05;
+    white-space: normal;
+  }
+  .line-pick {
+    width: 100%;
+  }
+  .line-pick button {
+    flex: 1;
+  }
+  .showcase li {
+    display: flex;
+  }
+  .showcase li > .fig-box {
+    grid-row: auto;
+    grid-column: 1;
+  }
+  .hunch-demo {
+    padding: 18px;
+  }
+  .quad .nums dd {
+    font-size: 25px;
+  }
+}
+
+/* Narrower than any current phone, such as a slim side pane: the line keeps its three zones and drops their small print. */
+@media (max-width: 360px) {
+  .stage {
+    padding: 8px;
+  }
+  .stage-panel {
+    padding: 14px 12px;
+  }
+  .line-zones li {
+    padding: 8px 6px;
+  }
+  .line-zones b {
+    font-size: 13px;
+    letter-spacing: -0.02em;
+  }
+  .line-zones span,
+  .line-note {
+    display: none;
+  }
+  /* The words under a picture may take two lines rather than run into each other. */
+  .fig-labels {
+    font-size: 9.5px;
+    line-height: 1.25;
+    white-space: normal;
+  }
+  .line-track {
+    --grip: 24px;
+  }
+}
+
+/* ------------------------------------------------------------ less motion */
+@media (prefers-reduced-motion: reduce) {
+  .hero-title,
+  .hero-stage,
+  .hero-note {
+    animation: none;
+  }
+  .line-marker {
+    transition: none;
+  }
+  .js [data-reveal] .fig path,
+  .js [data-reveal] .hf-view {
+    stroke-dashoffset: 0;
+    transition: none;
+  }
+  .line-zones li,
+  .line-marker::after,
+  .showcase-go i {
+    transition: none;
+  }
+}
+:root[data-still] .hero-title,
+:root[data-still] .hero-stage,
+:root[data-still] .hero-note {
+  animation: none;
+}
+:root[data-still] [data-reveal] .fig path,
+:root[data-still] [data-reveal] .hf-view {
+  stroke-dashoffset: 0;
+  transition: none;
 }

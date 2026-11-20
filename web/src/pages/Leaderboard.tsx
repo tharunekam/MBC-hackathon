@@ -255,7 +255,6 @@ export default function Leaderboard() {
     <div className="page">
       <header className="page-head">
         <div>
-          <span className="eyebrow">Ranked by edge</span>
           <h1 className="h-page">Leaderboard</h1>
           <p className="lede">Ranked by how much better your calls did than the market’s own odds, not by profit or by how much you bet.</p>
         </div>
@@ -285,7 +284,7 @@ export default function Leaderboard() {
               <p>The board is built from calls revealed on Solana. Three steps put you on it:</p>
               <ol>
                 <li>
-                  <Link to={keepMode(PRODUCTS[0]!.to)}>Place a bet</Link>. Its call is sealed on Solana the moment you do.
+                  <Link to={keepMode(PRODUCTS[0]!.to)}>Place a bet</Link>. Your call is sealed on Solana the moment you do.
                 </li>
                 <li>Wait for the market to settle.</li>
                 <li>

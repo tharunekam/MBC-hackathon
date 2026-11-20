@@ -52,15 +52,12 @@
   min-width: 0;
   margin: 0;
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: -0.01em;
 }
 .leg-num {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 12.5px;
   font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--muted);
 }
 .leg-asset {
@@ -120,7 +117,7 @@
 }
 .leg-label {
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--soft);
 }
 
@@ -149,7 +146,7 @@
   padding: 0 36px 0 12px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
-  background: var(--bg);
+  background: var(--surface);
   font: inherit;
   font-size: 15px;
   color: var(--ink);
@@ -176,7 +173,6 @@
 }
 .leg-stake .field input {
   min-width: 0;
-  font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
 .leg-stake .field input:disabled {
@@ -207,8 +203,7 @@
 .leg-nums dd {
   margin: 0;
   font-size: 15px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  font-weight: 500;
   color: var(--ink);
   transition: opacity 200ms var(--ease);
 }
@@ -238,7 +233,6 @@
 }
 .add-leg .fine {
   margin: 0;
-  font-variant-numeric: tabular-nums;
 }
 
 /* ------------------------------------------------------------ ticket */
@@ -257,7 +251,7 @@
   padding: 0 12px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
-  background: var(--bg);
+  background: var(--surface);
   font: inherit;
   font-size: 15px;
   color: var(--ink);
@@ -292,11 +286,8 @@
   min-width: 0;
 }
 .ticket-meta {
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--muted);
 }
 .ticket-bet {
@@ -305,7 +296,7 @@
 }
 .ticket-legs b {
   flex: none;
-  font-weight: 600;
+  font-weight: 500;
 }
 .ticket-legs li.is-blocking .ticket-meta {
   color: var(--accent-text);
@@ -372,11 +363,8 @@
 }
 .together-head {
   margin: 0;
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--muted);
 }
 .together-line {
@@ -386,8 +374,7 @@
   color: var(--soft);
 }
 .together-line b {
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  font-weight: 500;
   white-space: nowrap;
   color: var(--ink);
 }
@@ -431,9 +418,7 @@
 .together-scale {
   display: flex;
   justify-content: space-between;
-  font-family: var(--font-mono);
   font-size: 11px;
-  font-variant-numeric: tabular-nums;
   color: var(--muted);
 }
 
@@ -536,11 +521,8 @@
   justify-content: space-between;
   gap: 12px;
   margin: 0;
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--muted);
 }
 .pays-name span:last-child {
@@ -582,7 +564,7 @@
   margin: 0;
 }
 .basket-result .note b {
-  font-weight: 600;
+  font-weight: 500;
 }
 .basket-rows td {
   vertical-align: baseline;
@@ -590,11 +572,8 @@
 .row-meta {
   display: block;
   margin-bottom: 4px;
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--muted);
 }
 .basket-rows [data-state="placed"] .row-state {
@@ -623,7 +602,6 @@
 }
 .basket-calls {
   margin: 0;
-  font-variant-numeric: tabular-nums;
 }
 .basket-actions {
   display: grid;
