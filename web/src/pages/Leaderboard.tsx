@@ -16,6 +16,7 @@ export default function Leaderboard() {
     <div className="page">
       <header className="page-head">
         <div>
+          <span className="eyebrow">Ranked by edge</span>
           <h1 className="h-page">Leaderboard</h1>
           <p className="lede">Ranked by how much better your calls did than the market’s own odds. Not by profit and not by how much you bet.</p>
         </div>

@@ -31,6 +31,7 @@ export default function Proof() {
     <div className="page">
       <header className="page-head">
         <div>
+          <span className="eyebrow">Check our books</span>
           <h1 className="h-page">Proof</h1>
           <p className="lede">Three things you can check yourself: our books match Gemini’s, what we sent to Gemini, and that calls were made before the result.</p>
         </div>

@@ -196,6 +196,7 @@ export default function Build() {
     <div className="page build">
       <header className="page-head">
         <div>
+          <span className="eyebrow">Bet builder</span>
           <h1 className="h-page">Build your bet</h1>
           <p className="lede">Choose what has to happen first, then what you are betting on. If the first part fails, you get your money back.</p>
         </div>

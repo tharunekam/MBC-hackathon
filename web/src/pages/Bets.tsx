@@ -77,6 +77,7 @@ export default function Bets() {
     <div className="page">
       <header className="page-head">
         <div>
+          <span className="eyebrow">Your positions</span>
           <h1 className="h-page">My bets</h1>
           <p className="lede">Every bet is two orders in your Gemini account. Here is how each one landed.</p>
         </div>
