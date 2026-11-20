@@ -269,6 +269,14 @@ Solana authority and the real ledger until they are copied across by hand.
 - **A quick tunnel's address dies with its process.** Both addresses change if `cloudflared` or the machine restarts,
   and `GIVEN_PUBLIC_URL` (and the Stream's destination) must then be changed with them. Do not put one in Devpost
   without knowing that; a named tunnel or a real host does not have this problem.
+- **The restyle is in the demo (2026-11-19, 23:45 CST).** The laptop's uncommitted restyle was merged over the
+  combined app (look and layout from the restyle; Breakout, sealed counts, the venue line and the corrected facts from
+  the app), then the landing page as the laptop had it at 23:30. On the second machine: typecheck clean, 551 web
+  tests, `npm run e2e` 25 checks, and the public quotes page looked at in dark mode at 700 px. The landing page was
+  still being edited on the laptop at the time, so later edits are not in it.
+- **Rebuilding under a running server blanks the page.** `npm run build` replaced `web/dist` while `npm start` was up,
+  and the public page loaded with every asset a 404 until both servers were restarted. After any rebuild: restart
+  `given-demo` and `given-fake` (the tunnels and their addresses can stay up).
 - The servers run in `tmux` sessions on the second machine (`given-demo`, `given-tunnel`, `given-fake`,
   `given-fake-tunnel`), logs in `~/given-demo-logs/`. The machine is set never to sleep and to restart after a power
   cut, but nothing restarts the servers after a reboot.
