@@ -145,6 +145,24 @@ has no contract that links them (`docs/GIVEN.md`: decisions 5 and 7 and the list
 - Tests: 229 executor, 121 chain, 227 web, 51 scripts; `npm run rehearse` 33 checks; `npm run e2e` 22 checks, the new
   one selling a bet from My bets through the production build; `npm run e2e:replay` 7 checks.
 
+**Reading the ladder, Thursday 2026-11-19 night (branch `feat/structured-products`; added after the 15:00 freeze, so
+both teammates should look before it is merged).** Four additions, all in the web app plus two response fields on the chain service; none places an order
+or changes how one is placed, so none needs a sandbox run before it can be shown.
+- **The market's view as a histogram** on both builders: one bar per gap between prices, coloured by what the bet being
+  built does there (`web/src/lib/distribution.ts`, `components/DistChart.tsx`).
+- **Hunch** (`/hunch`): a view of where the price finishes, set against the market's, and the bets on offer that pay best
+  if it is right, each opening in its builder already chosen (`?condition=&target=`, `?low=&high=`).
+- **How a basket's legs move together**: exact on one ladder, an honest range across ladders (`web/src/lib/together.ts`).
+- **The leaderboard read from the program's accounts in the browser** (`web/src/lib/programBoard.ts`), which closes the
+  "leaderboard reproduced with no backend" half of T-C5. Read from real devnet in a browser on 2026-11-19: two handles,
+  matching the 2026-11-18 run.
+`npm run e2e` has two more checks for the histogram and Hunch (23 in all).
+
+**The two branches above are merged (`feat/cash-out`, 2026-11-20 03:57 UTC).** Together: 229 executor, 122 chain, 325 web
+and 51 scripts tests, `npm run rehearse` 33 checks, `npm run e2e` 24 checks, `npm run e2e:replay` 7 checks, all passing.
+`npm run e2e` only builds the web app when `web/dist` is missing, so run `npm run build` first after pulling: on a
+stale build the two new pages' checks time out.
+
 **Verified by running** (599 tests across the four packages; the golden path and the three products were also driven in a
 real browser against the real executor handler and chain service): bet builder on the probability ladder, quote, place,
 receipt, My bets, settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is and is not verified:

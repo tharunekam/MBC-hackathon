@@ -220,6 +220,13 @@ export default function Markets() {
                                         </span>
                                       </Link>
                                     ))}
+                                    <Link className="mk-link" to={`/hunch?market=${encodeURIComponent(e.ticker)}`}>
+                                      Hunch
+                                      <span className="sr-only">
+                                        {' '}
+                                        on {g.label}, {closesLabel(e.expiry, now)}
+                                      </span>
+                                    </Link>
                                   </span>
                                 ) : (
                                   <span className="mk-wait">Waiting for prices</span>

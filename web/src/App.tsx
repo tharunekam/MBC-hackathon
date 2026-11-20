@@ -11,6 +11,7 @@ const Basket = lazy(() => import('./pages/Basket'));
 const Leaderboard = lazy(() => import('./pages/Leaderboard'));
 const Proof = lazy(() => import('./pages/Proof'));
 const Markets = lazy(() => import('./pages/Markets'));
+const Hunch = lazy(() => import('./pages/Hunch'));
 const Verify = lazy(() => import('./pages/Verify'));
 
 // Once the first screen is up and the browser is idle, fetch the other pages, so moving to them is instant and never shows
@@ -22,6 +23,7 @@ function preloadPages(): void {
   void import('./pages/Leaderboard');
   void import('./pages/Proof');
   void import('./pages/Markets');
+  void import('./pages/Hunch');
   void import('./pages/Verify');
 }
 if (typeof window !== 'undefined') {
@@ -55,6 +57,7 @@ export default function App() {
         <Route path="basket" element={lazyPage(<Basket />, 'Basket')} />
         <Route path="bets" element={lazyPage(<Bets />, 'My bets')} />
         <Route path="markets" element={lazyPage(<Markets />, 'Markets')} />
+        <Route path="hunch" element={lazyPage(<Hunch />, 'Hunch')} />
         <Route path="leaderboard" element={lazyPage(<Leaderboard />, 'Leaderboard')} />
         <Route path="proof" element={lazyPage(<Proof />, 'Proof')} />
         <Route path="verify/:signature" element={lazyPage(<Verify />, 'Proof of a call')} />

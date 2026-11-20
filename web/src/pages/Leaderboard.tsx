@@ -1,15 +1,22 @@
 import { Fragment, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
-import type { LeaderboardRow } from '../api/types';
+import type { LeaderboardResponse, LeaderboardRow } from '../api/types';
 import { kindOfBetId } from '../lib/betKind';
 import { kindLabel } from '../lib/betsView';
-import { ago, pct } from '../lib/format';
+import { ago, pct, trunc } from '../lib/format';
 import { useResource } from '../lib/hooks';
 import { chainLive } from '../lib/liveClients';
 import { MY_BETS, PRODUCTS } from '../lib/nav';
+import { compareBoards, comparisonLine, explorerAddress, readProblem, readProgramBoard } from '../lib/programBoard';
+import type { ProgramRow } from '../lib/programBoard';
+import { solanaRpc } from '../lib/verify';
 import '../styles/leaderboard.css';
 import '../styles/bets.css';
+
+/** The same node the proof page reads from. */
+const RPC: string = import.meta.env.VITE_SOLANA_RPC ?? 'https://api.devnet.solana.com';
 
 const edgeText = (e: number) => `${e > 0 ? '+' : e < 0 ? '−' : ''}${Math.abs(e).toFixed(2)}`;
 const tone = (e: number) => (e > 0 ? 'good' : e < 0 ? 'bad' : '');
@@ -32,6 +39,146 @@ function Summary({ rows }: { rows: LeaderboardRow[] }) {
         <dd className={best === null ? '' : tone(best)}>{best === null ? '–' : edgeText(best)}</dd>
       </div>
     </dl>
+  );
+}
+
+/**
+ * The same board, read by the browser from the program's own accounts on Solana and set beside the server's table.
+ *
+ * It runs on a click, like the check on the proof page, and never by itself: the page above refreshes every few
+ * seconds, and public Solana nodes turn away repeated account scans.
+ */
+function ProgramBoard({ board }: { board: LeaderboardResponse }) {
+  const [rows, setRows] = useState<ProgramRow[] | null>(null);
+  const [reading, setReading] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const program = board.program ?? null;
+  const authorities = board.authorities ?? [];
+  const demo = api.mode === 'mock';
+  // Demo rows and the in-memory test chain have no accounts anywhere, and without a program there are only Memos.
+  const nothingToRead =
+    demo || board.network === 'fake'
+      ? `${demo ? 'This is demo data' : 'This board is on a test chain'}, so there are no accounts on Solana to read. On devnet, your browser reads each player’s totals from the program itself.`
+      : !program || authorities.length === 0
+        ? 'No program is set up on this server, so calls are recorded as Memos only and there are no accounts to read.'
+        : null;
+
+  async function read() {
+    if (!program) return;
+    setReading(true);
+    setProblem(null);
+    try {
+      setRows(await readProgramBoard(solanaRpc(RPC), program, authorities, board.minCalls));
+    } catch (e) {
+      setProblem(readProblem(e));
+    } finally {
+      setReading(false);
+    }
+  }
+
+  /** The section's title and its one paragraph, with the button beside them when there is something to read. */
+  const head = (lead: string, action?: ReactNode) => (
+    <div className="lb-chain-head">
+      <div>
+        <span className="eyebrow">Independent check</span>
+        <h2 id="lb-chain-h" className="h-card">
+          Read from the program
+        </h2>
+        <p>{lead}</p>
+      </div>
+      {action}
+    </div>
+  );
+
+  if (nothingToRead || !program) {
+    return (
+      <section className="lb-chain" aria-labelledby="lb-chain-h">
+        {head(nothingToRead ?? '')}
+      </section>
+    );
+  }
+
+  // Against the rows on screen now, so the line stays true when the table above updates itself.
+  const match = rows && (rows.length > 0 || board.rows.length > 0) ? comparisonLine(compareBoards(rows, board.rows)) : null;
+
+  return (
+    <section className="lb-chain" aria-labelledby="lb-chain-h">
+      {head(
+        'These rows are read by your browser from the program’s own accounts on Solana. Our server is not asked.',
+        <button type="button" className="btn btn-ghost" onClick={read} disabled={reading}>
+          {reading ? (
+            <>
+              <span className="spin" aria-hidden="true" /> Reading Solana
+            </>
+          ) : problem ? (
+            'Try again'
+          ) : rows ? (
+            'Read again'
+          ) : (
+            'Read from Solana'
+          )}
+        </button>,
+      )}
+
+      <div aria-live="polite">
+        {problem && (
+          <p className="note note-bad" role="alert">
+            {problem}
+          </p>
+        )}
+        {rows && rows.length === 0 && <p className="note note-info">The program has no player totals to show yet. A player appears here once a reveal of theirs has gone through the program.</p>}
+        {rows && rows.length > 0 && (
+          // This table comes after the server's board in the page, so "the first table" is still that board.
+          <div className="lb-wrap">
+            <table className="lb lb-onchain">
+              <caption className="sr-only">Players as the program’s accounts on Solana record them</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Player</th>
+                  <th scope="col" className="n">
+                    Calls
+                  </th>
+                  <th scope="col" className="n">
+                    Hit rate
+                  </th>
+                  <th scope="col" className="n">
+                    Edge
+                  </th>
+                  <th scope="col" className="n lb-opt">
+                    Last call
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.handle}>
+                    <td className="lb-who">{r.handle}</td>
+                    <td className="n">{r.calls}</td>
+                    <td className="n">{pct(r.hitRate)}</td>
+                    <td className={`n lb-edge ${tone(r.edge)}`}>{edgeText(r.edge)}</td>
+                    <td className="n lb-opt lb-when">{ago(r.lastRevealedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {match && <p className="lb-chain-match">{match}</p>}
+      </div>
+
+      <div className="lb-chain-links">
+        <a className="mono-chip link" href={explorerAddress(program)} target="_blank" rel="noreferrer">
+          Program {trunc(program, 6, 4)} ↗
+        </a>
+        {authorities.map((a) => (
+          <a key={a} className="mono-chip link" href={explorerAddress(a)} target="_blank" rel="noreferrer">
+            Signing key {trunc(a, 6, 4)} ↗
+          </a>
+        ))}
+      </div>
+      <p className="fine">This counts only reveals that went through the program. The program keeps each player’s totals, not their individual calls.</p>
+    </section>
   );
 }
 
@@ -152,6 +299,8 @@ export default function Leaderboard() {
         </>
       )}
 
+      {lb.data && <ProgramBoard board={lb.data} />}
+
       <section className="lb-explain" aria-labelledby="lb-how">
         <div>
           <h2 id="lb-how" className="h-card">
@@ -161,7 +310,7 @@ export default function Leaderboard() {
           <p>Beating the odds again and again moves you up; a lucky call or two washes out. A refunded call, where the first half failed, is not scored.</p>
           <p className="fine">Players are anonymous handles. Only calls a player chooses to reveal appear here.</p>
         </div>
-        {/* A list rather than a table, so the board stays the only table on the page. */}
+        {/* A list rather than a table, so the only tables on the page are boards. */}
         <figure className="lb-example">
           <figcaption>One call made at a fair price of 41¢</figcaption>
           <dl>

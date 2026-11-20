@@ -24,8 +24,10 @@ Given is a consumer app for bets on Gemini prediction markets, with three produc
 condition and a target on a live price ladder; if the target is reached you win, if the condition fails you get your stake
 back, if it holds but the target is missed you lose the stake (and it works going down as well as up). A **Range**: win if
 a price finishes between two levels. A **Basket**: several of these bets on different assets, placed together. Each bet is
-two real orders in the user's own Gemini account. Every call is recorded on Solana, committed before the result and revealed
-after, so a player can prove they made it first. A leaderboard ranks skill against the market's own odds.
+two real orders in the user's own Gemini account. **Hunch** turns it round: say where you think a price finishes and how
+sure you are, and the app lists the bets on offer that pay best if you are right, each one a tap from its builder. Every
+call is recorded on Solana, committed before the result and revealed after, so a player can prove they made it first. A
+leaderboard ranks skill against the market's own odds.
 
 **What problem does it solve?**
 Prediction markets punish you for the half of a hunch you are unsure of. A parlay loses everything when its first leg
@@ -42,17 +44,22 @@ A chain service writes a salted hash of each call to Solana and later reveals it
 transaction, rejects a reveal that does not reproduce its commit. A QuickNode Stream (Solana devnet, Programs + Logs, filtered
 to our memo transactions) delivers those transactions to a webhook that re-reads each one from Solana before it adds a
 leaderboard row, so a forged delivery cannot add anything; a minute-by-minute read of the chain is the safety net under it.
-A proof page re-checks every call from Solana in the browser.
+A proof page re-checks every call from Solana in the browser, and the leaderboard can be read by the browser from the
+program's own score accounts, with our server not asked. The same ladder prices are also read as a histogram (the chance of
+finishing between each pair of prices), which is what Hunch sets a person's own view against and what gives a basket's legs
+on one ladder an exact joint chance.
 
 **What makes it unique?**
 A refund-if-the-condition-fails bet as a one-tap product on a regulated exchange, an honest cost (four numbers on every
 quote, and pairs that cost too much are refused), and a track record that cannot be faked after the fact: commit-reveal
-on Solana, checked in your own browser. Crypto is invisible: no wallet, no gas, no seed phrase.
+on Solana, checked in your own browser. Hunch starts from what the person thinks rather than from a contract list, and
+lists nothing until their view differs from the market's by more than the bets cost. Crypto is invisible: no wallet, no
+gas, no seed phrase.
 
 **What would you build next?**
-Maker-first pricing, which roughly halves the cost and adds resting liquidity to Gemini's book; a leaderboard read
-straight from the program's accounts; Gemini OAuth sign-in once production review allows it; sports ladders; and conditional
-contracts listed by Gemini directly, for which Given is the demand evidence.
+Maker-first pricing, which roughly halves the cost and adds resting liquidity to Gemini's book; Gemini OAuth sign-in once
+production review allows it; sports ladders; payoffs with more than two orders on one ladder (a bet that pays more the
+further the price goes); and conditional contracts listed by Gemini directly, for which Given is the demand evidence.
 
 ## 2–3 minute video (shot list)
 
@@ -64,10 +71,11 @@ contracts listed by Gemini directly, for which Given is the demand evidence.
 | 1:00 | Place bet; receipt with two Gemini order IDs | "That is two real orders in my Gemini account." |
 | 1:20 | Solana step | "The call is fingerprinted on Solana before the result. The fingerprint shows nothing." |
 | 1:25 | Range and Basket tabs | "Same idea, other shapes: win if it finishes between two levels, or put several bets on different assets in one step." |
+| 1:30 | Hunch: drag the centre up; the list fills; tap Open | "Or start from your view. This is where the market thinks it finishes. I think higher. These are the bets that pay if I'm right, and what each costs." |
 | 1:35 | My bets: a win, a refund, a loss | "A win, a refund, and a loss. We keep the loss." |
 | 1:55 | Reveal → proof page → Verify on Solana | "My browser reads both records from Solana and recomputes the fingerprint. Nothing here asks our server." |
 | 2:20 | Proof page: reconcile to the cent; Flow to Gemini | "Our books match Gemini's, and this is the order flow we send them." |
-| 2:40 | Leaderboard | "Ranked by edge over the market, fed by a QuickNode Stream." |
+| 2:40 | Leaderboard, then "Read from Solana" under it | "Ranked by edge over the market, fed by a QuickNode Stream. And this copy my browser just read from the program's own accounts: same players, same scores, our server not asked." |
 
 Record on real devnet and the Gemini sandbox, not the local test exchange. **FILL** (blocked on Gemini keys; the wallet is funded and the
 devnet path has run for real).

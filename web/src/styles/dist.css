@@ -1,0 +1,303 @@
+/* The ladder as a histogram (components/DistChart.tsx), the card it sits in on the builders, and the Hunch page. */
+
+.dc {
+  width: 100%;
+  min-height: 190px;
+}
+.dc svg {
+  display: block;
+  overflow: visible;
+}
+.dc-hit {
+  fill: transparent;
+}
+.dc-bar {
+  fill: color-mix(in srgb, var(--ink) 26%, transparent);
+  transition:
+    y 260ms var(--ease),
+    height 260ms var(--ease),
+    fill 200ms var(--ease);
+}
+.dc-slot:hover .dc-bar {
+  fill: color-mix(in srgb, var(--ink) 40%, transparent);
+}
+.dc-slot[data-zone='win'] .dc-bar {
+  fill: var(--good);
+}
+.dc-slot[data-zone='back'] .dc-bar {
+  fill: var(--accent);
+}
+.dc-slot[data-zone='lose'] .dc-bar {
+  fill: var(--bad);
+}
+.dc-slot[data-zone]:hover .dc-bar {
+  filter: brightness(1.08);
+}
+.dc-value {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  fill: var(--soft);
+  transition: y 260ms var(--ease);
+}
+.dc-edge {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+.dc-view {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+:root[data-still] .dc-bar,
+:root[data-still] .dc-value {
+  transition: none;
+}
+
+/* On a builder: the same bet, bar by bar. */
+.dist-card {
+  padding: 24px;
+}
+.dist-card .card-head {
+  margin-bottom: 4px;
+}
+.dist-card .dist-say {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.dist-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  padding-top: 12px;
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--muted);
+}
+.dist-keys span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.dist-keys i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ink) 26%, transparent);
+}
+.dist-keys [data-kind='win'] i {
+  background: var(--good);
+}
+.dist-keys [data-kind='back'] i {
+  background: var(--accent);
+}
+.dist-keys [data-kind='lose'] i {
+  background: var(--bad);
+}
+.dist-keys [data-kind='view'] i {
+  height: 0;
+  width: 18px;
+  border-radius: 0;
+  background: none;
+  border-top: 2.5px solid var(--accent);
+}
+.dist-keys b {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* ------------------------------------------------------------------ Hunch */
+
+.hunch .hunch-chart {
+  margin-top: 12px;
+}
+.hunch-dials {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px 28px;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.hunch-dial {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.hunch-dial label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.hunch-dial output {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  font-variant-numeric: lining-nums;
+}
+.hunch-dial input[type='range'] {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--accent);
+  touch-action: pan-y;
+}
+.hunch-dial .fine {
+  display: flex;
+  justify-content: space-between;
+}
+.hunch-say {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin: 20px 0 0;
+  font-size: 14px;
+  color: var(--soft);
+}
+.hunch-say b {
+  font-weight: 600;
+  color: var(--ink);
+}
+.hunch-reset {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.hunch-reset:disabled {
+  color: var(--faint);
+  text-decoration: none;
+  cursor: default;
+}
+
+.hunch .hunch-list {
+  position: sticky;
+  top: 88px;
+  display: grid;
+  gap: 0;
+  padding: 28px;
+  align-content: start;
+}
+.hunch-list .q-title {
+  margin-bottom: 8px;
+}
+.hunch-idea {
+  display: grid;
+  gap: 12px;
+  padding: 20px 0;
+  border-top: 1px solid var(--line);
+}
+.hunch-idea header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.hunch-idea h3 {
+  margin: 4px 0 0;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+.hunch-idea h3 em {
+  font-style: normal;
+  color: var(--accent-text);
+}
+.hunch-idea .btn {
+  flex: none;
+}
+.hunch-figs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+.hunch-figs dt {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.hunch-figs dd {
+  margin: 2px 0 0;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  font-variant-numeric: lining-nums;
+}
+.hunch-figs .is-edge dd {
+  color: var(--good);
+}
+.hunch-odds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.hunch-odds b {
+  font-weight: 600;
+  color: var(--ink);
+}
+.hunch-odds [data-kind='win'] b {
+  color: var(--good);
+}
+.hunch-odds [data-kind='lose'] b {
+  color: var(--bad);
+}
+.hunch-none {
+  padding: 20px 0 4px;
+  border-top: 1px solid var(--line);
+  color: var(--soft);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.hunch-foot {
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* On a phone the builders lay their cards out by `order` (see app.css): chart, ticket, payoff table, ladder. The histogram
+   goes with the payoff table, and the Hunch list takes the ticket's place straight after its chart. */
+@media (max-width: 960px) {
+  .dist-card {
+    order: 3;
+  }
+  .hunch .hunch-list {
+    order: 2;
+    position: static;
+    padding: 20px;
+  }
+}
+@media (max-width: 560px) {
+  .hunch-dials {
+    grid-template-columns: 1fr;
+  }
+  .dist-card {
+    padding: 20px 16px;
+  }
+}

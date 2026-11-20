@@ -19,6 +19,12 @@ or if the executor URL answers as something other than the Given executor. Anoth
 the real services. The nav labels a session that is not the ordinary case: "Demo data", "Replay", "Quotes only" or
 "Seeded prices". Gemini's sandbox and a local test exchange carry no label.
 
+**Links into the builders.** `/parlay?market=TICKER[&direction=down][&condition=SYMBOL&target=SYMBOL]` and
+`/range?market=TICKER[&low=SYMBOL&high=SYMBOL]` open a builder on a ladder with a bet already chosen (the Markets and Hunch
+pages link this way); `/hunch?market=TICKER` opens Hunch on a ladder. Symbols the ladder no longer lists fall back to the
+builder's default. These are addresses in the web app only: nothing is sent to either service until the person asks for a
+quote.
+
 ## Executor (built; behaviour in `executor/README.md`)
 
 | Endpoint | Used by | Notes |
@@ -91,7 +97,7 @@ limit are all set.**
 | `POST /calls/:id/reveal` | → `CallRecord` (state `revealed`) | Only after the bet settled with the condition held. `409 not_settled` before; `409 void_call` if the condition failed (the call is void and never scored) |
 | `GET /calls` | → `{ calls }` | This user's calls, newest first |
 | `GET /calls/:id/verify` | → `{ commit, reveal, recomputedHash, matches }` | Re-reads both records from Solana and recomputes the hash |
-| `GET /leaderboard` | → `LeaderboardResponse` | Only verified reveals. Ranked by total edge, then calls. `source` is `quicknode-stream` if the Stream delivered any row, else `rpc`; `network` says `devnet` or `fake` |
+| `GET /leaderboard` | → `LeaderboardResponse` | Only verified reveals. Ranked by total edge, then calls. `source` is `quicknode-stream` if the Stream delivered any row, else `rpc`; `network` says `devnet` or `fake`. `program` is the `given_receipts` program id (or `null` when records are Memos only) and `authorities` lists every public key whose records the rows count: with those two the page reads each player's totals from the program's own accounts on Solana, without this service (`web/src/lib/programBoard.ts`) |
 | `POST /hooks/quicknode` | Stream payload | `Authorization: Bearer <GIVEN_HOOK_TOKEN>` (or QuickNode's HMAC headers). Answers `202` at once, then indexes each signature **from Solana, not from the payload** |
 | `POST /admin/backfill` | `X-Admin-Token` | Re-scans the authority's recent transactions. Solana Streams cannot backfill, so this and the automatic backfill are the safety net |
 | `GET /health` | | `service: "given-chain"`, network, authority public key, counts, balance |

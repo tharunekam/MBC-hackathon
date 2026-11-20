@@ -200,6 +200,50 @@
   text-underline-offset: 3px;
 }
 
+/* The same board read from the program's accounts: ruled off from the server's table, its button level with its title. */
+.lb-chain {
+  margin-top: 48px;
+  padding-top: 32px;
+  border-top: 1px solid var(--line);
+}
+.lb-chain-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+}
+.lb-chain-head .h-card {
+  margin: 8px 0 12px;
+}
+.lb-chain-head p {
+  max-width: 60ch;
+  color: var(--soft);
+}
+.lb-chain-head .btn {
+  flex: none;
+}
+.lb-chain .lb-wrap,
+.lb-chain .note {
+  margin: 24px 0 0;
+}
+.lb-chain-match {
+  margin-top: 12px;
+  font-size: 14px;
+  color: var(--soft);
+}
+.lb-chain-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 24px;
+}
+.lb-chain-links .mono-chip {
+  margin-top: 0;
+}
+.lb-chain > .fine {
+  margin-top: 12px;
+}
+
 /* How edge works: the rule on the left, one worked call on the right. */
 .lb-explain {
   display: grid;
@@ -302,6 +346,11 @@
   }
   .lb-empty {
     padding: 24px 16px;
+  }
+  .lb-chain-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

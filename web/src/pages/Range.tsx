@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import type { Bet, CallRecord, MarketEvent, RangeQuoteResponse, Rung } from '../api/types';
+import DistCard from '../components/DistCard';
 import LadderChart from '../components/LadderChart';
 import MarketPicker from '../components/MarketPicker';
 import RangeBar from '../components/RangeBar';
@@ -52,7 +53,11 @@ export default function Range() {
     if (wanted && !showUnpriced && ladders.unpriced.some((e) => e.ticker === wanted)) setShowUnpriced(true);
   }, [wanted, showUnpriced, ladders.unpriced]);
 
-  const [sel, setSel] = useState<Sel | null>(null);
+  // The Hunch page links here with a range already chosen (?low=&high=); one the ladder no longer has falls back to the default.
+  const [sel, setSel] = useState<Sel | null>(() => {
+    const [low, high] = [params.get('low'), params.get('high')];
+    return low && high ? { low, high } : null;
+  });
   const [stake, setStake] = useState(10);
   const [stakeText, setStakeText] = useState('10');
 
@@ -288,6 +293,8 @@ export default function Range() {
             </table>
             <p className="fine rg-always">{out ? `${usd(out.back)} comes back whatever happens.` : 'One of the two orders always pays, so part of the stake comes back whatever happens.'}</p>
           </section>
+
+          {event && lowRung && highRung && <DistCard rungs={event.rungs} shape={{ kind: 'range', low: lowRung.strike, high: highRung.strike }} />}
 
           {event && (
             <section className="card rungs" aria-label="The ladder">
