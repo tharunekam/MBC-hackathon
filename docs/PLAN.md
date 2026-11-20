@@ -239,6 +239,36 @@ if the order path changes again before the commit, run it again.**
   The committed `executor/src` and `executor/test` match the snapshot that was run, except one later line in `api.ts`
   that adds `maxStake` to a read-only response, so the run above stands for the committed order path.
 
+**The two machines' work in one branch, and the demo up on the second machine (Thursday 2026-11-19, 23:00 CST; branch
+`demo/merged`).** The second machine is the always-on one, so it hosts; the laptop still holds the Gemini key, the funded
+Solana authority and the real ledger until they are copied across by hand.
+
+- **One branch.** The second machine's tree was committed as it stood (`b177a95`, pushed as `feat/structured-products`)
+  and merged with `feat/cash-out`; the only conflicts were in this file and `executor/README.md`, both sides kept. On
+  the merged code, on the second machine: typecheck clean, **987 tests** (executor 258, chain 126, web 551, scripts 52),
+  `npm run rehearse` 40 checks, `npm run e2e` 25 checks.
+- **Sandbox evidence for the merged order path.** Nothing new was placed for the merge. The committed `executor/src`
+  and `executor/test` are the snapshot run on the real sandbox at 04:14 UTC (above) plus one line that adds `maxStake`
+  to a read-only response. **Not re-run after the merge**; if the order path changes again, run it again.
+- **Quotes mode is public**, from a separate checkout on the second machine (`~/given-demo`, `npm start`, bound to
+  loopback) behind a Cloudflare quick tunnel. `npm run check:deploy` from the laptop: **10 of 11 pass** (29 ladders, 52
+  offerable pairs with the sandbox markup waiver on). The one failure is the live-updates check, the quick tunnel
+  holding the event stream back as measured on 11-18; the page polls instead.
+- **The stage fallback is public too**: a second server from the same checkout with `GIVEN_MODE=fake`,
+  `FAKE_ROUND_MINUTES=5`, its own ports (8081, 8751, 8752), its own data folder and `GIVEN_NO_PROJECT_ENV=1` so it never
+  reads the keys. Same 10 of 11. Its nav reads "Test exchange" and every builder page says no order reaches Gemini;
+  seen in a browser through the public address. **Present it as the test exchange.**
+- **Not done: live mode.** The second machine's preflight still fails "API keys present" and "Authority key exists".
+  Live mode, `check:deploy --bet`, the recorded replay session and the video all wait on `.env`, `executor/data/ledger.json`
+  and `chain/data/` being copied to `~/given-demo` by the account owner, after which the laptop must never place or
+  settle a real bet again.
+- **A quick tunnel's address dies with its process.** Both addresses change if `cloudflared` or the machine restarts,
+  and `GIVEN_PUBLIC_URL` (and the Stream's destination) must then be changed with them. Do not put one in Devpost
+  without knowing that; a named tunnel or a real host does not have this problem.
+- The servers run in `tmux` sessions on the second machine (`given-demo`, `given-tunnel`, `given-fake`,
+  `given-fake-tunnel`), logs in `~/given-demo-logs/`. The machine is set never to sleep and to restart after a power
+  cut, but nothing restarts the servers after a reboot.
+
 **Verified by running** (599 tests across the four packages; the golden path and the three products were also driven in a
 real browser against the real executor handler and chain service): bet builder on the probability ladder, quote, place,
 receipt, My bets, settle, reveal, leaderboard, Proof (reconcile to the cent). Details of what is and is not verified:
@@ -251,7 +281,7 @@ receipt, My bets, settle, reveal, leaderboard, Proof (reconcile to the cent). De
 | T-P7, T-P8 landing copy, polish, design review | **Review pass done 2026-11-18** at 1280 and 390 wide, both themes: no sideways scroll anywhere; fixed the phone order (quote right after the chart), refusal wording, chart labels, and the default pair on a closed ladder. `npm run e2e` guards it. A second look by someone who did not build it is still worth an hour |
 | T-P9 README, Devpost, video, pitch | README current; Devpost answers and shot list drafted in `docs/SUBMISSION.md`; **video not recorded** (needs a live ladder on the hosted demo) |
 | T-V1 OAuth test | Not started. The sandbox key is on Victor's laptop; registering a sandbox OAuth app needs the account owner |
-| T-V2 host the executor | **Built, not yet deployed.** `scripts/serve.mjs` serves the built app and a fixed allowlist of API paths from one public port with the backends on loopback; `Dockerfile`; `npm run check:deploy` checks a deployed URL from outside; the guide is `docs/DEPLOY.md`. The image builds and runs here (non-root, real sandbox prices). **Needs a host, then the live settings** |
+| T-V2 host the executor | **Up in quotes mode and in test-exchange mode on the second machine behind quick tunnels (2026-11-19, see above); live mode waits on the keys.** Before that: built, not deployed. `scripts/serve.mjs` serves the built app and a fixed allowlist of API paths from one public port with the backends on loopback; `Dockerfile`; `npm run check:deploy` checks a deployed URL from outside; the guide is `docs/DEPLOY.md`. The image builds and runs here (non-root, real sandbox prices). **Needs a host, then the live settings** |
 | T-V3 `GET /reconcile` | **Done**. Event feed not needed: the chain service reads bets from the executor |
 | T-V4 sandbox liquidity seeder | **Built and tested, not run on the sandbox** (`executor/src/seeder.ts`, `npm run seed`). It needs a **second sandbox account**. A dry run on the live sandbox's public prices: 0 of 112 pairs pass the offer rule as the books stand, 7 would with 4-cent quotes resting, 22 with 2-cent quotes. The app labels itself "Seeded prices" when `GIVEN_SEEDED=1`. First-run steps in `executor/README.md` |
 | T-V5 history script | `scripts/seed-history.mjs` places and finishes a win, a refund and a loss |
