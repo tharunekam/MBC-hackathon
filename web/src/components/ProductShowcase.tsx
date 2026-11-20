@@ -109,7 +109,7 @@ export default function ProductShowcase() {
     <div className="wrap">
       <Reveal className="showcase-head">
         <h2 className="h-section">
-          Four ways to bet on a price. <span className="dim">Up, down, stays put or a big move. Every result is on screen before you bet.</span>
+          Four ways to bet on a price <span className="dim">Up, down, stays put or a big move. Every result is on screen before you bet</span>
         </h2>
       </Reveal>
       <Reveal delay={100}>

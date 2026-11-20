@@ -258,10 +258,10 @@ export default function Landing() {
       <section className="hero">
         <div className="wrap">
           <h1 className="hero-title" style={{ ['--i' as string]: 0 }}>
-            Bet the second half.
+            Bet the second half
           </h1>
           <p className="hero-sub" style={{ ['--i' as string]: 0 }}>
-            If the first half doesn’t happen, you get your stake back.
+            If the first half doesn’t happen, you get your stake back
           </p>
           <div className="hero-line" style={{ ['--i' as string]: 1 }}>
             <PriceLine />
@@ -277,7 +277,7 @@ export default function Landing() {
           <Reveal>
             <span className="step-n">01</span>
             <h2 className="h-section">
-              Two prices, three outcomes. <span className="dim">One order is the bet. The other pays your stake back if the first half fails.</span>
+              Two prices, three outcomes <span className="dim">One order is the bet. The other pays your stake back if the first half fails</span>
             </h2>
             <ul className="ticks">
               <li>You only lose when the first half holds and the second half doesn’t</li>
@@ -297,7 +297,7 @@ export default function Landing() {
           <Reveal>
             <span className="step-n">02</span>
             <h2 className="h-section">
-              You see the cost before you bet. <span className="dim">Two orders cost a little more than the fair price, and every quote shows the gap.</span>
+              You see the cost before you bet <span className="dim">Two orders cost a little more than the fair price, and every quote shows the gap</span>
             </h2>
             <ul className="ticks">
               <li>The market’s chance that both halves happen</li>
@@ -343,7 +343,7 @@ export default function Landing() {
           <Reveal>
             <span className="step-n">03</span>
             <h2 className="h-section">
-              Your call is on the record before the result. <span className="dim">Sealed on Solana when you bet, revealed when you choose.</span>
+              Your call is on the record before the result <span className="dim">Sealed on Solana when you bet, revealed when you choose</span>
             </h2>
             <p className="lede">It shows nothing about the bet until you reveal it, and nobody can add a call after the fact.</p>
             <div className="row-actions">
@@ -411,7 +411,7 @@ export default function Landing() {
         <Reveal className="wrap">
           <div className="closing-in">
             <h2 className="closing-title">
-              Bet on the half you believe in. <span className="dim">Pick two prices, see what it costs, and place it.</span>
+              Bet on the half you believe in <span className="dim">Pick two prices, see what it costs, and place it</span>
             </h2>
             <div className="row-actions">
               <Link to={keepMode(PARLAY.to)} className="btn btn-accent btn-lg btn-split">
