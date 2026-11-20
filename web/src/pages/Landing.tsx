@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import ProbBar from '../components/ProbBar';
+import ProductShowcase from '../components/ProductShowcase';
 import Reveal from '../components/Reveal';
 import { PRODUCTS } from '../lib/nav';
+import '../styles/landing.css';
 
-/** The product the landing page explains; the other two are listed with it further down. */
+/** The product the page goes on to explain in detail; the three are introduced together just under the opening. */
 const PARLAY = PRODUCTS[0]!;
 
 /** A fixed, labelled example: it explains the product without needing a live market. */
@@ -150,7 +152,11 @@ export default function Landing() {
         </a>
       </section>
 
-      <section className="band" id="story">
+      <section className="band" id="products">
+        <ProductShowcase />
+      </section>
+
+      <section className="band band-dark" id="story">
         <div className="wrap split">
           <Reveal className="hero-copy">
             <span className="eyebrow">{PARLAY.name}</span>
@@ -168,7 +174,7 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className="band band-dark" id="how">
+      <section className="band" id="how">
         <div className="wrap split flip">
           <Reveal>
             <span className="eyebrow">How it works</span>
@@ -193,7 +199,7 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className="band" id="cost">
+      <section className="band band-dark" id="cost">
         <div className="wrap split">
           <Reveal>
             <span className="eyebrow">The price</span>
@@ -232,7 +238,7 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className="band band-dark" id="proof">
+      <section className="band" id="proof">
         <div className="wrap split flip">
           <Reveal>
             <span className="eyebrow">The record</span>
@@ -256,31 +262,6 @@ export default function Landing() {
                 <b>Reconciled</b>
                 <span>Our records are checked against Gemini’s orders and cash, to the cent.</span>
               </li>
-            </ul>
-          </Reveal>
-        </div>
-      </section>
-
-      <section className="band" id="products">
-        <div className="wrap">
-          <Reveal className="suite-head">
-            <span className="eyebrow">Products</span>
-            <h2 className="h-section">Three ways to bet on a price</h2>
-            <p className="lede">Each one is priced from the exchange’s own ladders and placed as real orders in your account.</p>
-          </Reveal>
-          <Reveal delay={100}>
-            <ul className="suite">
-              {PRODUCTS.map((p) => (
-                <li key={p.id}>
-                  <Link to={p.to}>
-                    <b>{p.name}</b>
-                    <span className="suite-line">{p.tagline}</span>
-                    <span className="suite-go">
-                      Open <span aria-hidden="true">→</span>
-                    </span>
-                  </Link>
-                </li>
-              ))}
             </ul>
           </Reveal>
         </div>

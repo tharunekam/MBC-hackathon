@@ -10,6 +10,8 @@
  * same /api and /chain paths the web app uses: place a win, a refund and a loss, settle, commit, reveal.
  * Then the checks that decide whether a first run with real keys is smooth: signatures on the wire, only the authority's
  * memos on chain, a leaderboard rebuilt from Solana, no secret in any response, and both services surviving a restart.
+ * Last, the other products on a second ladder through the same paths: a falling parlay, a range and a three-bet basket are
+ * placed, their calls committed, settled, revealed and verified from Solana, and the revealed bet ids say what each was.
  *
  * `--chaos` injects failures while the flow runs (a rate-limited Solana node, a dropped transaction whose blockhash expires,
  * a Gemini socket that dies right after accepting an order) and requires the same end state: six orders, five records, no
@@ -77,7 +79,8 @@ try {
   const ticker = `BTC${next.toISOString().slice(2, 13).replace(/[-T]/g, '')}00`;
   const rungs = STRIKES.map((strike) => { const mid = 1 - cdf(Math.log(strike / SPOT) / 0.012); return { strike, bid: Math.max(0.01, Math.round((mid - 0.01) * 100) / 100), ask: Math.min(0.99, Math.round((mid + 0.01) * 100) / 100), bidSize: 400, askSize: 400 }; });
   const exchange = new FakeExchange(ticker, rungs, { title: 'BTC price today at 8pm EST', expiryDate: next.toISOString() });
-  gem = await startFakeGemini({ apiKey: API_KEY, apiSecret: API_SECRET, events: () => Promise.all([exchange.getEvent(ticker)]), books: exchange.books });
+  const later = []; // ladders added after the first phase: [exchange, ticker]
+  gem = await startFakeGemini({ apiKey: API_KEY, apiSecret: API_SECRET, events: () => Promise.all([exchange.getEvent(ticker), ...later.map(([x, t]) => x.getEvent(t))]), books: exchange.books });
   rpc = await startFakeRpc();
   const authority = Keypair.generate();
   const keypairPath = join(tmp, 'authority.json');
@@ -227,6 +230,75 @@ try {
   check('the executor restarts with its ledger intact and does not place anything again', bets2.length === 3 && gem.orders.length === 6);
   const idempotent = await fetch(`${web}/chain/calls`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ betId: bets[0].id }) });
   check('committing the same bet twice returns the same call and writes nothing new', idempotent.ok && rpc.txs().length === 5);
+
+  // ---------------------------------------------------------------- the other products, on a second ladder
+  const post = async (path, body) => {
+    const res = await fetch(web + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    return { status: res.status, json: await res.json() };
+  };
+  const ETH = Array.from({ length: 8 }, (_, i) => 1740 + i * 20);
+  const ticker2 = ticker.replace('BTC', 'ETH');
+  const rungs2 = ETH.map((strike) => { const mid = 1 - cdf(Math.log(strike / 1806) / 0.012); return { strike, bid: Math.max(0.01, Math.round((mid - 0.01) * 100) / 100), ask: Math.min(0.99, Math.round((mid + 0.01) * 100) / 100), bidSize: 400, askSize: 400 }; });
+  const exchange2 = new FakeExchange(ticker2, rungs2, { title: 'ETH price today at 8pm EST', expiryDate: next.toISOString() });
+  later.push([exchange2, ticker2]);
+  for (const [symbol, book] of exchange2.books) exchange.books.set(symbol, book);
+  const e2 = (await get(`/api/markets?event=${ticker2}`)).events[0];
+  check('the second ladder lists pairs for a rising and a falling parlay', e2.offerableCount > 0 && e2.down.offerableCount > 0, `${e2.offerableCount} rising, ${e2.down.offerableCount} falling`);
+
+  const rising = e2.pairs.find((x) => x.quote.offerable);
+  const falling = e2.down.pairs.find((x) => x.quote.offerable);
+  check('a falling pair has its condition on the higher strike', falling.condition.strike > falling.target.strike);
+  let box = null;
+  for (let i = 0; i < e2.rungs.length && !box; i++) for (let j = i + 1; j < e2.rungs.length && !box; j++) {
+    const q = await get(`/api/quote?product=range&event=${ticker2}&low=${e2.rungs[i].symbol}&high=${e2.rungs[j].symbol}&stake=10`);
+    if (q.quote.offerable && q.stake?.cost >= 1) box = { low: e2.rungs[i], high: e2.rungs[j], quote: q };
+  }
+  check('some range on the second ladder is on offer, quoted with what always comes back', !!box && box.quote.stake.backAlways > 0 && box.quote.stake.ifInRange > 0 && box.quote.stake.ifOutside < 0);
+
+  const ordersBefore = gem.orders.length;
+  const fall = await post('/api/bets', { user: 'primary', event: ticker2, condition: falling.condition.symbol, target: falling.target.symbol, direction: 'down', stake: 10 });
+  check('a falling parlay is placed: a NO on the lower strike and a YES on the higher', fall.status === 201 && fall.json.bet.status === 'open' && /^dn-/.test(fall.json.bet.id) && fall.json.bet.legs[0].outcome === 'no' && fall.json.bet.legs[0].symbol === falling.target.symbol && fall.json.bet.legs[1].outcome === 'yes' && fall.json.bet.legs[1].symbol === falling.condition.symbol, fall.json.error ?? '');
+  const ranged = await post('/api/bets', { product: 'range', user: 'primary', event: ticker2, low: box.low.symbol, high: box.high.symbol, stake: 14 });
+  check('a range is placed: a YES on the lower strike and a NO on the higher, the same size', ranged.status === 201 && ranged.json.bet.status === 'open' && /^rg-/.test(ranged.json.bet.id) && ranged.json.bet.legs[0].outcome === 'yes' && ranged.json.bet.legs[1].outcome === 'no' && ranged.json.bet.legs[0].quantityFilled === ranged.json.bet.legs[1].quantityFilled, ranged.json.error ?? '');
+  const basket = await post('/api/baskets', {
+    user: 'primary',
+    name: 'Rehearsal basket',
+    legs: [
+      { event: ticker2, condition: rising.condition.symbol, target: rising.target.symbol, stake: 10 },
+      { event: ticker2, condition: falling.condition.symbol, target: falling.target.symbol, direction: 'down', stake: 10 },
+      { product: 'range', event: ticker2, low: box.low.symbol, high: box.high.symbol, stake: 14 },
+    ],
+  });
+  check('a three-leg basket is placed in one request, every leg open and tagged with the basket', basket.status === 201 && basket.json.basket.failed === null && basket.json.bets.length === 3 && basket.json.bets.every((b) => b.status === 'open' && b.basket?.id === basket.json.basket.id), basket.json.error ?? '');
+  check('Gemini received two signed orders for each of the five new bets', gem.orders.length - ordersBefore === 10, `${gem.orders.length - ordersBefore} orders`);
+  const refusedBasket = await post('/api/baskets', { user: 'primary', legs: [{ event: ticker2, condition: rising.target.symbol, target: rising.condition.symbol, stake: 10 }, { event: ticker2, condition: rising.condition.symbol, target: rising.target.symbol, stake: 10 }] });
+  check('a basket with a leg that is not a real pair is refused before anything is bought, naming the leg', refusedBasket.status === 422 && refusedBasket.json.leg === 0 && gem.orders.length - ordersBefore === 10, refusedBasket.json.error ?? '');
+
+  const placed = [fall.json.bet, ranged.json.bet, ...basket.json.bets];
+  const committed = [];
+  for (const b of placed) committed.push((await post('/chain/calls', { betId: b.id })).json);
+  check('every new bet has its call committed on Solana', committed.every((c) => c.state === 'committed' && c.commitSignature), committed.map((c) => c.state).join(','));
+
+  const insideSpot = (box.low.strike + box.high.strike) / 2;
+  for (const strike of ETH) exchange2.resolve(strike, insideSpot >= strike ? 'yes' : 'no');
+  const settled = (await post('/api/settle', {})).json;
+  const mine = (await get('/api/bets')).bets.filter((b) => placed.some((x) => x.id === b.id));
+  check('all five settle, and the range that the price landed inside is a win', mine.length === 5 && mine.every((b) => b.status === 'settled') && mine.filter((b) => b.product === 'range').every((b) => b.settlement.targetResolved === 'yes'), `${settled.settled.length} settled`);
+
+  const reveals = [];
+  for (const c of committed) {
+    const r = await post(`/chain/calls/${c.id}/reveal`, {});
+    if (r.status === 200) reveals.push(r.json);
+    else check(`a refused reveal is the void one (${r.json.code})`, r.json.code === 'void_call');
+  }
+  check('the calls that count are revealed on Solana', reveals.length >= 2 && reveals.every((r) => r.state === 'revealed' && r.reveal.signature), `${reveals.length} of ${committed.length}`);
+  const publics = await Promise.all(reveals.map((r) => get(`/chain/reveals/${r.reveal.signature}`)));
+  const kindOf = (id) => (id.startsWith('rg-') ? 'range' : id.startsWith('dn-') ? 'falling' : 'rising');
+  check('every public reveal carries the committed bet id, so the proof page can say what kind of bet it was', publics.every((x) => typeof x.betId === 'string' && placed.some((b) => b.id === x.betId)), publics.map((x) => kindOf(x.betId)).join(','));
+  const verifies2 = await Promise.all(reveals.map((r) => get(`/chain/calls/${r.id}/verify`)));
+  check('each new revealed call re-reads from Solana and its hash recomputes', verifies2.every((v) => v.matches === true));
+  const recon = await get('/api/reconcile');
+  check('the executor ledger still names every order Gemini holds', recon.ordersChecked === recon.ordersMatched && recon.mismatches.length === 0, `${recon.ordersMatched} of ${recon.ordersChecked}`);
 } catch (err) {
   failed = true;
   console.error(`\nREHEARSAL ERROR: ${err instanceof Error ? err.stack : String(err)}`);
