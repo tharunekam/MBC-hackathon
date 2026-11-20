@@ -9,13 +9,14 @@ import { receiptWords } from './receiptWords';
  * together as a basket, and the words for each order. Pure, so each rule can be checked without a page.
  */
 
-export type Outcome = 'open' | 'won' | 'back' | 'lost' | 'review' | 'failed' | 'unwound';
+export type Outcome = 'open' | 'won' | 'back' | 'lost' | 'review' | 'failed' | 'unwound' | 'cashed';
 
 export function outcomeOf(b: Pick<Bet, 'status' | 'settlement'>): Outcome {
   if (b.status === 'needs_review') return 'review';
   if (b.status === 'open' || b.status === 'unhedged' || b.status === 'placing') return 'open';
   if (b.status === 'failed') return 'failed';
   if (b.status === 'unwound') return 'unwound';
+  if (b.status === 'cashed_out') return 'cashed';
   const r = resultOf(b);
   if (r === 'refunded') return 'back';
   if (r === 'won') return 'won';
@@ -29,11 +30,17 @@ export const isPlaced = (b: Pick<Bet, 'status' | 'settlement'>): boolean => {
   return o !== 'failed' && o !== 'unwound';
 };
 
-/** The market has finished with this bet, whether or not what it paid is known yet. */
+/** This bet is finished: the market has settled it (whether or not what it paid is known yet), or it was sold back. */
 export const isSettled = (b: Pick<Bet, 'status' | 'settlement'>): boolean => {
   const o = outcomeOf(b);
-  return o === 'won' || o === 'lost' || o === 'back' || o === 'review';
+  return o === 'won' || o === 'lost' || o === 'back' || o === 'review' || o === 'cashed';
 };
+
+/**
+ * What a bet cost. Selling a bet back takes the proceeds off its running cost, so a bet that has been cashed out, in
+ * whole or in part, keeps what it cost before the first sale in `cashOut.stake`.
+ */
+export const stakeOf = (b: Pick<Bet, 'cost' | 'cashOut'>): number => b.cashOut?.stake ?? b.cost;
 
 /** The tag shown on a bet: the product, and for a parlay that looks down, which way. */
 export const kindLabel = (kind: BetKind): string => (kind.product === 'parlay' && kind.direction === 'down' ? `${productName(kind)} · falling` : productName(kind));
@@ -45,6 +52,7 @@ export function statusWords(b: Pick<Bet, 'status' | 'settlement' | 'product' | '
   if (o === 'review') return 'Needs review';
   if (o === 'failed') return 'Failed';
   if (o === 'unwound') return 'Unwound';
+  if (o === 'cashed') return 'Cashed out';
   return resultWords(kindOf(b), o === 'back' ? 'refunded' : o);
 }
 
@@ -52,7 +60,13 @@ export function statusWords(b: Pick<Bet, 'status' | 'settlement' | 'product' | '
  * What a bet has actually paid: from the settlement, or for a bet Gemini settled without a plain yes or no, from the
  * amount entered by hand once it has been read from the account. Null while that is not known.
  */
-export function realised(b: Pick<Bet, 'status' | 'settlement' | 'review'>): { payout: number; pnl: number } | null {
+export function realised(b: Pick<Bet, 'status' | 'settlement' | 'review' | 'cashOut'>): { payout: number; pnl: number } | null {
+  // A bet sold back in part and then settled: what it paid is the sale plus the settlement, against what it first cost.
+  if (b.status === 'settled' && b.settlement && b.cashOut) {
+    const payout = b.cashOut.proceeds + b.settlement.payout;
+    return { payout, pnl: payout - b.cashOut.stake };
+  }
+  if (b.status === 'cashed_out' && b.cashOut) return { payout: b.cashOut.proceeds, pnl: b.cashOut.pnl };
   if (b.status === 'settled' && b.settlement) return { payout: b.settlement.payout, pnl: b.settlement.pnl };
   if (b.status === 'needs_review' && b.review?.resolved) return { payout: b.review.resolved.payout, pnl: b.review.resolved.pnl };
   return null;
@@ -83,7 +97,7 @@ export function summarize(bets: readonly Bet[]): Totals {
   for (const b of bets) {
     if (!isPlaced(b)) continue;
     t.count += 1;
-    t.staked += b.cost;
+    t.staked += stakeOf(b);
     if (outcomeOf(b) === 'open') t.open += 1;
     if (isSettled(b)) t.settled += 1;
     const r = realised(b);
@@ -142,7 +156,7 @@ export function basketSummary(entry: Extract<Entry, { type: 'basket' }>): Basket
     legs: entry.legs.length,
     size: Math.max(entry.size, entry.legs.length),
     placedAt,
-    stake: placed.reduce((n, b) => n + b.cost, 0),
+    stake: placed.reduce((n, b) => n + stakeOf(b), 0),
     settled: entry.legs.filter(isSettled).length,
     net: known.length > 0 ? known.reduce((n, r) => n + r.pnl, 0) : null,
   };
@@ -188,5 +202,6 @@ export function orderLine(bet: Pick<Bet, 'product' | 'direction' | 'condition' |
   if (leg.role === 'outcome') return { label: 'Order 1', bets: `Bets ${w.first}`, side, strike };
   if (leg.role === 'hedge') return { label: 'Order 2', bets: `Bets ${w.second}`, side, strike };
   if (leg.role === 'unwind') return { label: 'Sold back', bets: 'Sells what was bought, because the bet could not be completed', side, strike };
+  if (leg.role === 'cashout') return { label: 'Cashed out', bets: 'Sells this order back at the best price on offer', side, strike };
   return { label: 'Trigger', bets: leg.side === 'sell' ? 'Sold when a set price was reached' : 'Bought when a set price was reached', side, strike };
 }

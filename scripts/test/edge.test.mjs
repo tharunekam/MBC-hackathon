@@ -10,6 +10,8 @@ describe('which paths reach a backend', () => {
     assert.deepEqual(route('GET', '/api/markets'), { target: 'executor', path: '/markets' });
     assert.deepEqual(route('POST', '/api/bets'), { target: 'executor', path: '/bets' });
     assert.deepEqual(route('POST', '/api/baskets'), { target: 'executor', path: '/baskets' });
+    assert.deepEqual(route('GET', '/api/cashout'), { target: 'executor', path: '/cashout' });
+    assert.deepEqual(route('POST', '/api/cashout'), { target: 'executor', path: '/cashout' });
     assert.deepEqual(route('GET', '/api/stream'), { target: 'executor', path: '/stream' });
     assert.deepEqual(route('GET', '/api/quote/'), { target: 'executor', path: '/quote' });
     assert.deepEqual(route('GET', '/chain/leaderboard'), { target: 'chain', path: '/leaderboard' });

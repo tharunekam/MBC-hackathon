@@ -2,6 +2,8 @@ import type {
   ApiErrorBody,
   Bet,
   CallRecord,
+  CashOutQuote,
+  CashOutResponse,
   Direction,
   FlowResponse,
   HealthResponse,
@@ -42,6 +44,10 @@ export interface Api {
   /** Several bets in one step. Every leg is checked first; a leg that cannot complete stops the rest. */
   placeBasket(req: PlaceBasketRequest): Promise<PlaceBasketResponse>;
   bets(user?: string): Promise<{ bets: Bet[] }>;
+  /** What selling an open bet back would bring in right now. Sends nothing. */
+  cashOutQuote(betId: string): Promise<CashOutQuote>;
+  /** Sells an open bet back as two sell orders. `minProceeds` refuses the sale if the price has dropped below it. */
+  cashOut(betId: string, minProceeds?: number): Promise<CashOutResponse>;
   settle(): Promise<{ settled: Bet[]; needsReview: Bet[]; stillOpen: number }>;
   flow(user?: string): Promise<FlowResponse>;
   reconcile(): Promise<ReconcileResponse>;
@@ -90,6 +96,8 @@ export function liveApi(base = '/api', chainBase = '/chain', defaultUser = 'prim
     placeBet: (req) => ex('/bets', { method: 'POST', body: JSON.stringify({ ...req, user: req.user || defaultUser }) }),
     placeBasket: (req) => ex('/baskets', { method: 'POST', body: JSON.stringify({ ...req, user: req.user || defaultUser }) }),
     bets: (user) => ex(`/bets${qs({ user: user ?? defaultUser })}`),
+    cashOutQuote: (betId) => ex(`/cashout${qs({ bet: betId })}`),
+    cashOut: (betId, minProceeds) => ex('/cashout', { method: 'POST', body: JSON.stringify({ bet: betId, ...(minProceeds !== undefined ? { minProceeds } : {}) }) }),
     settle: () => ex('/settle', { method: 'POST' }),
     flow: (user) => ex(`/flow${qs({ user })}`),
     reconcile: () => ex('/reconcile'),
