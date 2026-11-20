@@ -238,12 +238,20 @@
   color: var(--bad);
 }
 .bl-chip[data-outcome='back'],
+.bl-chip[data-outcome='cashed'],
 .bl-chip[data-outcome='review'] {
   color: var(--accent-text);
 }
 .bl-chip[data-outcome='failed'],
 .bl-chip[data-outcome='unwound'] {
   color: var(--muted);
+}
+
+/* Selling an open bet back: the price, then the two buttons */
+.bl-cash-actions {
+  display: flex;
+  flex: none;
+  gap: 8px;
 }
 
 /* What to do next with a settled bet */

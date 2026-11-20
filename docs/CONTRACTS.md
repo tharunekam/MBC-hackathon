@@ -35,7 +35,9 @@ quote.
 | `GET /quote?product=range&event&low&high&stake` | Range | The chance of finishing inside, the price of the second dollar, the offer verdict, and for a stake: contracts, cost, what always comes back, and what each result nets |
 | `POST /bets` | place bet | ~4 s on the sandbox. A refusal is HTTP 422 with `code` and `quote`. `{ ..., direction: "down" }` places a falling parlay; `{ product: "range", user, event, low, high, stake }` places a range |
 | `POST /baskets` | Basket | `{ user, name?, legs: [...] }`, 2 to 6 legs, each a parlay (`condition`, `target`, `direction?`) or a range (`product: "range"`, `low`, `high`) with its own `stake`. Every leg is checked first: a leg that is not on offer refuses the whole basket (422, `leg` is its index, nothing bought). Otherwise 201 `{ basket: { id, name, size, failed }, bets }`; `failed` is null or the leg that could not be completed, and the legs before it stay placed |
-| `GET /bets` | My bets, chain service | Newest first. The chain service reads bets from here and never from the browser |
+| `GET /cashout?bet=ID` | My bets, "Cash out" | **New 11-19.** What selling an open bet back would bring in now: `{ available, code, reason, stake, proceeds, pnl, proceedsAtProductionFees, legs: [{ role, symbol, outcome, quantity, price, available }] }`. Reads two live books and sends nothing. `available: false` carries a `code` (`not_open`, `market_closed`, `no_bid`, `insufficient_depth`, `position_netted`) and a sentence |
+| `POST /cashout` | My bets, "Sell for $X" | **New 11-19.** `{ bet, minProceeds?, slippageTicks? }`. Sells the outcome order, then the hedge, each as one IOC sell (tags `gv-<bet>-cb<n>`, `-ca<n>`). 200 `{ bet, cashOut: { at, stake, proceeds, pnl, complete } }`; the bet's status becomes `cashed_out`. A refusal is 422 with `code` and the `quote` it was refused on (409 for `not_open`); `below_minimum` means the price fell under `minProceeds` (with a floor, each order is limited at the quoted price and never sells below it), and `nothing_sold` that the first sell missed and the bet is unchanged. If only part sells, `complete` is false, the bet stays live on what it still holds and can be cashed out again |
+| `GET /bets` | My bets, chain service | Newest first. The chain service reads bets from here and never from the browser. A bet can carry `cashOut` (above), and a leg's `role` can be `cashout` |
 | `POST /settle` | "Check results" | |
 | `GET /flow` | Proof page | |
 | `GET /reconcile` | Proof page | **New.** Ledger vs Gemini: orders found, cash tied out. `betsNeedingReview` are bets Gemini settled without a plain yes or no; `betsResolvedByHand` are those whose payout a person has entered |
@@ -61,6 +63,16 @@ The market list is served stale-while-revalidate: an answer up to 60 s old is re
 nobody waits for the 2 s read. Identical quote requests share one pair of book reads (`quoteCacheMs`, 1.5 s on the real
 server); a quote whose book read failed is never reused. `GIVEN_AUTO_SETTLE_MS` (default 20000, 0 turns it off) settles
 finished bets by itself; it reads Gemini and writes the ledger and places no order.
+
+### Cashing out and the Solana call
+
+A bet that was cashed out never settles, so the chain service's reveal answers `409 cashed_out` for its call and the call
+stays committed (a sealed hash) for good. That is deliberate for now: the leaderboard scores a call against the result, and
+the executor does not record the result of a market it no longer holds. The web app says "This call is not scored".
+Scoring such a call from the market's result alone is listed in `docs/GIVEN.md` as an idea, not built.
+
+On the hosted demo every visitor shares one pinned sandbox account, so a visitor can cash out a bet another visitor
+placed. It is the same exposure as placing a bet: rate-limited, stopped by the `PAUSED` file, and sandbox money.
 
 ### Hosted-demo protections (new, all opt-in; see `executor/src/server.ts`)
 

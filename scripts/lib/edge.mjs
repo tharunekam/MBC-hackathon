@@ -18,6 +18,8 @@ export const EXECUTOR_ROUTES = [
   ['GET', '/bets'],
   ['POST', '/bets'],
   ['POST', '/baskets'],
+  ['GET', '/cashout'],
+  ['POST', '/cashout'],
   ['POST', '/settle'],
   ['GET', '/flow'],
   ['GET', '/reconcile'],

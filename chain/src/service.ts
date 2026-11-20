@@ -291,6 +291,10 @@ export class ChainService {
       if (await this.adoptReveal(row, row.revealing === true)) return this.view(row);
 
       const bet = await this.bets.getBet(row.betId);
+      // A bet that was sold back never settles. Its call stays a sealed hash: nothing is published and nothing is scored.
+      if (bet && !bet.settlement && bet.status === 'cashed_out') {
+        throw new ServiceError(409, 'cashed_out', 'This bet was sold back before its market settled, so its call stays sealed and is not scored.');
+      }
       if (!bet?.settlement) throw new ServiceError(409, 'not_settled', 'This bet has not settled yet, so there is nothing to reveal.');
       if (bet.settlement.conditionResolved === 'no') {
         row.state = 'void';

@@ -6,6 +6,8 @@
  *   node src/cli.ts pairs --down               ...for a parlay that a price falls (the condition is the HIGHER strike)
  *   node src/cli.ts bet <event> <conditionSymbol> <targetSymbol> <stake> [--down] [--max 0.60] [--leave]
  *   node src/cli.ts range <event> <lowSymbol> <highSymbol> <stake> [--max 0.60] [--leave]   win if it finishes between the two
+ *   node src/cli.ts cashout <bet>              what selling an open bet back would bring in now (sends nothing)
+ *   node src/cli.ts cashout <bet> --sell [--min 3.10]   sell it back: one sell order per leg
  *   node src/cli.ts bets                       show the ledger
  *   node src/cli.ts settle                     record results for resolved bets
  *   node src/cli.ts reconcile                  check the ledger against Gemini
@@ -20,6 +22,7 @@
  */
 import { resolve } from 'node:path';
 import { maxPayout, placeConditionalBet, recordReviewedPayout, recoverBets, settleBets } from './bets.ts';
+import { CashOutRefused, cashOutBet, quoteCashOut } from './cashout.ts';
 import type { BetRecord } from './ledger.ts';
 import { loadConfig, requireUser } from './config.ts';
 import { flowTotals } from './flow.ts';
@@ -78,6 +81,10 @@ function printBet(bet: ReturnType<Ledger['bet']>): void {
   if (bet.settlement) {
     const s = bet.settlement;
     console.log(`  SETTLED condition=${s.conditionResolved} target=${s.targetResolved}  payout ${money(s.payout)}  result ${money(s.pnl)}`);
+  }
+  if (bet.cashOut) {
+    const c = bet.cashOut;
+    console.log(`  CASHED OUT${c.complete ? '' : ' (in part)'}  cost ${money(c.stake)}  sold for ${money(c.proceeds)}  result ${money(c.pnl)}`);
   }
   if (bet.note) console.log(`  note: ${bet.note}`);
 }
@@ -206,6 +213,30 @@ async function main(): Promise<void> {
         },
       );
       printBet(bet);
+    } else if (command === 'cashout') {
+      const bet = ledger.bet(args[1] ?? '');
+      if (!bet) throw new Error('Usage: cashout <bet> [--sell] [--min dollars] [--slip ticks]   (bet ids: node src/cli.ts bets)');
+      const deps = { exchange, ledger, feeCoef: config.takerFeeCoef };
+      if (!has('sell')) {
+        const q = await quoteCashOut(deps, bet);
+        for (const l of q.legs) {
+          console.log(`  ${l.role.padEnd(7)} sell ${l.outcome.toUpperCase().padEnd(3)} ${l.symbol}  holds ${l.quantity}  best price ${l.price ?? '-'}  wanted there ${l.available ?? '-'}`);
+        }
+        console.log(
+          q.proceeds === null
+            ? `  cost ${money(q.stake)}   no price to sell at`
+            : `  cost ${money(q.stake)}   sells for ${money(q.proceeds)} now (${money(q.proceedsAtProductionFees ?? q.proceeds)} at production fees)   result ${money(q.pnl ?? 0)}`,
+        );
+        console.log(q.available ? '  Can be sold now. Add --sell to do it.' : `  Cannot be sold now [${q.code}]: ${q.reason}`);
+      } else {
+        try {
+          printBet(await cashOutBet(deps, bet, { minProceeds: flag('min') ? Number(flag('min')) : undefined, slippageTicks: flag('slip') ? Number(flag('slip')) : undefined }));
+        } catch (err) {
+          if (!(err instanceof CashOutRefused)) throw err;
+          console.log(`Not sold [${err.code}]: ${err.message}`);
+          process.exitCode = 1;
+        }
+      }
     } else if (command === 'settle') {
       const done = await settleBets({ exchange, ledger, feeCoef: config.takerFeeCoef });
       for (const bet of [...done.settled, ...done.needsReview]) printBet(bet);
@@ -218,7 +249,7 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(r, null, 2));
       process.exitCode = r.ok ? 0 : 1;
     } else {
-      console.log('Commands: pairs [event] [--all] [--down] | bet ... [--down] | range ... | bets | settle | recover | reconcile | flow | review | resolve <bet> <paid> --note "..."');
+      console.log('Commands: pairs [event] [--all] [--down] | bet ... [--down] | range ... | cashout <bet> [--sell] | bets | settle | recover | reconcile | flow | review | resolve <bet> <paid> --note "..."');
       process.exitCode = 1;
     }
   } finally {

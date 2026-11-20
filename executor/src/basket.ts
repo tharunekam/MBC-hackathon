@@ -106,6 +106,10 @@ export async function placeBasket(deps: Deps, req: BasketRequest): Promise<Baske
         break;
       }
     } catch (err) {
+      // The first leg was turned down before any order, so nothing at all was bought: that is a refused basket, not a
+      // basket with a failed leg. (Seen on the sandbox 2026-11-20: the size at the best price can drop to zero in the
+      // moment between the check above and the leg's own.)
+      if (i === 0 && err instanceof BetRefused) throw new BasketRefused(0, err.code, err.message, err.quote);
       result.failed = {
         index: i,
         code: err instanceof BetRefused ? err.code : 'error',

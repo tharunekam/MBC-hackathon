@@ -112,6 +112,7 @@ export function describeStep(e) {
   const path = e.url.split('?')[0].replace(/\/+$/, '');
   if (path === '/api/bets') return `a ${money(e.request?.stake)} bet on ${e.request?.event ?? 'a ladder'}: given ${strike(e.request?.condition)} or above, reach ${strike(e.request?.target)}`;
   if (path === '/api/settle') return 'checking results (the "Check results" button on My bets)';
+  if (path === '/api/cashout') return `cashing out bet ${e.request?.bet ?? '?'} (the "Sell for" button on My bets)`;
   if (path === '/chain/calls') return 'recording a bet\'s call on Solana (it follows a bet by itself)';
   if (/\/reveal$/.test(path)) return 'revealing a call (the "Reveal" button on My bets)';
   return `${e.method} ${path}`;

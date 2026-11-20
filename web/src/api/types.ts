@@ -174,7 +174,7 @@ export interface QuoteResponse {
 
 export interface LegRecord {
   clientOrderId: string;
-  role: 'outcome' | 'hedge' | 'unwind' | 'trigger';
+  role: 'outcome' | 'hedge' | 'unwind' | 'trigger' | 'cashout';
   symbol: string;
   side: 'buy' | 'sell';
   outcome: 'yes' | 'no';
@@ -189,7 +189,7 @@ export interface LegRecord {
   note?: string;
 }
 
-export type BetStatus = 'placing' | 'open' | 'unhedged' | 'unwound' | 'failed' | 'settled' | 'needs_review';
+export type BetStatus = 'placing' | 'open' | 'unhedged' | 'unwound' | 'failed' | 'settled' | 'needs_review' | 'cashed_out';
 
 /** What one bet sent to Gemini's book (executor `betFlow`). The same shape as the totals in `FlowResponse`. */
 export interface BetFlow {
@@ -263,8 +263,43 @@ export interface Bet {
    * paid, read from the account and entered by hand. Such a bet is never scored.
    */
   review?: { reason: string; resolved?: { payout: number; pnl: number; recordedAt: string; note: string } };
+  /**
+   * Present once some or all of the bet has been sold back (`POST /cashout`). `stake` is what the bet had cost before the
+   * first sale, `proceeds` what the sell orders brought in after fees, `pnl` the difference. While `complete` is false part
+   * of the bet is still held and it settles as usual; when true the status is `cashed_out`.
+   */
+  cashOut?: { at: string; stake: number; proceeds: number; pnl: number; complete: boolean };
   scorable: boolean;
   flow: BetFlow;
+}
+
+/** Why a bet cannot be sold back right now (executor `CashOutCode`). */
+export type CashOutCode = 'not_open' | 'market_closed' | 'no_bid' | 'insufficient_depth' | 'position_netted' | 'below_minimum' | 'nothing_sold';
+
+/** `GET /cashout?bet=`: what selling an open bet's two orders back would bring in right now. Nothing is sent. */
+export interface CashOutQuote {
+  betId: string;
+  asOf: string;
+  /** True when the whole bet can be sold now at these prices. */
+  available: boolean;
+  code: CashOutCode | null;
+  /** Why not, in a sentence. Null when available. */
+  reason: string | null;
+  /** Net dollars in the bet now. */
+  stake: number;
+  /** What selling both orders now brings in, after the fees this venue charges. Null when an order has no buyer. */
+  proceeds: number | null;
+  /** proceeds minus stake. */
+  pnl: number | null;
+  /** The same sale at Gemini's published taker rate. */
+  proceedsAtProductionFees: number | null;
+  legs: { role: 'outcome' | 'hedge'; symbol: string; outcome: 'yes' | 'no'; quantity: number; price: number | null; available: number | null }[];
+}
+
+/** `POST /cashout` when it sold. A refusal is an ApiError (422, or 409 `not_open`) whose body carries `code` and `quote`. */
+export interface CashOutResponse {
+  bet: Bet;
+  cashOut: NonNullable<Bet['cashOut']>;
 }
 
 export interface PlaceParlayRequest {

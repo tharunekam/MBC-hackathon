@@ -134,6 +134,9 @@ our current pick, cheap to change. **Open** = not settled.
 | 23 | A bet id carries its product (`dn-` falling, `rg-` range) | Decided | The id is committed on Solana with the call and revealed with it, so the proof page and leaderboard can say what a call was without changing the hash format or the deployed program, and the label cannot be changed after the result | A program upgrade that commits a product field instead |
 | 24 | The ladder is also shown as a histogram, and **Hunch** ranks the bets on offer against a view the person enters | Provisional | A ladder's neighbouring prices differ by the market's chance of finishing between them, so the histogram is exact and needs no model. A person's view is the market's own curve moved and squeezed, so an unmoved view is the market's and nothing is listed: no difference on screen is an artefact of fitting a shape. It adds no order type and touches no order path: every listed bet opens in the builder that already places it | People read "bets that fit your view" as advice from us. The page says the odds are theirs and the market may be right; if that is not enough, drop the ranking and keep the histogram |
 
+| 25 | An open bet can be **cashed out**: both orders sold back at the live bids, all or nothing | Provisional | Every quote already showed "what you'd get back if you sold immediately"; without a way to do it that number was a claim, not a feature. It is two more plain orders per bet on Gemini's book, and it makes a bet something you manage, not only something you wait on. Run on the real sandbox 2026-11-20 for all three products, reconciled each time | Gemini's rules treating a sell-back differently from any other order; or sandbox depth making the all-or-nothing check refuse so often that selling part is needed |
+| 26 | A cashed-out bet's Solana call stays sealed and is never scored | Provisional | The leaderboard scores a call against the market's result, and the executor only records the result of bets it still holds. Leaving the call committed publishes nothing and costs nothing | Wanting cashed-out calls on the leaderboard: record the market's result for them (see "Ideas worth exploring") |
+
 ## Open questions
 
 For Gemini (office hours; see `docs/PLAN.md` for dates):
@@ -164,6 +167,13 @@ None of these are commitments. Each is a direction someone could pick up.
 
 - **Maker-first pricing.** Rest the outcome order (maker-or-cancel), hedge the
   moment it fills. Halves the cost; adds book depth for Gemini.
+- **More to do with a bet you already hold.** Cash-out is built (decision 25).
+  Next along the same line: score a cashed-out call from the market's result,
+  since selling early does not change whether the call was right; sell part of
+  a bet; a "sell if it reaches $X" instruction (this needs standing authority
+  over the account, the reason decision 5 cut trigger orders); and cashing out
+  a bet Gemini has netted against another, by buying the other side instead
+  of selling.
 - **Sports ladders.** Production had about 6,900 tradable linked pairs across
   169 events on 2026-11-17, almost all sports totals and spreads (strike types
   `over` and `spread`). The executor only handles `above`. A read-only quote

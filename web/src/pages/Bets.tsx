@@ -5,7 +5,8 @@ import { ApiError } from '../api/client';
 import type { Bet, CallRecord } from '../api/types';
 import { explorerTx } from '../api/types';
 import { betTitle, kindOf } from '../lib/betKind';
-import { basketSummary, filterEntries, groupBets, ifItComesOff, isSettled, kindLabel, orderLine, outcomeOf, realised, statusWords, summarize } from '../lib/betsView';
+import { CashOut } from '../components/CashOut';
+import { basketSummary, filterEntries, groupBets, ifItComesOff, isSettled, kindLabel, orderLine, outcomeOf, realised, stakeOf, statusWords, summarize } from '../lib/betsView';
 import type { Entry, Filter } from '../lib/betsView';
 import { ago, cents, money, trunc, usd, usdSigned } from '../lib/format';
 import { useNow, useResource } from '../lib/hooks';
@@ -27,6 +28,8 @@ interface RowProps {
   call: CallRecord | undefined;
   revealing: string | null;
   onReveal: (callId: string) => void;
+  /** Called when a bet has been sold back, with a sentence saying so. */
+  onCashedOut: (message: string) => void;
   /** Shown in a basket: the leg number goes before the bet. */
   leg?: number;
 }
@@ -57,7 +60,7 @@ function Result({ bet }: { bet: Bet }) {
   return <b className="bl-none">–</b>;
 }
 
-function BetRow({ bet, call, revealing, onReveal, leg }: RowProps) {
+function BetRow({ bet, call, revealing, onReveal, onCashedOut, leg }: RowProps) {
   const [open, setOpen] = useState(false);
   const o = outcomeOf(bet);
   const kind = kindOf(bet);
@@ -79,7 +82,7 @@ function BetRow({ bet, call, revealing, onReveal, leg }: RowProps) {
         </div>
         <div className="bl-fig bl-stake">
           <span className="bl-k">Stake</span>
-          <b>{usd(bet.cost)}</b>
+          <b>{usd(stakeOf(bet))}</b>
         </div>
         <div className="bl-fig bl-state">
           <span className="bl-k">Status</span>
@@ -110,6 +113,14 @@ function BetRow({ bet, call, revealing, onReveal, leg }: RowProps) {
             <Link to={`/verify/${call.reveal.signature}`}>Proof page</Link>
             <Link to="/leaderboard">Leaderboard</Link>
           </div>
+        </div>
+      )}
+      {(bet.status === 'open' || bet.status === 'unhedged') && <CashOut bet={bet} onDone={onCashedOut} />}
+      {o === 'cashed' && bet.cashOut && (
+        <div className="bl-foot">
+          <p>
+            Sold back for <b>{usd(bet.cashOut.proceeds)}</b> before the market settled, as two sell orders on Gemini. This call is not scored.
+          </p>
         </div>
       )}
       {o === 'back' && (
@@ -268,6 +279,12 @@ export default function Bets() {
     }
   }
 
+  function cashedOut(message: string) {
+    setError(null);
+    setNote(message);
+    bets.reload();
+  }
+
   const loading = bets.loading && !bets.data;
   const failed = !bets.data && bets.error;
 
@@ -378,10 +395,10 @@ export default function Bets() {
                   {shown.map((e) =>
                     e.type === 'single' ? (
                       <li key={e.bet.id} className="bl-panel">
-                        <BetRow bet={e.bet} call={callFor(e.bet.id)} revealing={revealing} onReveal={reveal} />
+                        <BetRow bet={e.bet} call={callFor(e.bet.id)} revealing={revealing} onReveal={reveal} onCashedOut={cashedOut} />
                       </li>
                     ) : (
-                      <BasketPanel key={e.id} entry={e} all={entries.find((x): x is Extract<Entry, { type: 'basket' }> => x.type === 'basket' && x.id === e.id) ?? e} callFor={callFor} revealing={revealing} onReveal={reveal} />
+                      <BasketPanel key={e.id} entry={e} all={entries.find((x): x is Extract<Entry, { type: 'basket' }> => x.type === 'basket' && x.id === e.id) ?? e} callFor={callFor} revealing={revealing} onReveal={reveal} onCashedOut={cashedOut} />
                     ),
                   )}
                 </ul>

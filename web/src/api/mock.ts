@@ -13,6 +13,7 @@ import type {
   BasketLegRequest,
   Bet,
   CallRecord,
+  CashOutQuote,
   Direction,
   LeaderboardResponse,
   LeaderboardRow,
@@ -30,6 +31,30 @@ import type {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const cents = (x: number) => Math.round(x * 100) / 100;
+
+/**
+ * What the demo data says a bet would sell for: each order at two cents under what it cost, which is roughly what
+ * crossing the spread back costs on a real book. The real figure comes from the executor's `GET /cashout`.
+ */
+function mockCashOutQuote(bet: Bet): CashOutQuote {
+  const base = { betId: bet.id, asOf: new Date().toISOString(), stake: cents(bet.cost), proceedsAtProductionFees: null };
+  if (bet.status !== 'open') {
+    const reason = bet.status === 'cashed_out' ? 'This bet has already been cashed out.' : `This bet is "${bet.status}", so there is nothing to sell.`;
+    return { ...base, available: false, code: 'not_open', reason, proceeds: null, pnl: null, legs: [] };
+  }
+  const legs = bet.legs
+    .filter((l) => (l.role === 'outcome' || l.role === 'hedge') && l.quantityFilled > 0 && l.avgPrice !== null)
+    .map((l) => ({
+      role: l.role as 'outcome' | 'hedge',
+      symbol: l.symbol,
+      outcome: l.outcome,
+      quantity: l.quantityFilled,
+      price: Math.max(0.01, cents((l.avgPrice ?? 0) - 0.02)),
+      available: 1000,
+    }));
+  const proceeds = cents(legs.reduce((sum, l) => sum + l.quantity * l.price, 0));
+  return { ...base, available: true, code: null, reason: null, proceeds, pnl: cents(proceeds - base.stake), proceedsAtProductionFees: cents(proceeds * 0.985), legs };
+}
 
 // ------------------------------------------------------------------ ladders
 
@@ -558,6 +583,49 @@ export function mockApi(): Api {
         bets.push(bet);
       });
       return { basket: { id, name: name ?? null, size: checked.length, failed: null }, bets: checked };
+    },
+
+    async cashOutQuote(betId: string) {
+      seed();
+      await sleep(350);
+      const bet = bets.find((b) => b.id === betId);
+      if (!bet) throw new ApiError(404, { error: `No bet "${betId}".`, code: 'unknown_bet' }, 'unknown bet');
+      return mockCashOutQuote(bet);
+    },
+
+    async cashOut(betId: string, minProceeds?: number) {
+      seed();
+      const bet = bets.find((b) => b.id === betId);
+      if (!bet) throw new ApiError(404, { error: `No bet "${betId}".`, code: 'unknown_bet' }, 'unknown bet');
+      const quote = mockCashOutQuote(bet);
+      if (!quote.available || quote.proceeds === null) {
+        throw new ApiError(quote.code === 'not_open' ? 409 : 422, { error: quote.reason ?? 'This bet cannot be cashed out right now.', code: quote.code ?? 'not_open' }, 'refused');
+      }
+      if (minProceeds !== undefined && quote.proceeds < minProceeds - 0.005) {
+        throw new ApiError(422, { error: `Selling now would bring in ${quote.proceeds.toFixed(2)} dollars, below the ${minProceeds.toFixed(2)} you asked for. Nothing was sold.`, code: 'below_minimum' }, 'refused');
+      }
+      await sleep(1400);
+      const sentAt = new Date().toISOString();
+      quote.legs.forEach((l, i) => {
+        bet.legs.push({
+          clientOrderId: `gv-${bet.id}-c${i === 0 ? 'b' : 'a'}1`,
+          role: 'cashout',
+          symbol: l.symbol,
+          side: 'sell',
+          outcome: l.outcome,
+          limitPrice: l.price ?? 0,
+          quantityRequested: l.quantity,
+          quantityFilled: l.quantity,
+          avgPrice: l.price,
+          fee: 0,
+          status: 'filled',
+          orderId: `7${hex(5)}`,
+          sentAt,
+        });
+      });
+      bet.cashOut = { at: sentAt, stake: quote.stake, proceeds: quote.proceeds, pnl: cents(quote.proceeds - quote.stake), complete: true };
+      bet.status = 'cashed_out';
+      return { bet, cashOut: bet.cashOut };
     },
 
     async bets() {

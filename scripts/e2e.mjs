@@ -439,6 +439,38 @@ await check('Basket: three bets of three kinds are placed in one step, and My be
   need(/falling/i.test(tags[2] ?? '') && /range/i.test(tags[1] ?? '') && !/falling|range/i.test(tags[0] ?? ''), `the legs are tagged ${tags.join(' / ').replace(/\n/g, ' ')}`);
 });
 
+await check('Cash out: an open bet is priced, then sold back from My bets as two sell orders, and the cash still ties out', async () => {
+  // Starts from an empty ledger and places its own bet, so it does not lean on what the checks before it left behind.
+  await dev('/dev/reset');
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${base}/parlay`);
+  await placeable();
+  await button().click();
+  await page.waitForSelector('.receipt');
+  const id = (await api('/api/bets')).bets[0].id;
+  await page.goto(`${base}/bets`);
+  const first = page.locator(`[data-bet="${id}"]`);
+  await first.getByRole('button', { name: 'Cash out' }).click();
+  const sell = first.getByRole('button', { name: /^Sell for \$/ });
+  await sell.waitFor();
+  const offered = Number((await sell.innerText()).replace(/[^0-9.]/g, ''));
+  need(offered > 0, `the button offers ${offered}`);
+  need((await api('/api/bets')).bets.find((b) => b.id === id).status === 'open', 'reading the price must not sell anything');
+  await sell.click();
+  await until('the bet to read "Cashed out"', async () => /cashed out/i.test(await first.locator('.bl-chip').innerText()), 15_000);
+
+  const sold = (await api('/api/bets')).bets.find((b) => b.id === id);
+  const sells = sold.legs.filter((l) => l.role === 'cashout');
+  need(sold.status === 'cashed_out' && sold.cashOut?.complete === true, `the ledger has the bet as ${sold.status}`);
+  need(sells.length === 2 && sells.every((l) => l.side === 'sell' && l.status === 'filled'), `the sale was ${sells.map((l) => `${l.side} ${l.status}`).join(', ')}`);
+  // The page holds the sale to the price it showed, less two cents; it can never come in under that.
+  need(sold.cashOut.proceeds >= offered - 0.02 - 0.005, `sold for ${sold.cashOut.proceeds}, offered ${offered}`);
+  need((await first.getByRole('button', { name: 'Cash out' }).count()) === 0, 'a bet that was sold must not offer to be sold again');
+  const rec = await api('/api/reconcile');
+  need(rec.ok === true, `after the sale the cash is off by ${rec.cashDifference}`);
+  return `sold for $${sold.cashOut.proceeds.toFixed(2)}`;
+});
+
 // ---- 6d. the ladder read as a histogram, and a view set against it
 await check('the builders show the ladder as a histogram coloured by the bet, with the same chances as the quote', async () => {
   await dev('/dev/reset');
