@@ -20,7 +20,7 @@ the pitch. Items marked **FILL** need something that does not exist yet.*
 ## The five written answers (draft)
 
 **What did you build?**
-Given is a consumer app for defined-outcome bets on Gemini prediction markets: every result is on screen before you bet.
+Stakeback is a consumer app for defined-outcome bets on Gemini prediction markets: every result is on screen before you bet.
 A **Stake Back**: you pick a condition and a target on a live price ladder; if the target is reached you win, if the
 condition fails you get your stake back, if it holds but the target is missed you lose the stake (and it works going down
 as well as up). A **Range**: win if a price finishes between two levels. A **Breakout**, its opposite: win if it finishes
@@ -32,7 +32,7 @@ leaderboard ranks skill against the market's own odds.
 
 **What problem does it solve?**
 Prediction markets punish you for the half of a hunch you are unsure of. A parlay loses everything when its first leg
-fails. Sportsbooks sell "draw no bet" to fix that, but we found no one-tap version on a regulated exchange. Given builds it
+fails. Sportsbooks sell "draw no bet" to fix that, but we found no one-tap version on a regulated exchange. Stakeback builds it
 from contracts that already exist, shows exactly what it costs, and keeps all money and positions on Gemini.
 
 **How does it work?**
@@ -60,7 +60,7 @@ gas, no seed phrase.
 **What would you build next?**
 Maker-first pricing, which roughly halves the cost and adds resting liquidity to Gemini's book; Gemini OAuth sign-in once
 production review allows it; sports ladders; payoffs with more than two orders on one ladder (a bet that pays more the
-further the price goes); and conditional contracts listed by Gemini directly, for which Given is the demand evidence.
+further the price goes); and conditional contracts listed by Gemini directly, for which Stakeback is the demand evidence.
 
 ## 2–3 minute video (shot list)
 
@@ -127,9 +127,9 @@ recorded fallback.
   The Memo is the readable record; our program, in the same transaction, recomputes the hash and refuses a reveal that
   does not match its commit or repeats one, and keeps each handle's score. It does not prove the result: our key attests
   that, with Gemini's order IDs as evidence.
-- **How is this different from a parlay?** A parlay loses everything when its first leg fails. Given returns the stake.
+- **How is this different from a parlay?** A parlay loses everything when its first leg fails. Stakeback returns the stake.
 - **Are these structured products?** No, and do not call them that. A structured product is something an issuer packages
-  and stands behind. Given issues, pools and holds nothing: each bet is two plain orders in the user's own Gemini account.
+  and stands behind. Stakeback issues, pools and holds nothing: each bet is two plain orders in the user's own Gemini account.
   What it adds is the shape, shown in full before the orders are sent. The idea underneath is that a ladder has a contract
   at every level, like an options chain, so a payoff that changes only at those levels can be built exactly.
 - **Is it a way to bet on volatility?** In plain terms, yes: Range is a bet that a price stays put and Breakout is a bet
@@ -140,7 +140,7 @@ recorded fallback.
   against the market's, and the bets that pay for the difference.
 - **Could Gemini do this natively?** Its combo documentation describes a 2 to 6 leg AND contract, of which a range would be
   one (YES on the lower level AND NO on the higher) and a breakout its NO side. Combo creation was rejected in the sandbox
-  when we tried (decision 6), so Given builds them from two orders. That is the demand evidence, not a workaround.
+  when we tried (decision 6), so Stakeback builds them from two orders. That is the demand evidence, not a workaround.
 - **What happens in production?** Real fees, Gemini's OAuth review, and the value rule applies to real books (median spread
   about 4¢). None of that has been run.
 

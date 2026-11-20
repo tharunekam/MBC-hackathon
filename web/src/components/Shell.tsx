@@ -167,8 +167,8 @@ export function Nav({ venue }: { venue: VenueNote }) {
     // At the top of a page the bar has no edge; once the page moves under it, it gets its rule and its blur.
     <header className="nav" data-home={home ? '' : undefined} data-top={top && !menu ? '' : undefined}>
       <div className="nav-in">
-        <Link to={keepMode('/')} className="brand" aria-label="Given home">
-          Given
+        <Link to={keepMode('/')} className="brand" aria-label="Stakeback home">
+          Stakeback
         </Link>
         {home ? (
           // On the home page the bar is the page's own contents: the idea first, then the ways to bet.
@@ -241,7 +241,7 @@ export function Footer() {
       <div className="wrap">
         <div className="foot-top">
           <div className="foot-brand">
-            <div className="brand">Given</div>
+            <div className="brand">Stakeback</div>
             <p>Bet on where a price finishes. See every result before you bet.</p>
           </div>
           <nav className="foot-cols" aria-label="Footer">

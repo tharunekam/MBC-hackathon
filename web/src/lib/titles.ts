@@ -1,9 +1,9 @@
 /**
  * What the browser tab, the history list and a shared link say for each page. One title for every page made the back button's
- * list and a row of open tabs unreadable ("Given", "Given", "Given"), and a screen reader announces the title on arrival.
+ * list and a row of open tabs unreadable ("Stakeback", "Stakeback", "Stakeback"), and a screen reader announces the title on arrival.
  */
-const SITE = 'Given';
-const HOME = "Given – money back if it doesn't happen";
+const SITE = 'Stakeback';
+const HOME = "Stakeback – money back if it doesn't happen";
 
 /** Every page the router knows by an exact address (it matches without regard to case, and has nothing below these). */
 const PAGES: Record<string, string> = {

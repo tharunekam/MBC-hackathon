@@ -29,9 +29,9 @@ function wellFormed(svg: string): boolean {
 }
 
 describe('the picture of a call that is not on Solana', () => {
-  it('claims no seal and offers nothing to check: it says only that Given recorded it', () => {
+  it('claims no seal and offers nothing to check: it says only that Stakeback recorded it', () => {
     const svg = shareCardSvg(card({ onSolana: false }));
-    expect(svg).toContain('Recorded by Given, not on Solana:');
+    expect(svg).toContain('Recorded by Stakeback, not on Solana:');
     for (const claim of ['Sealed', 'Check it yourself', 'Recorded on Solana']) expect(svg).not.toContain(claim);
     expect(svg).toContain('given.example.com/verify/5P8xNpVvQmRt');
   });
@@ -61,7 +61,7 @@ describe('the picture of a call', () => {
     expect(svg).not.toMatch(/Georgia|serif'|monospace.*Result/);
     expect(svg).not.toMatch(/#f5f1e8|#fffdf7/i);
     expect(svg).toContain('letter-spacing="5.3"');
-    expect(svg).toContain('>GIVEN<');
+    expect(svg).toContain('>STAKEBACK<');
     expect(svg).not.toMatch(/devnet|Test chain|test/i);
   });
 
@@ -74,7 +74,7 @@ describe('the picture of a call', () => {
     expect(off).not.toContain('Recorded on Solana');
     expect(off).not.toContain('Committed');
     expect(off).not.toContain('Sealed');
-    expect(off).toContain('Recorded by Given, not on Solana');
+    expect(off).toContain('Recorded by Stakeback, not on Solana');
     expect(off).toContain('Nov 18, 2026');
     // The picture says what the proof page checks, and the proof page cannot check the result.
     expect(on).not.toMatch(/before the result/);

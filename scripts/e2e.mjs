@@ -128,7 +128,7 @@ let bet = null;
 // ---- 1. the golden path
 await check('the landing page opens and leads to the builder', async () => {
   await page.goto(base);
-  need((await page.title()).includes('Given'), 'wrong title');
+  need((await page.title()).includes('Stakeback'), 'wrong title');
   await page.getByRole('link', { name: 'Build a bet' }).first().click();
   await page.waitForURL('**/parlay');
   await placeable();

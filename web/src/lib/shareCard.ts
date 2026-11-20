@@ -100,14 +100,14 @@ export function shareCardSvg(c: ShareCard): string {
   const linkLines = splitLink(c.link);
   // Only what the proof page checks: the call was sealed before it was revealed. The result is the exchange's, not Solana's.
   // A call that is not on Solana has no record to check, so the picture claims no seal and does not tell anyone to check.
-  const checkLine = c.onSolana ? 'Sealed on Solana before it was revealed. Check it yourself:' : 'Recorded by Given, not on Solana:';
+  const checkLine = c.onSolana ? 'Sealed on Solana before it was revealed. Check it yourself:' : 'Recorded by Stakeback, not on Solana:';
 
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}">`,
     `<rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="${k.page}"/>`,
     `<rect x="40.5" y="40.5" width="1119" height="549" rx="12" fill="${k.card}" stroke="${k.line}"/>`,
     // The name, set as the header sets it: wide, spaced, capitals.
-    `<text x="88" y="106" font-family="${SANS}" font-size="22" font-weight="500" letter-spacing="5.3" fill="${k.ink}">GIVEN</text>`,
+    `<text x="88" y="106" font-family="${SANS}" font-size="22" font-weight="500" letter-spacing="5.3" fill="${k.ink}">STAKEBACK</text>`,
     `<text x="1112" y="106" text-anchor="end" font-family="${SANS}" font-size="20" fill="${k.muted}">${c.onSolana ? 'Recorded on Solana · ' : ''}${esc(c.when)}</text>`,
     // who and what happened
     `<text x="88" y="170" font-family="${SANS}" font-size="20" font-weight="500" letter-spacing="1.6" fill="${k.muted}">${esc(c.handle.toUpperCase())}</text>`,

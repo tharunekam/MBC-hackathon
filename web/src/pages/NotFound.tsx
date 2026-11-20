@@ -23,7 +23,7 @@ export default function NotFound() {
         <div>
           <h1 className="h-page">We can’t find that page</h1>
           <p className="lede">
-            Given has nothing at <code>{shown}</code>. The link may be old or mistyped. Try one of these.
+            Stakeback has nothing at <code>{shown}</code>. The link may be old or mistyped. Try one of these.
           </p>
         </div>
       </header>
@@ -41,7 +41,7 @@ export default function NotFound() {
       </nav>
       <div className="row-actions">
         <Link to={keepMode('/')} className="btn btn-primary">
-          Back to Given
+          Back to Stakeback
         </Link>
         <Link to={keepMode(MY_BETS.to)} className="btn btn-ghost">
           {MY_BETS.name}

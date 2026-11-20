@@ -278,7 +278,7 @@ export default function Proof() {
           )}
           {rec && rec.untrackedOrders > 0 && (
             <p className="fine">
-              {rec.untrackedOrders === 1 ? 'One order on this account was' : `${rec.untrackedOrders} orders on this account were`} not sent by Given. The {cash(Math.abs(rec.untrackedCashFlow))}{' '}
+              {rec.untrackedOrders === 1 ? 'One order on this account was' : `${rec.untrackedOrders} orders on this account were`} not sent by Stakeback. The {cash(Math.abs(rec.untrackedCashFlow))}{' '}
               {rec.untrackedCashFlow < 0 ? 'spent on' : 'brought in by'} {rec.untrackedOrders === 1 ? 'it' : 'them'} is counted above.
             </p>
           )}

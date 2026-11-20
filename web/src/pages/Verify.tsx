@@ -135,7 +135,7 @@ export default function Verify() {
         <div>
           <h1 className="h-page">Proof of a call</h1>
           {/* A seal is claimed only where there is a record to check it against. */}
-          <p className="lede">{real ? 'Sealed before it was revealed, and checkable on Solana by anyone' : 'Recorded by Given, not on Solana'}</p>
+          <p className="lede">{real ? 'Sealed before it was revealed, and checkable on Solana by anyone' : 'Recorded by Stakeback, not on Solana'}</p>
         </div>
       </header>
 
@@ -251,7 +251,7 @@ export default function Verify() {
           <p className="fine">The fingerprint and the two times show that the call was sealed before it was revealed and not changed. They do not show the result: we report that, with the exchange’s order IDs as evidence.</p>
         </section>
       ) : (
-        <p className="fine pf-only">There is no Solana record to check. Given reports this result, with the exchange’s order IDs as evidence.</p>
+        <p className="fine pf-only">There is no Solana record to check. Stakeback reports this result, with the exchange’s order IDs as evidence.</p>
       )}
     </div>
   );

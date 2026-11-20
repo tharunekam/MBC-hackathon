@@ -1,4 +1,4 @@
-# Given — concept, decisions and open questions
+# Stakeback (formerly Given) — concept, decisions and open questions
 
 *Last updated 2026-11-17. This is the current best version and the evidence
 behind it. It is meant to be changed: see "How to change this document" at the
@@ -123,7 +123,7 @@ our current pick, cheap to change. **Open** = not settled.
 | 11 | Sign-in is OAuth; our own sandbox keys for the demo | Open | OAuth is Gemini's sanctioned route. 11-17: Gemini's docs say a bearer token can authenticate the WebSocket and `orders:create` covers prediction-market orders, but no page says outright that it can `order.place`; sandbox apps register immediately, production needs review | The OAuth test on Wednesday morning |
 | 12 | Refusal threshold is 8¢ / 20% | Provisional | See "The cost problem" | Data from more snapshots; maker-first pricing changing the economics |
 | 13 | Maker-first pricing is the first stretch goal | Provisional | Improves both the price and the value-to-Gemini case | Fill and legging risk proving worse than expected in the sandbox |
-| 14 | Name: "Given" | Provisional | Short, says the mechanic | A better name |
+| 14 | Name: **Stakeback** (was "Given" until 2026-11-20) | Decided | Names the feature people remember: the stake comes back. The repository, the `GIVEN_*` settings, the `given_receipts` program and the package names keep "Given", because renaming live identifiers a day before submission risked more than it bought | A clash found with an existing product |
 | 15 | Solana record is **commit at bet time (hash), reveal after settlement (opt-in)**; the app is fee payer and authority, users never hold a wallet | Provisional | Keeps trades off a public chain by default (guardrail), gives the program real state to check, and keeps crypto invisible for the Consumer track | A rule that requires user-held keys; the program not working by the Wednesday gate (fall back to Memo records) |
 | 16 | The demo is **hosted** (web + executor on an always-on host), sandbox-only, with a stake cap and per-visitor sessions | Decided | Devpost requires a working demo or deployed app; the QuickNode webhook needs an always-on host anyway | Gemini says no public sandbox demo |
 | 17 | Both teammates attend the Nov 21 finals in person | Decided (needs D4 confirmation) | Rules: presence in person is required to qualify for any prize, bounties included | The organizers confirm a remote option in writing |

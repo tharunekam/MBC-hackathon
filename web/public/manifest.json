@@ -1,6 +1,6 @@
 {
-  "name": "Given",
-  "short_name": "Given",
+  "name": "Stakeback",
+  "short_name": "Stakeback",
   "description": "Defined-outcome bets on Gemini prediction markets: every result is shown before you bet. Not affiliated with Gemini.",
   "start_url": "/",
   "scope": "/",

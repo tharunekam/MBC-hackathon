@@ -1,14 +1,16 @@
-# Given
+# Stakeback
 
 **Bet on the second half of your hunch. If the first half doesn't happen, you get your money back.**
 
-Given builds bets on [Gemini](https://www.gemini.com) prediction markets from ordinary orders in the user's own Gemini
+> **Naming.** The product is called Stakeback (renamed from Given on 2026-11-20). The repository, the `GIVEN_*` settings, the deployed `given_receipts` Solana program, the `given-*` package names and the sealed-call format still say Given; they are internal and unchanged.
+
+Stakeback builds bets on [Gemini](https://www.gemini.com) prediction markets from ordinary orders in the user's own Gemini
 account, then records each call on Solana so it can be proven later without trusting us. Every outcome is known before
 you bet. The products: a **Stake Back** (a bet on a second price level that pays your stake back if the first level fails, going up or going
 down; called Return Parlay until 2026-11-19, and still `parlay` in the code and the API), a **Range** (win if a price finishes between two levels), its opposite the **Breakout** (win if it finishes outside
 them, whichever way) and a **Basket** (several of these bets, on different assets, placed together).
 
-> Given uses Gemini's prediction market API and is **not affiliated with Gemini**. Everything runs on Gemini's sandbox
+> Stakeback uses Gemini's prediction market API and is **not affiliated with Gemini**. Everything runs on Gemini's sandbox
 > with practice money. Prediction markets involve risk and can lose the amount you stake.
 
 *Built for the UBC 2026 hackathon. Tracks: Consumer Apps. Awards: Best use of Solana. Bounties: Gemini Prediction Markets,
@@ -121,7 +123,7 @@ program, and nobody can relabel a call after seeing how it went.
 - Gemini's published taker fee is `0.07 × contracts × price × (1 − price)`, rounded up to the cent. The sandbox charges
   none, so every quote is also shown **at production fee rates**. We have not run anything on production.
 - We never say "risk-free" or "guaranteed". The cost over fair price is shown on every quote.
-- Money and positions stay in the user's Gemini account. Nothing is held by Given, nothing is tokenised, and users are
+- Money and positions stay in the user's Gemini account. Nothing is held by Stakeback, nothing is tokenised, and users are
   never matched against each other.
 
 ## Architecture
@@ -197,7 +199,7 @@ server's board showed after the 2026-11-18 run.
 ## QuickNode Streams
 
 - **Network:** Solana devnet. **Dataset:** Programs + Logs.
-- **Filter:** `chain/quicknode/filter.js` keeps only successful transactions that logged a Given memo and delivers
+- **Filter:** `chain/quicknode/filter.js` keeps only successful transactions that logged a Stakeback memo and delivers
   `{ sig, slot }`.
 - **Destination:** webhook to `POST /hooks/quicknode` on the chain service, authenticated by a shared-token header (or
   QuickNode's HMAC headers).
