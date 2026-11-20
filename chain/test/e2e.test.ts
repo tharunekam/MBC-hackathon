@@ -33,7 +33,8 @@ const listen = async (handler: Parameters<typeof createServer>[1]) => {
 };
 
 async function stack() {
-  const exchange = new FakeExchange('ETHTEST', LADDER);
+  // The market closes in the future: a call can only be sealed while its market is still open.
+  const exchange = new FakeExchange('ETHTEST', LADDER, { expiryDate: new Date(Date.now() + 36e5).toISOString() });
   const ledger = new Ledger(join(mkdtempSync(join(tmpdir(), 'given-e2e-')), 'ledger.json'));
   let n = 0;
   const executor = await listen(

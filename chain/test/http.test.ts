@@ -60,6 +60,30 @@ test('the whole call lifecycle over HTTP, in the shapes the web app reads', asyn
   }
 });
 
+test('sealing a bet that has settled, or whose market has closed, is a 409 "too_late" in a plain sentence, and writes nothing', async () => {
+  const s = await start();
+  try {
+    s.bets.add();
+    s.bets.settle('b1', 'yes', 'yes');
+    const settled = await s.call('POST', '/calls', { betId: 'b1' });
+    assert.equal(settled.status, 409);
+    assert.equal(settled.json.code, 'too_late');
+    assert.match(settled.json.error, /settled/);
+
+    s.bets.add({ id: 'b2', expiry: '2026-11-18T01:00:00.000Z' }); // the clock reads 01:30
+    const closed = await s.call('POST', '/calls', { betId: 'b2' });
+    assert.equal(closed.status, 409);
+    assert.equal(closed.json.code, 'too_late');
+    assert.match(closed.json.error, /closed/);
+
+    s.bets.add({ id: 'b3', expiry: '2026-11-18T02:00:00.000Z' });
+    assert.equal((await s.call('POST', '/calls', { betId: 'b3' })).status, 201, 'a bet just placed, in an open market, is sealed as before');
+    assert.equal(s.chain.txs.length, 1);
+  } finally {
+    await s.close();
+  }
+});
+
 test('errors are plain sentences with a code', async () => {
   const s = await start();
   try {
@@ -137,7 +161,7 @@ test('webhook: a delivery without the secret is refused, with it the signatures 
 });
 
 test('webhook: a gzipped delivery is inflated first, and QuickNode\'s signature is checked over the inflated JSON', async () => {
-  const s = await start({ hook: { qnSecurityToken: 'qn-secret-of-at-least-32-characters' } }, { selfIngest: false });
+  const s = await start({ hook: { qnSecurityToken: 'qn-secret-of-at-least-32-characters' } }, { selfIngest: false }); // gitleaks:allow (a test placeholder, not a credential)
   try {
     s.bets.add();
     const made = await s.call('POST', '/calls', { betId: 'b1' });

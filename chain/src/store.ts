@@ -38,6 +38,15 @@ export interface SeenCommit {
   hash: string;
   handle: string;
   at: number;
+  /** The slot the commit landed in. Absent on commits stored before the slot was kept. */
+  slot?: number;
+  /** The key that signed it. Absent on commits stored before the signer was kept. */
+  signer?: string;
+  /**
+   * Set when this key had already sealed the same hash: the same call written twice (a retry after a lost reply that could
+   * not be matched to the first). The earlier record is the call; this one is kept so it is not read again, and is not counted.
+   */
+  duplicateOf?: string;
 }
 
 /** A reveal seen on chain, with the result of checking it against its commit. */
@@ -55,6 +64,8 @@ export interface SeenReveal {
   edge: number;
   /** Unix seconds of the reveal transaction, else when we first saw it. */
   revealedAt: number;
+  /** The slot the reveal landed in. Absent on reveals stored before the slot was kept. */
+  slot?: number;
   via: 'stream' | 'rpc' | 'local';
   /** The key that signed the reveal transaction. Needed because more than one authority can be trusted. */
   signer?: string;

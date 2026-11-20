@@ -138,7 +138,7 @@ describe('SolanaChain over the wire', () => {
 });
 
 describe('the chain service on the wire', () => {
-  const bet = (bets: FakeBets) => bets.add({ id: 'wire1', offer: { fairPrice: 0.5 } });
+  const bet = (bets: FakeBets) => bets.add({ id: 'wire1', offer: { fairPrice: 0.5 }, expiry: new Date(Date.now() + 36e5).toISOString() }); // real clock here
 
   it('commit → settle → reveal → verify, and a stranger’s memo changes nothing', async () => {
     const { kp, chain } = funded();

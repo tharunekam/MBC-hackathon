@@ -18,7 +18,15 @@ import { loadKeypair } from './keypair.ts';
 import { ChainService } from './service.ts';
 import { Store } from './store.ts';
 
-const config = loadConfig();
+// A setting that is not a usable number stops the service here, with a plain message, instead of switching a safeguard off.
+const config = (() => {
+  try {
+    return loadConfig();
+  } catch (err) {
+    console.error(`Refusing to start. ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
+})();
 // An index-only process accepts deliveries but never writes calls or persists its handle secret.
 const indexOnly = process.env.GIVEN_CHAIN_INDEX_ONLY === '1';
 
