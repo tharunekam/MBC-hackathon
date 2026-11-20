@@ -4,7 +4,7 @@ import ProbBar from '../components/ProbBar';
 import ProductShowcase from '../components/ProductShowcase';
 import Reveal from '../components/Reveal';
 import { MY_BETS, PRODUCTS } from '../lib/nav';
-import { keepMode } from '../lib/venue';
+import { keepMode, useVenue } from '../lib/venue';
 import '../styles/landing.css';
 
 /** The product the page explains in detail; all four shapes are introduced once the idea has been. */
@@ -297,6 +297,8 @@ function Hero() {
 }
 
 export default function Landing() {
+  // Only for the one sentence that names Gemini: on the local test exchange it would not be true.
+  const venue = useVenue();
   return (
     <div className="landing">
       <Hero />
@@ -312,7 +314,7 @@ export default function Landing() {
             <ul className="ticks">
               <li>You only lose when the first level holds and the target is missed</li>
               <li>You can bet on a rise or on a fall</li>
-              <li>Both are ordinary orders placed through Gemini’s API, in your own account</li>
+              <li>{venue.standIn ? 'Both are ordinary orders, placed here on a local test exchange that stands in for Gemini' : 'Both are ordinary orders placed through Gemini’s API, in your own account'}</li>
               <li>If the second order can’t be placed, the first is sold back right away</li>
             </ul>
           </Reveal>

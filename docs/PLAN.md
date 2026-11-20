@@ -302,8 +302,11 @@ proof page. The nav now carries a label only where it changes what a person shou
 **Quotes only**, **Seeded prices** and **Real money** (which only a production run can show). Gemini's sandbox and the local
 test exchange carry none, so a bet reads the same on either, and pages that said where orders ran say "the exchange". Where
 a Solana link is missing the page says so in one plain sentence. The footer keeps one line: not affiliated with Gemini, and
-that prediction markets carry risk. **So `GIVEN_MODE=fake` shows nothing on screen that says it is a test: present it as the
-local test exchange out loud** (`docs/PITCH_DAY.md`). The picture a person can save of a call still says "Test chain" when
+that prediction markets carry risk. **So `GIVEN_MODE=fake` showed nothing on screen that said it was a test.** (Changed back for that one case the same
+morning, about 10:00 CST: the fallback is deployed at a public address anyone can open with no presenter beside them, and
+its landing page said orders go through Gemini's API. The local test exchange now shows a "Test exchange" label whose
+hint says no order reaches Gemini, and that landing sentence says it is a stand-in. The sandbox still carries no label.
+Still present it as the local test exchange out loud, `docs/PITCH_DAY.md`.) The picture a person can save of a call still says "Test chain" when
 the call is not on Solana, because it leaves the app. This reverses the earlier entry that the nav always says what the app
 is talking to (decision 31 in `docs/GIVEN.md`).
 

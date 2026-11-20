@@ -2,8 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { describeVenue, modeFlag, withFlag } from './venue';
 
 describe('the app labels only what changes what a person should expect', () => {
-  it('Gemini’s sandbox and a local exchange are the ordinary cases and carry no label', () => {
-    for (const venue of ['Gemini sandbox', 'Local test exchange', 'Staging exchange']) {
+  it('the local test exchange says it is one, and that no order reaches Gemini', () => {
+    const note = describeVenue('live', { venue: 'Local test exchange' });
+    expect(note.chip).toBe('Test exchange');
+    expect(note.hint).toMatch(/No order reaches Gemini/);
+    expect(note.standIn).toBe(true);
+    expect(note.readOnly).toBe(false);
+  });
+
+  it('Gemini’s sandbox is the ordinary case and carries no label', () => {
+    for (const venue of ['Gemini sandbox', 'Staging exchange']) {
       expect(describeVenue('live', { venue })).toEqual({ chip: null, hint: '', readOnly: false, kind: 'exchange' });
     }
   });
@@ -21,7 +29,7 @@ describe('the app labels only what changes what a person should expect', () => {
 
   it('seeding is never claimed anywhere but the sandbox', () => {
     expect(describeVenue('live', { venue: 'Gemini', seeded: true }).chip).toBe('Real money');
-    expect(describeVenue('live', { venue: 'Local test exchange', seeded: true }).chip).toBe(null);
+    expect(describeVenue('live', { venue: 'Local test exchange', seeded: true }).chip).toBe('Test exchange');
   });
 
   it('a replay says it is one, whatever else the recorded health says', () => {
@@ -55,7 +63,7 @@ describe('the app labels only what changes what a person should expect', () => {
     }
   });
 
-  it('no label names a test or a stand-in, and none promises anything', () => {
+  it('no other label names a test or a stand-in, and none promises anything', () => {
     const cases = [describeVenue('mock', null), describeVenue('live', { venue: 'Gemini sandbox', seeded: true }), describeVenue('live', { venue: 'Gemini sandbox', readOnly: true }), describeVenue('live', { venue: 'Gemini sandbox', replay: { recordedAt: '2026-11-19T01:00:00.000Z' } })];
     for (const note of cases) {
       expect(`${note.chip} ${note.hint}`).not.toMatch(/real|test|stand|practice|sandbox|resting|live|guarantee|risk-free/i);

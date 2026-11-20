@@ -98,8 +98,9 @@ post-only first) and often fills only a few dollars. Two things keep a presentat
 - With `GIVEN_MODE=fake`, set `FAKE_ROUND_MINUTES=5` as well and the test exchange's ladder closes, settles and reopens by
   itself every five minutes, so a visitor's bet reaches a result, a reveal and the leaderboard with nobody stepping in.
 - If the sandbox is unusable, a second deployment with `GIVEN_MODE=fake` and `GIVEN_I_KNOW_THIS_IS_A_TEST=1` runs the
-  whole flow on the local test exchange with an in-memory chain. Nothing on screen says so, so it **must be presented as
-  exactly that**: it shows the product working, not Gemini. Say so on stage.
+  whole flow on the local test exchange with an in-memory chain. Its nav says "Test exchange" (the one environment label that
+  came back, decision 31), and it **must still be presented as exactly that**: it shows the product working, not Gemini.
+  Say so on stage.
 
 ### Replay: a real session, played back with nothing behind it
 
