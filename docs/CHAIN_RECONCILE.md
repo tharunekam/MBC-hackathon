@@ -37,7 +37,7 @@ expired blockhash. `SolanaChain(rpcUrl, keypair, programId?, options?)`; his cal
    `557869d4` were committed on devnet through the program by the chain service (authority `9GVn…hM4X`), commit
    signatures `5P8xNpVv…` and `4FkLnjHR…`. See the build status in `docs/PLAN.md`.
 2. **The QuickNode Stream** delivering real logs. The webhook route, authentication and ingestion are tested, including
-   with real devnet signatures; the Stream itself does not exist yet.
+   with real devnet signatures; the Stream exists but is kept paused and has not delivered a real record yet.
 3. ~~That the deployed program equals the source tree.~~ **Checked 2026-11-18** on the machine that deployed it: the
    program downloaded from devnet is byte for byte the file the committed source builds there (SHA-256 `5462d1fc…4ac7`;
    `receipts-program/scripts/verify-deployed.sh` repeats the check), and a clean checkout built there gives the same

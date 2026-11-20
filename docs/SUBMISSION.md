@@ -27,7 +27,7 @@ as well as up). A **Range**: win if a price finishes between two levels. A **Bre
 outside them, whichever way. A **Basket**: several of these bets on different assets, placed together. Each bet is two
 real orders in the user's own Gemini account, and an open bet can be sold back before the market settles. **Hunch** turns it round: say where you think a price finishes and how
 sure you are, and the app lists the bets on offer that pay best if you are right, each one a tap from its builder. Every
-call is recorded on Solana, committed before the result and revealed after, so a player can prove they made it first. A
+call is recorded on Solana, committed before the result and revealed after, so a player can prove they made it before the result was known. A
 leaderboard ranks skill against the market's own odds.
 
 **What problem does it solve?**
@@ -78,8 +78,8 @@ further the price goes); and conditional contracts listed by Gemini directly, fo
 | 2:20 | Proof page: reconcile to the cent; "Orders sent" | "Our books match the exchange's to the cent, and this is what this account's bets have sent to the order book." |
 | 2:40 | Leaderboard, then "Read from Solana" under it | "Ranked by edge over the market, fed by a QuickNode Stream. And this copy my browser just read from the program's own accounts: same players, same scores, our server not asked." |
 
-Record on real devnet and the Gemini sandbox, not the local test exchange. **FILL** (blocked on Gemini keys; the wallet is funded and the
-devnet path has run for real).
+Record on real devnet and the Gemini sandbox, not the local test exchange. **FILL** (not recorded yet. The keys, the funded wallet and the
+devnet path are in place; it needs the hosted demo up and a ladder that has been open at least a quarter of an hour).
 
 ## Five-minute pitch
 
@@ -140,7 +140,8 @@ recorded fallback.
 - [ ] Repo public; secret scan over **history** (`.env`, `executor/data/`, `chain/data/` are ignored; run a scanner anyway).
 - [ ] Video recorded on real devnet + Gemini sandbox; checked logged out.
 - [ ] A real devnet commit and reveal exist, and `/verify/…` passes in the browser against them.
-- [ ] The Stream exists (it does: `given-calls`, kept paused) and, while it is running, a screenshot of its dashboard
+- [ ] The Stream exists (it does: `given-calls`, kept paused; reported by the teammate whose QuickNode account holds it,
+      `npm run quicknode -- status` confirms it on a machine with the key) and, while it is running, a screenshot of its dashboard
       (network, dataset, filter, webhook, delivery count) is in the README. Not yet taken: it needs a real delivery.
 - [ ] The Stream is **running only when needed**: `npm run quicknode -- pitch-on` before recording and before
       judging, `pitch-off` after (`docs/PITCH_DAY.md`). Running, it uses about 270k credits an hour (10.8M a day); the free
