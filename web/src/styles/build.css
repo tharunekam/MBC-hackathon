@@ -1,0 +1,354 @@
+/* The builder: flat panels, hairlines, one accent. Everything here is scoped under .build so it only touches this screen. */
+
+.build .page-head {
+  align-items: flex-end;
+  margin-bottom: 28px;
+}
+.head-link {
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--line-strong);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--soft);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 160ms var(--ease), border-color 160ms var(--ease);
+}
+.head-link:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.build .build-grid {
+  grid-template-columns: minmax(0, 1.55fr) minmax(340px, 0.85fr);
+  gap: 20px;
+}
+.build .left-col {
+  gap: 20px;
+}
+.build .card {
+  padding: 24px;
+  box-shadow: none;
+}
+.card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+.card-head .h-card {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* ------------------------------------------------------------ market bar */
+.build .chart-card {
+  padding: 0 0 20px;
+}
+.build .chart-card > :not(.market-bar):not(.more-markets) {
+  margin-left: 24px;
+  margin-right: 24px;
+}
+.market-bar {
+  border-bottom: 1px solid var(--line);
+}
+.market-bar .seg {
+  display: flex;
+  gap: 2px;
+  max-width: none;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  overflow-x: auto;
+}
+.market-bar .seg button {
+  position: relative;
+  height: 48px;
+  padding: 0 12px;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.market-bar .seg button:hover {
+  color: var(--ink);
+}
+.market-bar .seg button.is-on {
+  background: none;
+  color: var(--ink);
+}
+.market-bar .seg button.is-on::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 0;
+  height: 2px;
+  background: var(--accent);
+}
+.expiry-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 24px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-2);
+}
+.expiry {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+}
+.expiry button {
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  font: inherit;
+  font-size: 13px;
+  color: var(--soft);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 160ms var(--ease), background 160ms var(--ease);
+}
+.expiry button:hover {
+  border-color: var(--line-strong);
+}
+.expiry button.is-on {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--bg);
+}
+.expiry-note {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 16px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.expiry-note a {
+  color: var(--soft);
+  text-underline-offset: 3px;
+  text-decoration-color: var(--line-strong);
+}
+.expiry-note a:hover {
+  color: var(--ink);
+}
+.build .more-markets {
+  margin: 0;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.build .chart-hint {
+  margin-top: 20px;
+  margin-bottom: 4px;
+}
+
+/* ------------------------------------------------------------ tables */
+.scen {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14.5px;
+}
+.scen th {
+  padding: 10px 0 8px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-align: left;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.scen td {
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line);
+}
+.scen tbody tr:last-child td {
+  border-bottom: 0;
+  padding-bottom: 4px;
+}
+.scen .n {
+  padding-left: 12px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.scen th.n {
+  text-align: right;
+}
+.scen td:first-child i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 12px;
+  border-radius: 2px;
+  background: var(--faint);
+}
+.scen [data-kind='win'] i {
+  background: var(--good);
+}
+.scen [data-kind='back'] i {
+  background: var(--accent);
+}
+.scen [data-kind='lose'] i {
+  background: var(--bad);
+}
+.scen [data-kind] td:last-child {
+  font-weight: 600;
+}
+.scen [data-kind='win'] td:last-child {
+  color: var(--good);
+}
+.scen [data-kind='back'] td:last-child {
+  color: var(--accent-text);
+}
+.scen [data-kind='lose'] td:last-child {
+  color: var(--bad);
+}
+.rungs .scen td,
+.rungs .scen th {
+  padding-left: 0;
+}
+.rungs .is-picked td {
+  background: var(--bg-2);
+}
+.rungs .is-picked td:first-child {
+  padding-left: 10px;
+  font-weight: 600;
+}
+.rungs .is-picked td:last-child {
+  padding-right: 10px;
+}
+.rungs .tag {
+  margin-left: 10px;
+  vertical-align: 1px;
+}
+
+/* ------------------------------------------------------------ ticket */
+.build .quote-card {
+  top: 84px;
+  gap: 20px;
+  padding: 24px;
+}
+.build .q-title {
+  gap: 8px;
+}
+.build .q-sentence {
+  font-size: 21px;
+  line-height: 1.2;
+}
+.build .nums {
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.build .nums > div {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+}
+.build .nums > div:nth-child(odd) {
+  border-right: 1px solid var(--line);
+}
+.build .nums > div:nth-child(-n + 2) {
+  border-bottom: 1px solid var(--line);
+}
+.build .nums dd {
+  font-size: 22px;
+  line-height: 1;
+}
+.build .stake-row {
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+.build .field {
+  border-radius: var(--r-md);
+}
+.build .presets {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+}
+.build .presets .chip {
+  justify-content: center;
+  height: 38px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  font-weight: 500;
+}
+.build .presets .chip:last-child {
+  border-right: 0;
+}
+.build .btn-wide {
+  height: 48px;
+  font-size: 15px;
+}
+
+@media (max-width: 960px) {
+  .build .build-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 720px) {
+  .build .page-head {
+    align-items: flex-start;
+  }
+  .expiry-row {
+    gap: 12px;
+    padding: 10px 16px;
+  }
+  .expiry-note > span {
+    display: none;
+  }
+  /* The quote has to sit within a screen of the chart on a phone, so the ticket is set tighter here. */
+  .build .quote-card {
+    gap: 14px;
+    padding: 16px;
+  }
+  .build .q-title .eyebrow {
+    display: none;
+  }
+  .build .q-sentence {
+    font-size: 19px;
+  }
+  .build .nums > div {
+    gap: 4px;
+    padding: 10px 12px;
+  }
+  .build .nums dd {
+    font-size: 20px;
+  }
+  .build .presets .chip {
+    height: 34px;
+  }
+  .build .btn-wide {
+    height: 46px;
+  }
+  .build .chart-card > :not(.market-bar):not(.more-markets) {
+    margin-left: 16px;
+    margin-right: 16px;
+  }
+  .build .more-markets {
+    padding: 10px 16px;
+  }
+}

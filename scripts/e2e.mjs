@@ -359,7 +359,8 @@ await check('with dozens of ladders listed and most unpriced: the builder opens 
     need(await inView(), 'the chosen tab is not visible inside its strip, or the strip leaves the card');
     const chosen = await page.locator('.seg [aria-selected="true"]').innerText();
     await more.click();
-    await until('all the ladders to be listed', async () => (await tabs()).length === shown.length + 30, 5000);
+    // The thirty dead ladders all share one asset, so listing them adds one asset tab (and thirty close times under it).
+    await until('all the ladders to be listed', async () => (await tabs()).length === shown.length + 1, 5000);
     need((await sideways()) <= 1, `with every ladder listed, /app scrolls sideways by ${await sideways()}px`);
     need((await page.locator('.seg [aria-selected="true"]').innerText()) === chosen, 'listing the unpriced ladders changed the chosen one');
     need(await inView(), 'with every ladder listed, the chosen tab is not visible inside its strip');

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import ProbBar from '../components/ProbBar';
 import Reveal from '../components/Reveal';
+import { PRODUCTS, STATUS_LABEL } from '../lib/products';
 
 /** A fixed, labelled example: it explains the product without needing a live market. */
 function Example() {
@@ -257,7 +258,34 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className="band closing">
+      <section className="band" id="products">
+        <div className="wrap">
+          <Reveal className="suite-head">
+            <span className="eyebrow">Products</span>
+            <h2 className="h-section">One idea, more shapes of bet</h2>
+            <p className="lede">Given is live today. The others use the same two-order mechanic on a different shape of bet, and each says how far along it is.</p>
+          </Reveal>
+          <Reveal delay={100}>
+            <ul className="suite">
+              {PRODUCTS.map((p) => (
+                <li key={p.id}>
+                  <Link to={p.to ?? `/products#pr-${p.id}`}>
+                    <span className="suite-top">
+                      <b>{p.name}</b>
+                      <span className="tag" data-status={p.status}>
+                        {STATUS_LABEL[p.status]}
+                      </span>
+                    </span>
+                    <span className="suite-line">{p.tagline}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </Reveal>
+        </div>
+      </section>
+
+      <section className="band band-dark closing">
         <Reveal className="wrap closing-in">
           <h2 className="closing-title">Bet on the half you believe in</h2>
           <p className="lede">Pick two prices, see exactly what it costs, and place it. If the first half fails, your stake comes back.</p>

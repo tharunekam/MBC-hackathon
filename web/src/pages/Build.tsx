@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { ApiError } from '../api/client';
 import type { Bet, CallRecord, MarketEvent, QuoteResponse, Rung } from '../api/types';
@@ -12,6 +12,9 @@ import { execLive } from '../lib/liveClients';
 import { MIN_BET, buttonState } from '../lib/betState';
 import { defaultPair } from '../lib/defaultPair';
 import { listLadders, shortTitle } from '../lib/ladders';
+import { assetKey, closesLabel, groupByAsset } from '../lib/markets';
+import { PRODUCT } from '../lib/products';
+import '../styles/build.css';
 import { estimate, outcomesFor } from '../lib/pricing';
 import { useVenue } from '../lib/venue';
 
@@ -53,7 +56,13 @@ export default function Build() {
   const ladders = useMemo(() => listLadders(markets.data?.events ?? [], showUnpriced), [markets.data, showUnpriced]);
   const events = ladders.shown;
 
-  const [ticker, setTicker] = useState<string | null>(null);
+  // The Markets page links here with ?market=TICKER; a ladder with no prices is listed when that is the one asked for.
+  const [params] = useSearchParams();
+  const wanted = params.get('market');
+  const [ticker, setTicker] = useState<string | null>(wanted);
+  useEffect(() => {
+    if (wanted && !showUnpriced && ladders.unpriced.some((e) => e.ticker === wanted)) setShowUnpriced(true);
+  }, [wanted, showUnpriced, ladders.unpriced]);
   const [sel, setSel] = useState<{ c: string; t: string } | null>(null);
   const [stake, setStake] = useState(10);
   const [stakeText, setStakeText] = useState('10');
@@ -180,7 +189,7 @@ export default function Build() {
 
   // Keep the chosen tab in view inside the strip. Only the strip moves, never the page.
   const tabsRef = useRef<HTMLDivElement>(null);
-  const shownTicker = event?.ticker;
+  const shownTicker = event ? assetKey(event) : undefined;
   useEffect(() => {
     const strip = tabsRef.current;
     const tab = strip?.querySelector<HTMLElement>('[aria-selected="true"]');
@@ -190,16 +199,26 @@ export default function Build() {
     if (left < strip.scrollLeft) strip.scrollLeft = left - 4;
     else if (right > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = right - strip.clientWidth + 4;
   }, [shownTicker, events.length]);
+  const groups = useMemo(() => groupByAsset(events), [events]);
+  const group = event ? groups.find((g) => g.key === assetKey(event)) : undefined;
+  const pick = (e: MarketEvent) => {
+    setTicker(e.ticker);
+    setSel(defaultPair(e));
+    again();
+  };
   const loadingFirst = markets.loading && !markets.data;
 
   return (
     <div className="page build">
       <header className="page-head">
         <div>
-          <span className="eyebrow">Bet builder</span>
-          <h1 className="h-page">Build your bet</h1>
-          <p className="lede">Choose what has to happen first, then what you are betting on. If the first part fails, you get your money back.</p>
+          <span className="eyebrow">Given</span>
+          <h1 className="h-page">Build a bet</h1>
+          <p className="lede">{PRODUCT.given!.summary}</p>
         </div>
+        <Link to="/products#pr-given" className="head-link">
+          How this bet is built
+        </Link>
       </header>
 
       {markets.error && !markets.data && (
@@ -215,25 +234,27 @@ export default function Build() {
       <div className="build-grid">
         <div className="left-col">
         <section className="card chart-card" aria-busy={loadingFirst}>
-          <div className="chart-head">
-            <div className="seg" role="tablist" aria-label="Market" data-solo={events.length === 1 ? 'true' : undefined} ref={tabsRef}>
-              {events.map((e) => (
-                <button
-                  key={e.ticker}
-                  role="tab"
-                  aria-selected={e.ticker === event?.ticker}
-                  className={e.ticker === event?.ticker ? 'is-on' : ''}
-                  onClick={() => {
-                    setTicker(e.ticker);
-                    setSel(defaultPair(e));
-                    again();
-                  }}
-                >
-                  {shortTitle(e.title)}
+          <div className="market-bar">
+            <div className="seg" role="tablist" aria-label="Market" ref={tabsRef}>
+              {groups.map((g) => (
+                <button key={g.key} role="tab" aria-selected={g.key === group?.key} className={g.key === group?.key ? 'is-on' : ''} onClick={() => g.events[0] && pick(g.events.find((e) => e.ticker === event?.ticker) ?? g.events[0])}>
+                  {g.label}
                 </button>
               ))}
             </div>
-            {closing && <span className="chip chip-quiet">{closing}</span>}
+            <div className="expiry-row">
+              <div className="expiry" role="tablist" aria-label="Closes">
+                {(group?.events ?? []).map((e) => (
+                  <button key={e.ticker} role="tab" aria-selected={e.ticker === event?.ticker} className={e.ticker === event?.ticker ? 'is-on' : ''} onClick={() => pick(e)}>
+                    {closesLabel(e.expiry, now)}
+                  </button>
+                ))}
+              </div>
+              <span className="expiry-note">
+                {closing && <span>{closing}</span>}
+                <Link to="/markets">All markets</Link>
+              </span>
+            </div>
           </div>
           {ladders.unpriced.length > 0 && (
             <button type="button" className="more-markets" aria-expanded={showUnpriced} onClick={() => setShowUnpriced((v) => !v)}>
@@ -269,25 +290,92 @@ export default function Build() {
         </section>
 
         <section className="card payoff" aria-label="How this bet pays">
-          <h2 className="h-card">How this bet pays</h2>
-          <div className="payoff-grid">
-            <div data-kind="win">
-              <span className="po-chance">{chanceBoth !== null ? `${pct(chanceBoth)} chance` : '–'}</span>
-              <b>{out ? usdSigned(out.win) : '–'}</b>
-              <p>It reaches {tRung ? money(tRung.strike) : '…'}</p>
-            </div>
-            <div data-kind="back">
-              <span className="po-chance">{chanceCondition !== null ? `${pct(1 - chanceCondition)} chance` : '–'}</span>
-              <b>{out ? 'Stake back' : '–'}</b>
-              <p>It falls below {cRung ? money(cRung.strike) : '…'}</p>
-            </div>
-            <div data-kind="lose">
-              <span className="po-chance">{chanceCondition !== null && chanceBoth !== null ? `${pct(chanceCondition - chanceBoth)} chance` : '–'}</span>
-              <b>{out ? usdSigned(out.lose) : '–'}</b>
-              <p>It holds {cRung ? money(cRung.strike) : '…'} but stops short</p>
-            </div>
-          </div>
+          <header className="card-head">
+            <h2 className="h-card">How this bet pays</h2>
+            <span className="fine">{out ? `On a ${usd(out.cost)} bet` : 'Per bet'}</span>
+          </header>
+          <table className="scen">
+            <thead>
+              <tr>
+                <th scope="col">If</th>
+                <th scope="col" className="n">
+                  Chance
+                </th>
+                <th scope="col" className="n">
+                  You get
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr data-kind="win">
+                <td>
+                  <i aria-hidden="true" />
+                  It reaches {tRung ? money(tRung.strike) : '…'}
+                </td>
+                <td className="n">{chanceBoth !== null ? pct(chanceBoth) : '–'}</td>
+                <td className="n">{out ? usdSigned(out.win) : '–'}</td>
+              </tr>
+              <tr data-kind="back">
+                <td>
+                  <i aria-hidden="true" />
+                  It falls below {cRung ? money(cRung.strike) : '…'}
+                </td>
+                <td className="n">{chanceCondition !== null ? pct(1 - chanceCondition) : '–'}</td>
+                <td className="n">{out ? 'Stake back' : '–'}</td>
+              </tr>
+              <tr data-kind="lose">
+                <td>
+                  <i aria-hidden="true" />
+                  It holds {cRung ? money(cRung.strike) : '…'} but stops short
+                </td>
+                <td className="n">{chanceCondition !== null && chanceBoth !== null ? pct(chanceCondition - chanceBoth) : '–'}</td>
+                <td className="n">{out ? usdSigned(out.lose) : '–'}</td>
+              </tr>
+            </tbody>
+          </table>
         </section>
+
+        {event && (
+          <section className="card rungs" aria-label="The ladder">
+            <header className="card-head">
+              <h2 className="h-card">The ladder</h2>
+              <span className="fine">Every price this market lists</span>
+            </header>
+            <table className="scen">
+              <thead>
+                <tr>
+                  <th scope="col">Price</th>
+                  <th scope="col" className="n">
+                    Chance
+                  </th>
+                  <th scope="col" className="n">
+                    Buy
+                  </th>
+                  <th scope="col" className="n">
+                    Sell
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {event.rungs.map((r) => {
+                  const mid = r.bid !== null && r.ask !== null ? (r.bid + r.ask) / 2 : null;
+                  return (
+                    <tr key={r.symbol} className={r.symbol === sel?.c || r.symbol === sel?.t ? 'is-picked' : undefined}>
+                      <td>
+                        {money(r.strike)}
+                        {r.symbol === sel?.c && <span className="tag">Given</span>}
+                        {r.symbol === sel?.t && <span className="tag">Reach</span>}
+                      </td>
+                      <td className="n">{mid !== null ? pct(mid) : '–'}</td>
+                      <td className="n">{r.ask !== null ? cents(r.ask) : '–'}</td>
+                      <td className="n">{r.bid !== null ? cents(r.bid) : '–'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </section>
+        )}
         </div>
 
         <aside className="card quote-card" aria-live="polite">

@@ -1,0 +1,487 @@
+/* Markets: an index of every ladder, by asset. Flat: hairlines and type, no cards, no shadows. */
+
+.mk-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.mk-live {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--good);
+  flex: none;
+}
+
+/* ---------------------------------------------------------- summary strip */
+.mk-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.mk-stat {
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 20px 24px;
+  border-left: 1px solid var(--line);
+  min-width: 0;
+}
+.mk-stat:first-child {
+  border-left: 0;
+  padding-left: 0;
+}
+.mk-stat dt {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.mk-stat dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 32px;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.mk-stale {
+  margin-top: 16px;
+}
+
+/* ---------------------------------------------------------- toolbar */
+.mk-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-top: 32px;
+}
+.mk-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+.mk-seg button {
+  height: 36px;
+  padding: 0 16px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: transparent;
+  color: var(--soft);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 160ms var(--ease), color 160ms var(--ease);
+}
+.mk-seg button:first-child {
+  border-left: 0;
+}
+.mk-seg button:hover {
+  background: var(--surface);
+}
+.mk-seg button[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--bg);
+}
+.mk-seg button:focus-visible {
+  outline-offset: -2px;
+}
+.mk-search {
+  flex: 1 1 220px;
+  max-width: 320px;
+  min-width: 0;
+}
+.mk-search input {
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+}
+.mk-search input::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+.mk-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  margin-left: auto;
+  font-size: 14px;
+  color: var(--soft);
+  cursor: pointer;
+}
+.mk-toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: inherit;
+}
+.mk-toggle input:disabled {
+  cursor: not-allowed;
+}
+.mk-count {
+  margin-top: 16px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------- groups */
+.mk-groups {
+  display: grid;
+  gap: 48px;
+  margin-top: 32px;
+}
+.mk-group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+}
+.mk-group-title {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 22px;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+.mk-tag {
+  padding: 1px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  align-self: center;
+}
+.mk-meta {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.mk-table-wrap {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.mk-table {
+  width: 100%;
+  table-layout: fixed; /* every asset's table lines up with the one above it */
+  border-collapse: collapse;
+  font-size: 15px;
+}
+.mk-table .mk-c-closes {
+  width: 26%;
+}
+.mk-table .mk-c-num {
+  width: 18%;
+}
+.mk-table .mk-c-rungs {
+  width: 9%;
+}
+.mk-table .mk-c-state {
+  width: 15%;
+}
+.mk-table .mk-c-act {
+  width: 14%;
+}
+.mk-table th {
+  padding: 10px 16px;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line-strong);
+}
+.mk-table td {
+  padding: 14px 16px;
+  vertical-align: middle;
+  border-top: 1px solid var(--line);
+}
+.mk-table tbody tr:first-child td {
+  border-top: 0;
+}
+.mk-table th.mk-c-num,
+.mk-table td.mk-num {
+  text-align: right;
+}
+.mk-table td.mk-num {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.mk-table th.mk-c-act,
+.mk-table td.mk-act {
+  text-align: right;
+  white-space: nowrap;
+}
+.mk-row {
+  transition: background-color 120ms var(--ease);
+}
+.mk-row:hover {
+  background: var(--surface);
+}
+
+.mk-closes {
+  min-width: 0;
+}
+.mk-when {
+  display: block;
+  font-weight: 500;
+}
+.mk-rel {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+}
+.mk-none {
+  font-family: var(--font-ui);
+  color: var(--muted);
+}
+.mk-state-cell {
+  white-space: nowrap;
+  color: var(--soft);
+}
+.mk-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  vertical-align: 0.0625em;
+  box-sizing: border-box;
+}
+.mk-dot[data-state='priced'] {
+  background: var(--ink);
+}
+.mk-dot[data-state='none'] {
+  border: 1.5px solid var(--faint);
+}
+.mk-dot[data-state='order'] {
+  background: var(--accent);
+}
+
+.mk-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  color: var(--accent-text);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+.mk-link:hover {
+  border-bottom-color: currentColor;
+}
+.mk-wait {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------- states */
+.mk-state {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  margin-top: 32px;
+  padding: 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  color: var(--muted);
+}
+.mk-state-title {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.mk-skel-stats {
+  height: 78px;
+}
+.mk-skel-bar {
+  height: 36px;
+  width: min(420px, 100%);
+  margin-top: 32px;
+}
+.mk-skel-group {
+  margin-top: 48px;
+}
+.mk-skel-title {
+  height: 26px;
+  width: 160px;
+  margin-bottom: 12px;
+}
+.mk-skel-table {
+  height: 168px;
+}
+.mk-foot {
+  margin-top: 48px;
+  max-width: 64ch;
+}
+
+/* ---------------------------------------------------------- tablet */
+@media (max-width: 960px) {
+  .mk-toggle {
+    margin-left: 0;
+  }
+  .mk-table th,
+  .mk-table td {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
+
+/* ---------------------------------------------------------- phone: each ladder is a stacked block */
+@media (max-width: 719px) {
+  .mk-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mk-stat {
+    padding: 16px;
+  }
+  .mk-stat:nth-child(odd) {
+    border-left: 0;
+    padding-left: 0;
+  }
+  .mk-stat:nth-child(n + 3) {
+    border-top: 1px solid var(--line);
+  }
+  .mk-stat dd {
+    font-size: 28px;
+  }
+
+  .mk-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .mk-seg {
+    align-self: flex-start;
+  }
+  .mk-search {
+    flex: none;
+    max-width: none;
+  }
+
+  .mk-meta {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+
+  .mk-table,
+  .mk-table tbody {
+    display: block;
+  }
+  .mk-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+  .mk-table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 16px;
+    padding: 16px;
+    border-top: 1px solid var(--line);
+  }
+  .mk-table tbody tr:first-child {
+    border-top: 0;
+  }
+  .mk-table td {
+    display: block;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+  }
+  .mk-table td.mk-closes {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .mk-table td.mk-act {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: start;
+    text-align: right;
+  }
+  .mk-table td.mk-act .mk-link,
+  .mk-table td.mk-act .mk-wait {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .mk-table td.mk-act .mk-wait {
+    font-size: 13px;
+  }
+  .mk-table td[data-label] {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 16px;
+    padding: 8px 0 0;
+    text-align: right;
+  }
+  .mk-table td[data-label]::before {
+    content: attr(data-label);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: left;
+  }
+  .mk-table td.mk-num {
+    font-size: 14px;
+  }
+  .mk-table td.mk-state-cell {
+    white-space: normal;
+  }
+  .mk-state {
+    padding: 24px 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mk-seg button,
+  .mk-row {
+    transition: none;
+  }
+  .mk .skeleton {
+    animation: none;
+  }
+}
