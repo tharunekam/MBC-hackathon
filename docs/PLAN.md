@@ -274,6 +274,11 @@ Solana authority and the real ledger until they are copied across by hand.
   the app), then the landing page as the laptop had it at 23:30. On the second machine: typecheck clean, 551 web
   tests, `npm run e2e` 25 checks, and the public quotes page looked at in dark mode at 700 px. The landing page was
   still being edited on the laptop at the time, so later edits are not in it.
+- **Return Parlay is now Stake Back (2026-11-20, 00:10 CST; decision 30 in `docs/GIVEN.md`).** Only what a person
+  reads changed; the route, the code, the API and the ledger still say `parlay`. After it, on the second machine: 987
+  tests, `npm run rehearse` 40 checks, `npm run e2e` 25 checks, both public addresses 10 of 11 again, and the page
+  looked at through the public address at 320 px in dark mode (title and heading read "Stake Back", no sideways scroll;
+  the bottom tab wraps to two lines at that width).
 - **Rebuilding under a running server blanks the page.** `npm run build` replaced `web/dist` while `npm start` was up,
   and the public page loaded with every asset a 404 until both servers were restarted. After any rebuild: restart
   `given-demo` and `given-fake` (the tunnels and their addresses can stay up).
