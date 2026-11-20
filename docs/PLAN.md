@@ -285,6 +285,11 @@ Solana authority and the real ledger until they are copied across by hand.
 - The servers run in `tmux` sessions on the second machine (`given-demo`, `given-tunnel`, `given-fake`,
   `given-fake-tunnel`), logs in `~/given-demo-logs/`. The machine is set never to sleep and to restart after a power
   cut, but nothing restarts the servers after a reboot.
+  Since 00:05 CST on 11-20 each server runs under `~/given-demo-logs/given-run.sh <quotes|live|fake>`, which starts it
+  again five seconds after it exits (killed once on purpose: back up and healthy in under 15 seconds) and reads the
+  public address from the tunnel's log each time. The tunnels are not wrapped: a restarted quick tunnel has a new address.
+- `npm run e2e:replay` on the merged code, second machine: 7 checks pass. The landing headings follow the laptop's
+  edits as of 00:20 CST. The Gemini facts for the pitch are in `docs/SUBMISSION.md` with their sources.
 - **One line, 2026-11-20 05:15 UTC.** Two sessions had each merged the second machine's `b177a95` with
   `feat/cash-out` on their own (`952e72c` on `feat/cash-out`, `7a29228` on `demo/merged`): the same code, different
   notes. They are merged into one commit, pushed as `feat/cash-out`, which both can reach by fast-forward. **Build on
