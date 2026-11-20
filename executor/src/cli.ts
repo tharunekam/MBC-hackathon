@@ -3,7 +3,9 @@
  *
  *   node src/cli.ts pairs                      list tradable conditional bets right now
  *   node src/cli.ts pairs ETH2611180000        ...for one event
- *   node src/cli.ts bet <event> <conditionSymbol> <targetSymbol> <stake> [--max 0.60] [--leave]
+ *   node src/cli.ts pairs --down               ...for a parlay that a price falls (the condition is the HIGHER strike)
+ *   node src/cli.ts bet <event> <conditionSymbol> <targetSymbol> <stake> [--down] [--max 0.60] [--leave]
+ *   node src/cli.ts range <event> <lowSymbol> <highSymbol> <stake> [--max 0.60] [--leave]   win if it finishes between the two
  *   node src/cli.ts bets                       show the ledger
  *   node src/cli.ts settle                     record results for resolved bets
  *   node src/cli.ts reconcile                  check the ledger against Gemini
@@ -18,12 +20,14 @@
  */
 import { resolve } from 'node:path';
 import { maxPayout, placeConditionalBet, recordReviewedPayout, recoverBets, settleBets } from './bets.ts';
+import type { BetRecord } from './ledger.ts';
 import { loadConfig, requireUser } from './config.ts';
 import { flowTotals } from './flow.ts';
 import { GeminiExchange } from './exchange.ts';
 import { GeminiPublic } from './gemini/rest.ts';
 import { Ledger } from './ledger.ts';
-import { linkedPairs } from './pairs.ts';
+import { linkedPairs, realRung } from './pairs.ts';
+import { placeRangeBet } from './range-bet.ts';
 import { ensureBaseline, reconcile } from './reconcile.ts';
 
 const args = process.argv.slice(2);
@@ -39,9 +43,11 @@ const config = loadConfig();
 const ledger = new Ledger(resolve(config.dataDir, 'ledger.json'));
 const money = (x: number) => (x < 0 ? '-' : '') + '$' + Math.abs(x).toFixed(2);
 
+const kindOf = (bet: BetRecord): string => (bet.product === 'range' ? 'range' : bet.direction === 'down' ? 'falling parlay' : 'parlay');
+
 function printBet(bet: ReturnType<Ledger['bet']>): void {
   if (!bet) return;
-  console.log(`\nBet ${bet.id} [${bet.status}]  ${bet.eventTitle} (${bet.eventTicker})`);
+  console.log(`\nBet ${bet.id} [${bet.status}]  ${kindOf(bet)}  ${bet.eventTitle} (${bet.eventTicker})`);
   console.log(`  Given "${bet.condition.label}", will "${bet.target.label}"?   quoted ${bet.quotedPrice.toFixed(3)} per $1`);
   for (const leg of bet.legs) {
     console.log(
@@ -83,8 +89,9 @@ async function main(): Promise<void> {
     let shown = 0;
     let refused = 0;
     const c = (x: number | null, digits = 3) => (x === null ? '-' : x.toFixed(digits));
+    const direction = has('down') ? 'down' : 'up';
     for (const event of events) {
-      const all = linkedPairs(event, { feeCoef: config.takerFeeCoef, waiveMarkup: config.waiveMarkup });
+      const all = linkedPairs(event, { feeCoef: config.takerFeeCoef, waiveMarkup: config.waiveMarkup, direction });
       const pairs = has('all') ? all : all.filter((p) => p.offer.offerable);
       refused += all.filter((p) => !p.offer.offerable).length;
       if (pairs.length === 0) continue;
@@ -93,10 +100,11 @@ async function main(): Promise<void> {
         const o = p.offer;
         if (o.offerable) shown++;
         const verdict = o.overridden ? 'REFUSED (waived for sandbox demo)' : o.verdict.toUpperCase();
+        const [a, b] = [realRung(p.a, direction), realRung(p.b, direction)];
         console.log(
-          `  given ${p.a.label} [${p.a.bid}/${p.a.ask}]  ->  ${p.b.label} [${p.b.bid}/${p.b.ask}]   ` +
+          (direction === 'down' ? `  given it stays below ${a.strike} [${a.bid}/${a.ask}]  ->  falls below ${b.strike} [${b.bid}/${b.ask}]   ` : `  given ${a.label} [${a.bid}/${a.ask}]  ->  ${b.label} [${b.bid}/${b.ask}]   `) +
             `pay ${c(o.pricePaid)}  fair ${c(o.fairPrice)}  with prod fees ${c(o.allInPrice)}  markup ${c(o.markup)}  ` +
-            `cash-out/$100 ${c(o.cashOutPer100, 2)}  ${verdict}   ${p.a.symbol} ${p.b.symbol}` +
+            `cash-out/$100 ${c(o.cashOutPer100, 2)}  ${verdict}   ${a.symbol} ${b.symbol}` +
             (o.reasons.length > 0 ? `\n      why: ${o.reasons.map((r) => r.message).join(' ')}` : ''),
         );
       }
@@ -160,7 +168,7 @@ async function main(): Promise<void> {
     if (command === 'bet') {
       const [, eventTicker, conditionSymbol, targetSymbol, stake] = args;
       if (!eventTicker || !conditionSymbol || !targetSymbol || !stake) {
-        throw new Error('Usage: bet <event> <conditionSymbol> <targetSymbol> <stake> [--max price] [--leave] [--slip ticks]');
+        throw new Error('Usage: bet <event> <conditionSymbol> <targetSymbol> <stake> [--down] [--max price] [--leave] [--slip ticks]');
       }
       await ensureBaseline(exchange, ledger, user);
       const bet = await placeConditionalBet(
@@ -170,10 +178,31 @@ async function main(): Promise<void> {
           eventTicker,
           conditionSymbol,
           targetSymbol,
+          direction: has('down') ? 'down' : 'up',
           stake: Number(stake),
           maxPrice: flag('max') ? Number(flag('max')) : undefined,
           slippageTicks: flag('slip') ? Number(flag('slip')) : undefined,
           onHedgeFail: has('leave') ? 'leave' : 'unwind',
+        },
+      );
+      printBet(bet);
+    } else if (command === 'range') {
+      const [, eventTicker, lowSymbol, highSymbol, stake] = args;
+      if (!eventTicker || !lowSymbol || !highSymbol || !stake) {
+        throw new Error('Usage: range <event> <lowSymbol> <highSymbol> <stake> [--max price] [--leave] [--slip ticks]');
+      }
+      await ensureBaseline(exchange, ledger, user);
+      const bet = await placeRangeBet(
+        { exchange, ledger, feeCoef: config.takerFeeCoef, waiveMarkup: config.waiveMarkup },
+        {
+          user,
+          eventTicker,
+          lowSymbol,
+          highSymbol,
+          stake: Number(stake),
+          maxPrice: flag('max') ? Number(flag('max')) : undefined,
+          slippageTicks: flag('slip') ? Number(flag('slip')) : undefined,
+          onFail: has('leave') ? 'leave' : 'unwind',
         },
       );
       printBet(bet);
@@ -189,7 +218,7 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(r, null, 2));
       process.exitCode = r.ok ? 0 : 1;
     } else {
-      console.log('Commands: pairs [event] [--all] | bet ... | bets | settle | recover | reconcile | flow | review | resolve <bet> <paid> --note "..."');
+      console.log('Commands: pairs [event] [--all] [--down] | bet ... [--down] | range ... | bets | settle | recover | reconcile | flow | review | resolve <bet> <paid> --note "..."');
       process.exitCode = 1;
     }
   } finally {

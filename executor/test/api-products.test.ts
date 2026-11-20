@@ -237,6 +237,26 @@ test('POST /baskets: a leg that is not offered refuses the whole basket before a
   }
 });
 
+test('POST /baskets: the demo\'s stake cap is per bet, so three legs may add up to more than it, and a leg above it is named', async () => {
+  const app = await start(LADDER, { maxStake: 25 });
+  try {
+    const legs = (stakes: number[]) => stakes.map((stake) => leg(app, { condition: app.exchange.symbol(1800), target: app.exchange.symbol(1840), stake }));
+    const fine = await app.call('POST', '/baskets', { user: 'primary', legs: legs([10, 10, 10]) });
+    assert.equal(fine.status, 201, JSON.stringify(fine.json));
+    assert.equal(fine.json.bets.length, 3);
+
+    const sent = app.exchange.sent.length;
+    const over = await app.call('POST', '/baskets', { user: 'primary', legs: legs([10, 30, 10]) });
+    assert.equal(over.status, 400);
+    assert.equal(over.json.code, 'stake_too_large');
+    assert.equal(over.json.leg, 1);
+    assert.equal(over.json.error, 'Leg 2: Bets are capped at $25 on this demo.');
+    assert.equal(app.exchange.sent.length, sent); // nothing was bought for any leg
+  } finally {
+    await app.close();
+  }
+});
+
 test('POST /baskets: bad requests are named leg by leg', async () => {
   const app = await start(LADDER);
   try {

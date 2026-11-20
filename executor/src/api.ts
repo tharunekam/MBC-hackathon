@@ -597,7 +597,7 @@ export function createApi(deps: ApiDeps): ApiHandler {
       try {
         return stakeOf(leg.stake);
       } catch (err) {
-        if (err instanceof HttpError) throw new HttpError(err.status, err.code, `Leg ${index + 1}: ${err.message}`);
+        if (err instanceof HttpError) throw new HttpError(err.status, err.code, `Leg ${index + 1}: ${err.message}`, { leg: index });
         throw err;
       }
     })();
@@ -611,11 +611,7 @@ export function createApi(deps: ApiDeps): ApiHandler {
     if (!Array.isArray(body.legs) || body.legs.length < MIN_BASKET_LEGS || body.legs.length > MAX_BASKET_LEGS) {
       throw new HttpError(400, 'invalid_legs', `A basket needs from ${MIN_BASKET_LEGS} to ${MAX_BASKET_LEGS} legs.`);
     }
-    const legs = body.legs.map(basketLeg);
-    const total = legs.reduce((sum, l) => sum + l.stake, 0);
-    if (deps.maxStake !== undefined && total > deps.maxStake) {
-      throw new HttpError(400, 'stake_too_large', `Baskets are capped at ${deps.maxStake} in total on this demo.`);
-    }
+    const legs = body.legs.map(basketLeg); // each leg's stake is held to the demo's per-bet cap here, as for a single bet
     const name = typeof body.name === 'string' && body.name.trim() !== '' ? body.name.trim().slice(0, 40) : undefined;
     for (const ticker of new Set(legs.map((l) => l.eventTicker))) await getEvent(ticker);
     return queued(user, async () => {

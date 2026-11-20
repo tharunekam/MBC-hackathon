@@ -161,6 +161,39 @@ A bet refused before trading throws `BetRefused` with a `code`:
 `offer_refused`, `market_closed`, `no_depth`, `insufficient_depth`,
 `price_above_limit` or `stake_too_small`. Nothing is written to the ledger.
 
+## The other bets (`src/mirror.ts`, `src/range.ts`, `src/range-bet.ts`, `src/basket.ts`)
+
+**Falling parlay.** "Given it stays below H, will it fall below L?" is the rising parlay on the *mirror* of the ladder: every
+strike negated, every YES book flipped into the NO book (`bid' = 1 - ask`, `ask' = 1 - bid`), every result swapped. On the
+mirror H is the lower strike (the condition) and L the higher (the target), so `findPair`, the offer rule, the depth
+guard, `planForQuantity`, the hedge sizing, the unwind and the settlement run unchanged. Only the real orders differ: the
+outcome leg is a NO on L (priced `1 - bid(L)`, the mirror's ask) and the hedge leg a YES on H (priced at its ask). The
+reads go through `mirrorExchange`; orders pass straight through with the real side. Pass `direction: "down"`.
+
+**Range.** Buy YES on a lower strike L and NO on a higher strike H, the same number of contracts of each:
+
+| Price finishes | Pays |
+|---|---|
+| below L | the NO on H: $1 per contract |
+| between L and H | both: $2 per contract |
+| at or above H | the YES on L: $1 per contract |
+
+One order always pays a dollar, so the bet is the second dollar and its price per $1 is `askL - bidH` plus fees. The fair
+price is the chance of finishing inside, `mid(L) - mid(H)`, and `assessRange` applies the same refusal and warning limits
+as a pair. A stake buys `stake / (askL + (1 - bidH) + fees)` contracts of each leg, capped by the smaller of the offers on L
+and the YES bids on H. Orders: YES on L, then NO on H for the contracts that filled, retried up to three times; if the legs
+cannot be matched within the price cap the position is sold back. `payoffs` carries `ifInRange` and `ifOutside` (and the
+same numbers as `ifBothHit` and `ifConditionOnly`; there is no refund line). Settlement: `conditionResolved` is always
+`yes` (a range is never refunded) and `targetResolved` is `yes` when L resolved yes and H no.
+
+**Basket.** `placeBasket` takes 2 to 6 legs. Every leg goes through its `plan…` step first (the same reads and checks as
+placing, no order sent), so one that is not on offer refuses the whole basket before anything is bought. Then the legs are
+placed in order with a shared `basket` tag on each bet; a leg that cannot be completed stops the rest and is returned as
+`failed`, with the earlier legs left in place. It is not atomic: nothing on the exchange links the legs.
+
+**Ids.** A bet's id carries its product: `dn-` falling parlay, `rg-` range, nothing for a rising parlay. The id is committed
+on Solana with the call (see `docs/CONTRACTS.md`).
+
 ## Settlement
 
 `settle` (CLI) or `POST /settle` reads each open bet's event:
@@ -278,6 +311,27 @@ and how much fits in the book right now:
 `depth` is read through a user's Gemini session (`&user=`, default the first
 configured user). If it cannot be read, `depth` is `{"unavailable": "..."}` and
 the quote still answers.
+
+### `GET /quote?product=range&event=&low=&high=&stake=`
+
+A range's quote: `quote` (the offer rule's verdict and numbers: `chanceInRange`, `fairPrice`, `pricePaid`,
+`allInPrice`, `markup`, `cashOutPer100`), and with `stake` the plan (`contracts`, `cost`, `backAlways`, `ifInRange`,
+`ifOutside`) and `depth`. `GET /quote` for a parlay takes `&direction=down` for a falling one, and `GET /markets` lists the
+falling pairs under each event's `down`.
+
+### `POST /baskets`
+
+```json
+{ "user": "primary", "name": "Majors", "legs": [
+  { "event": "BTC2611200100", "condition": "GEMI-BTC2611200100-HI62500", "target": "GEMI-BTC2611200100-HI64000", "stake": 10 },
+  { "event": "ETH2611200100", "condition": "GEMI-ETH2611200100-HI1860", "target": "GEMI-ETH2611200100-HI1820", "direction": "down", "stake": 10 },
+  { "product": "range", "event": "SOL2611200100", "low": "GEMI-SOL2611200100-HI138", "high": "GEMI-SOL2611200100-HI146", "stake": 10 } ] }
+```
+
+2 to 6 legs. A leg that is not on offer, or is not a real pair or range, refuses the whole basket: HTTP 422, `leg` is its
+index, nothing is bought. Otherwise 201 with `{ "basket": { "id", "name", "size", "failed" }, "bets": [...] }`; `failed` is
+`null`, or `{ index, code, message }` for a leg that could not be completed, in which case the legs before it are placed, the
+failed leg is recorded, and the legs after it were not attempted.
 
 ### `POST /bets`
 
@@ -412,3 +466,5 @@ Until then the wire-level test only shows the pieces fit Gemini's documented pro
   given and is meant for a local frontend with pre-connected demo accounts.
 - Cut from the project: conditional orders across markets, combos, and "given
   the favourite doesn't win" bets.
+- The falling parlay, the range and the basket have not been placed on the real Gemini sandbox yet. They are covered by the
+  unit tests on the in-memory exchange, by the real client against the wire stand-in, and by `npm run rehearse`.

@@ -25,7 +25,7 @@ export const WIDE = [
 export type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 /** Runs the real HTTP handler on a spare local port, backed by the in-memory exchange. */
-export async function start(strikes: ConstructorParameters<typeof FakeExchange>[1], opts: { waiveMarkup?: boolean; seeded?: boolean; adminToken?: string } = {}) {
+export async function start(strikes: ConstructorParameters<typeof FakeExchange>[1], opts: { waiveMarkup?: boolean; seeded?: boolean; adminToken?: string; maxStake?: number } = {}) {
   const exchange = new FakeExchange('ETHTEST', strikes);
   const other = new FakeExchange('ETHTEST', strikes); // a second user's account
   const ledger = new Ledger(join(mkdtempSync(join(tmpdir(), 'given-api-')), 'ledger.json'));
@@ -50,6 +50,7 @@ export async function start(strikes: ConstructorParameters<typeof FakeExchange>[
     waiveMarkup: opts.waiveMarkup ?? false,
     seeded: opts.seeded,
     adminToken: opts.adminToken,
+    maxStake: opts.maxStake,
     marketsCacheMs: 0,
     now: () => clock,
     newId: () => `api${++n}`,
