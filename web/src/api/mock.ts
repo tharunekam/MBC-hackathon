@@ -7,19 +7,24 @@
  * Prices are generated from a drifting spot with a normal-distribution ladder;
  * quotes use the same maths as the executor (`lib/pricing.ts`).
  */
-import { estimate, PRODUCTION_FEE_COEF } from '../lib/pricing';
+import { estimate, mirrorBook, PRODUCTION_FEE_COEF, rangeEstimate, rangeOutcomesFor } from '../lib/pricing';
 import { ApiError, type Api } from './client';
 import type {
+  BasketLegRequest,
   Bet,
   CallRecord,
+  Direction,
   LeaderboardResponse,
   LeaderboardRow,
   MarketEvent,
   OfferQuote,
   Pair,
   PairLeg,
+  PlaceBasketRequest,
   PlaceBetRequest,
   QuoteResponse,
+  RangeQuote,
+  RangeQuoteResponse,
   Rung,
 } from './types';
 
@@ -39,9 +44,11 @@ interface Asset {
   money: (k: number) => string;
 }
 
+const dollars = (k: number) => `$${k.toLocaleString('en-US')}`;
 const ASSETS: Asset[] = [
-  { key: 'BTC', name: 'BTC', spot: 63240, step: 500, lowest: 61500, rungs: 8, sigma: 0.012, money: (k) => `$${k.toLocaleString('en-US')}` },
-  { key: 'ETH', name: 'ETH', spot: 1806, step: 20, lowest: 1740, rungs: 8, sigma: 0.012, money: (k) => `$${k.toLocaleString('en-US')}` },
+  { key: 'BTC', name: 'BTC', spot: 63240, step: 500, lowest: 61500, rungs: 8, sigma: 0.012, money: dollars },
+  { key: 'ETH', name: 'ETH', spot: 1806, step: 20, lowest: 1740, rungs: 8, sigma: 0.012, money: dollars },
+  { key: 'SOL', name: 'SOL', spot: 142, step: 2, lowest: 132, rungs: 8, sigma: 0.016, money: dollars },
 ];
 
 // Abramowitz-Stegun approximation of the normal CDF.
@@ -97,6 +104,10 @@ function toLeg(r: Rung): PairLeg {
   return { symbol: r.symbol, label: r.label, strike: r.strike, bid: r.bid, ask: r.ask };
 }
 
+/** A rung as a bet going `direction` sees it: a falling bet reads the same contract from its NO side. */
+const asSeen = (r: Rung, direction: Direction): Rung => (direction === 'down' ? { ...r, ...mirrorBook(r) } : r);
+
+/** The offer rule's numbers for a parlay. The books are as the bet sees them (see `asSeen`). */
 function offerFrom(cond: Rung, target: Rung): OfferQuote {
   const e = estimate({ bid: cond.bid, ask: cond.ask }, { bid: target.bid, ask: target.ask }, 0);
   const base = { feeCoefCharged: 0 };
@@ -138,19 +149,64 @@ function offerFrom(cond: Rung, target: Rung): OfferQuote {
   };
 }
 
+/** The offer rule's numbers for a range between two strikes. */
+function rangeOfferFrom(low: Rung, high: Rung): RangeQuote {
+  const e = rangeEstimate({ bid: low.bid, ask: low.ask }, { bid: high.bid, ask: high.ask }, 0);
+  const base = { feeCoefCharged: 0, overridden: false };
+  if (e === null) {
+    return {
+      ...base,
+      verdict: 'refuse',
+      reasons: [{ code: 'no_price', message: 'The two prices leave no sensible range to bet on.' }],
+      warnings: [],
+      offerable: false,
+      chanceInRange: null,
+      fairPrice: null,
+      pricePaid: null,
+      allInPrice: null,
+      markup: null,
+      markupPct: null,
+      cashOutPer100: null,
+      cashOutPer100AtProductionFees: null,
+    };
+  }
+  return {
+    ...base,
+    verdict: e.verdict,
+    reasons: e.refusal && e.code ? [{ code: e.code === 'no_price' ? 'no_price' : e.code, message: e.refusal }] : [],
+    warnings: e.verdict === 'warn' ? [`Costs ${(e.markup * 100).toFixed(1)} cents (${(e.markupPct * 100).toFixed(1)}%) more than the fair price with fees.`] : [],
+    offerable: e.verdict !== 'refuse',
+    chanceInRange: e.chanceInRange,
+    fairPrice: e.fairPrice,
+    pricePaid: e.pricePaid,
+    allInPrice: e.allIn,
+    markup: e.markup,
+    markupPct: e.markupPct,
+    cashOutPer100: e.cashOutPer100,
+    cashOutPer100AtProductionFees: null,
+  };
+}
+
+/** Every pair of a parlay going `direction`: a rising one has the lower strike as its condition, a falling one the higher. */
+function pairsFor(rungs: Rung[], direction: Direction): Pair[] {
+  const out: Pair[] = [];
+  for (let i = 0; i < rungs.length; i++) {
+    for (let j = i + 1; j < rungs.length; j++) {
+      const [c, b] = direction === 'down' ? [rungs[j]!, rungs[i]!] : [rungs[i]!, rungs[j]!];
+      out.push({ condition: toLeg(c), target: toLeg(b), quote: offerFrom(asSeen(c, direction), asSeen(b, direction)) });
+    }
+  }
+  return out;
+}
+
 function buildEvent(a: Asset, t: number): MarketEvent {
   const expiry = nextHour(new Date(t));
   const ticker = `${a.key}${expiry.toISOString().slice(2, 13).replace(/[-T]/g, '')}00`;
   const rungs = buildRungs(a, ticker, t);
-  const pairs: Pair[] = [];
-  for (let i = 0; i < rungs.length; i++) {
-    for (let j = i + 1; j < rungs.length; j++) {
-      const c = rungs[i]!;
-      const b = rungs[j]!;
-      pairs.push({ condition: toLeg(c), target: toLeg(b), quote: offerFrom(c, b) });
-    }
-  }
+  const pairs = pairsFor(rungs, 'up');
+  const falling = pairsFor(rungs, 'down');
   const offerable = pairs.filter((p) => p.quote.offerable);
+  const fallingOfferable = falling.filter((p) => p.quote.offerable);
   const refusedByReason: Record<string, number> = {};
   for (const p of pairs) for (const r of p.quote.reasons) refusedByReason[r.code] = (refusedByReason[r.code] ?? 0) + 1;
   return {
@@ -164,6 +220,7 @@ function buildEvent(a: Asset, t: number): MarketEvent {
     offerableCount: offerable.length,
     refusedCount: pairs.length - offerable.length,
     refusedByReason,
+    down: { pairs: falling, offerableCount: fallingOfferable.length, refusedCount: falling.length - fallingOfferable.length },
   };
 }
 
@@ -177,7 +234,12 @@ const fakeOrderId = () => `${Math.floor(1e17 + Math.random() * 9e17)}`;
 const WORDS_A = ['quiet', 'amber', 'lucky', 'steady', 'bright', 'north', 'calm', 'swift'];
 const WORDS_B = ['otter', 'heron', 'fox', 'lynx', 'wren', 'finch', 'marten', 'crane'];
 
+/** Bet ids carry their product, as the executor's do (see `executor/src/bet-id.ts`). */
+const idFor = (kind: { product: 'parlay' | 'range'; direction: Direction }, id: string) => (kind.product === 'range' ? `rg-${id}` : kind.direction === 'down' ? `dn-${id}` : id);
+
 // ------------------------------------------------------------------ the mock service
+
+type Outcome = 'won' | 'refunded' | 'lost' | 'open';
 
 export function mockApi(): Api {
   const startedAt = Date.now();
@@ -186,13 +248,30 @@ export function mockApi(): Api {
   let seeded = false;
 
   const events = (t = Date.now()) => ASSETS.map((a) => buildEvent(a, t));
-  const findPair = (ev: MarketEvent, condition: string, target: string) => {
-    const c = ev.rungs.find((r) => r.symbol === condition);
-    const b = ev.rungs.find((r) => r.symbol === target);
-    if (!c || !b || b.strike <= c.strike) throw new ApiError(400, { error: 'Those two contracts are not a linked pair.', code: 'not_a_linked_pair' }, 'bad pair');
+  const eventOf = (ticker: string): MarketEvent => {
+    const ev = events().find((e) => e.ticker === ticker);
+    if (!ev) throw new ApiError(404, { error: `Gemini has no event "${ticker}".`, code: 'unknown_event' }, 'unknown');
+    return ev;
+  };
+  const rungOf = (ev: MarketEvent, symbol: string) => ev.rungs.find((r) => r.symbol === symbol);
+
+  const findPair = (ev: MarketEvent, condition: string, target: string, direction: Direction) => {
+    const c = rungOf(ev, condition);
+    const b = rungOf(ev, target);
+    const ordered = c && b && (direction === 'down' ? b.strike < c.strike : b.strike > c.strike);
+    if (!c || !b || !ordered) {
+      throw new ApiError(400, { error: `Those two contracts are not a linked pair: the outcome strike must be ${direction === 'down' ? 'lower' : 'higher'} than the condition strike.`, code: 'not_a_linked_pair' }, 'bad pair');
+    }
     return { c, b };
   };
+  const findRange = (ev: MarketEvent, low: string, high: string) => {
+    const l = rungOf(ev, low);
+    const h = rungOf(ev, high);
+    if (!l || !h || !(h.strike > l.strike)) throw new ApiError(400, { error: 'Those two contracts are not a range: the first strike must be lower than the second.', code: 'not_a_range' }, 'bad range');
+    return { l, h };
+  };
 
+  /** What a parlay stake buys. `c` and `b` are the rungs as the bet sees them (see `asSeen`). */
   function plan(stake: number, c: Rung, b: Rung) {
     const offer = offerFrom(c, b);
     const price = offer.pricePaid ?? 1;
@@ -205,20 +284,26 @@ export function mockApi(): Api {
     return { offer, qB, qA, cost, prodFee: cents(prodFee) };
   }
 
-  function makeBet(args: { id: string; ev: MarketEvent; c: Rung; b: Rung; stake: number; createdAt: Date; outcome?: 'won' | 'refunded' | 'lost' | 'open' }): Bet {
-    const { offer, qB, qA, cost, prodFee } = plan(args.stake, args.c, args.b);
+  function makeParlay(args: { id: string; ev: MarketEvent; c: Rung; b: Rung; direction: Direction; stake: number; createdAt: Date; outcome?: Outcome }): Bet {
+    const { direction } = args;
+    const mc = asSeen(args.c, direction);
+    const mb = asSeen(args.b, direction);
+    const { offer, qB, qA, cost, prodFee } = plan(args.stake, mc, mb);
     const sent = args.createdAt.toISOString();
+    const id = idFor({ product: 'parlay', direction }, args.id);
     const legs: Bet['legs'] = [
-      { clientOrderId: `gv-${args.id}-out`, role: 'outcome', symbol: args.b.symbol, side: 'buy', outcome: 'yes', limitPrice: args.b.ask ?? 0, quantityRequested: qB, quantityFilled: qB, avgPrice: args.b.ask, fee: 0, status: 'filled', orderId: fakeOrderId(), sentAt: sent },
-      { clientOrderId: `gv-${args.id}-hdg`, role: 'hedge', symbol: args.c.symbol, side: 'buy', outcome: 'no', limitPrice: cents(1 - (args.c.bid ?? 0)), quantityRequested: qA, quantityFilled: qA, avgPrice: cents(1 - (args.c.bid ?? 0)), fee: 0, status: 'filled', orderId: fakeOrderId(), sentAt: sent },
+      { clientOrderId: `gv-${id}-b`, role: 'outcome', symbol: args.b.symbol, side: 'buy', outcome: direction === 'down' ? 'no' : 'yes', limitPrice: mb.ask ?? 0, quantityRequested: qB, quantityFilled: qB, avgPrice: mb.ask, fee: 0, status: 'filled', orderId: fakeOrderId(), sentAt: sent },
+      { clientOrderId: `gv-${id}-a1`, role: 'hedge', symbol: args.c.symbol, side: 'buy', outcome: direction === 'down' ? 'yes' : 'no', limitPrice: cents(1 - (mc.bid ?? 0)), quantityRequested: qA, quantityFilled: qA, avgPrice: cents(1 - (mc.bid ?? 0)), fee: 0, status: 'filled', orderId: fakeOrderId(), sentAt: sent },
     ];
     const bet: Bet = {
-      id: args.id,
+      id,
       user: 'primary',
       createdAt: sent,
       eventTicker: args.ev.ticker,
       eventTitle: args.ev.title,
       expiry: args.ev.expiry,
+      product: 'parlay',
+      ...(direction === 'down' ? { direction } : {}),
       condition: { symbol: args.c.symbol, label: args.c.label, strike: args.c.strike },
       target: { symbol: args.b.symbol, label: args.b.label, strike: args.b.strike },
       requestedStake: args.stake,
@@ -242,6 +327,69 @@ export function mockApi(): Api {
     return bet;
   }
 
+  function makeRange(args: { id: string; ev: MarketEvent; low: Rung; high: Rung; stake: number; createdAt: Date; outcome?: 'won' | 'lost' | 'open' }): Bet {
+    const offer = rangeOfferFrom(args.low, args.high);
+    const e = rangeEstimate({ bid: args.low.bid, ask: args.low.ask }, { bid: args.high.bid, ask: args.high.ask }, 0);
+    const out = rangeOutcomesFor(args.stake, e?.unitCost ?? 1.5);
+    const sent = args.createdAt.toISOString();
+    const id = idFor({ product: 'range', direction: 'up' }, args.id);
+    const noPrice = cents(1 - (args.high.bid ?? 0));
+    const legs: Bet['legs'] = [
+      { clientOrderId: `gv-${id}-b`, role: 'outcome', symbol: args.low.symbol, side: 'buy', outcome: 'yes', limitPrice: args.low.ask ?? 0, quantityRequested: out.contracts, quantityFilled: out.contracts, avgPrice: args.low.ask, fee: 0, status: 'filled', orderId: fakeOrderId(), sentAt: sent },
+      { clientOrderId: `gv-${id}-a1`, role: 'hedge', symbol: args.high.symbol, side: 'buy', outcome: 'no', limitPrice: noPrice, quantityRequested: out.contracts, quantityFilled: out.contracts, avgPrice: noPrice, fee: 0, status: 'filled', orderId: fakeOrderId(), sentAt: sent },
+    ];
+    const bet: Bet = {
+      id,
+      user: 'primary',
+      createdAt: sent,
+      eventTicker: args.ev.ticker,
+      eventTitle: args.ev.title,
+      expiry: args.ev.expiry,
+      product: 'range',
+      condition: { symbol: args.low.symbol, label: args.low.label, strike: args.low.strike },
+      target: { symbol: args.high.symbol, label: args.high.label, strike: args.high.strike },
+      requestedStake: args.stake,
+      quotedPrice: offer.pricePaid ?? 0,
+      status: 'open',
+      legs,
+      cost: out.cost,
+      payoffs: { stake: out.cost, ifBothHit: out.ifInRange, ifConditionOnly: out.ifOutside, ifInRange: out.ifInRange, ifOutside: out.ifOutside, conditionalPrice: offer.pricePaid, hedged: true },
+      offer,
+      scorable: false,
+      flow: { bets: 1, ordersSent: 2, ordersFilled: 2, contracts: cents(out.contracts * 2), premium: out.cost, feesAtProductionRates: cents(out.contracts * 0.02), feesCharged: 0 },
+    };
+    if (args.outcome && args.outcome !== 'open') {
+      const inRange = args.outcome === 'won';
+      const payout = cents(inRange ? out.contracts * 2 : out.contracts);
+      bet.status = 'settled';
+      bet.scorable = true;
+      bet.settlement = { conditionResolved: 'yes', targetResolved: inRange ? 'yes' : 'no', payout, pnl: cents(payout - out.cost), settledAt: args.ev.expiry ?? sent };
+    }
+    return bet;
+  }
+
+  /** The bet's call, as the chain service records it. */
+  function callFor(bet: Bet, outcome?: Outcome): CallRecord {
+    const call: CallRecord = {
+      id: `call-${bet.id}`,
+      handle: 'you',
+      betId: bet.id,
+      state: 'committed',
+      commitHash: hex(32),
+      commitSignature: fakeSignature(),
+      committedAt: bet.createdAt,
+      network: 'fake',
+    };
+    if (outcome === 'won' || outcome === 'lost') {
+      const fair = bet.offer?.fairPrice ?? 0.5;
+      const o = outcome === 'won' ? 1 : 0;
+      call.state = 'revealed';
+      call.reveal = { signature: fakeSignature(), revealedAt: new Date(Date.now() - 1800_000).toISOString(), eventTitle: bet.eventTitle, conditionLabel: bet.condition.label, targetLabel: bet.target.label, fairPriceAtEntry: fair, outcome: o, edge: cents(o - fair) };
+    }
+    if (outcome === 'refunded') call.state = 'void';
+    return call;
+  }
+
   function seed() {
     if (seeded) return;
     seeded = true;
@@ -249,39 +397,57 @@ export function mockApi(): Api {
     const btc = base[0]!;
     const eth = base[1]!;
     const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000);
+    const stale = (b: Bet) => (b.eventTitle = b.eventTitle.replace(/at \d+(am|pm)/, (_, ap) => `at ${ap === 'am' ? '9am' : '2pm'}`));
     const pick = (ev: MarketEvent, ci: number, bi: number) => ({ ev, c: ev.rungs[ci]!, b: ev.rungs[bi]! });
-    const history: [Parameters<typeof makeBet>[0]['outcome'], ReturnType<typeof pick>, number, number][] = [
-      ['won', pick(btc, 1, 3), 25, 5],
-      ['refunded', pick(btc, 5, 6), 25, 4],
-      ['lost', pick(eth, 2, 3), 15, 3],
-      ['open', pick(btc, 3, 5), 20, 0.3],
+    const parlays: [Outcome, ReturnType<typeof pick>, Direction, number, number][] = [
+      ['won', pick(btc, 1, 3), 'up', 25, 5],
+      ['refunded', pick(btc, 5, 6), 'up', 25, 4],
+      ['lost', pick(eth, 2, 3), 'up', 15, 3],
+      ['open', pick(btc, 3, 5), 'up', 20, 0.3],
     ];
-    history.forEach(([outcome, p, stake, ago], i) => {
-      const bet = makeBet({ id: `demo${i + 1}`, ev: p.ev, c: p.c, b: p.b, stake, createdAt: hoursAgo(ago), outcome });
-      bet.eventTitle = i === 3 ? bet.eventTitle : bet.eventTitle.replace(/at \d+(am|pm)/, (_, ap) => `at ${ap === 'am' ? '9am' : '2pm'}`);
+    parlays.forEach(([outcome, p, direction, stake, ago], i) => {
+      const bet = makeParlay({ id: `demo${i + 1}`, ev: p.ev, c: p.c, b: p.b, direction, stake, createdAt: hoursAgo(ago), outcome });
+      if (i !== 3) stale(bet);
       bets.push(bet);
-      const call: CallRecord = {
-        id: `call-demo${i + 1}`,
-        handle: 'you',
-        betId: bet.id,
-        state: 'committed',
-        commitHash: hex(32),
-        commitSignature: fakeSignature(),
-        committedAt: bet.createdAt,
-        network: 'fake',
-      };
-      if (outcome === 'won' || outcome === 'lost') {
-        const fair = bet.offer?.fairPrice ?? 0.5;
-        const o = outcome === 'won' ? 1 : 0;
-        call.state = 'revealed';
-        call.reveal = { signature: fakeSignature(), revealedAt: new Date(Date.now() - 1800_000).toISOString(), eventTitle: bet.eventTitle, conditionLabel: bet.condition.label, targetLabel: bet.target.label, fairPriceAtEntry: fair, outcome: o, edge: cents(o - fair) };
-      }
-      if (outcome === 'refunded') call.state = 'void';
-      calls.push(call);
+      calls.push(callFor(bet, outcome));
+    });
+    // A range that finished inside, and a basket still open, so every product has something to show.
+    const range = makeRange({ id: 'demo5', ev: eth, low: eth.rungs[2]!, high: eth.rungs[5]!, stake: 20, createdAt: hoursAgo(6), outcome: 'won' });
+    stale(range);
+    bets.push(range);
+    calls.push(callFor(range, 'won'));
+    const sol = base[2]!;
+    const legs: Bet[] = [
+      makeParlay({ id: 'demo6', ev: btc, c: btc.rungs[2]!, b: btc.rungs[4]!, direction: 'up', stake: 10, createdAt: hoursAgo(0.2) }),
+      makeParlay({ id: 'demo7', ev: eth, c: eth.rungs[5]!, b: eth.rungs[3]!, direction: 'down', stake: 10, createdAt: hoursAgo(0.2) }),
+      makeRange({ id: 'demo8', ev: sol, low: sol.rungs[2]!, high: sol.rungs[5]!, stake: 10, createdAt: hoursAgo(0.2) }),
+    ];
+    legs.forEach((bet, index) => {
+      bet.basket = { id: 'bk-demo', name: 'Majors, a quiet hour', index, size: legs.length };
+      bets.push(bet);
+      calls.push(callFor(bet));
     });
   }
 
   const handleFor = (i: number) => `${WORDS_A[i % WORDS_A.length]}-${WORDS_B[(i * 3 + 1) % WORDS_B.length]}-${(i * 37 + 11) % 90}`;
+
+  /** Places one leg: the bet a parlay or range request describes, refused the way the executor refuses. */
+  function placeOne(req: PlaceBetRequest | (BasketLegRequest & { user?: string })): Bet {
+    if (req.stake > 100) throw new ApiError(400, { error: 'Demo bets are capped at $100.', code: 'invalid_stake' }, 'stake');
+    const ev = eventOf(req.event);
+    if ('product' in req && req.product === 'range') {
+      const { l, h } = findRange(ev, req.low, req.high);
+      const offer = rangeOfferFrom(l, h);
+      if (!offer.offerable) throw new ApiError(422, { error: offer.reasons[0]?.message ?? 'This bet is not on offer.', code: offer.reasons[0]?.code ?? 'offer_refused', refused: true, quote: offer }, 'refused');
+      return makeRange({ id: `d${hex(3)}`, ev, low: l, high: h, stake: req.stake, createdAt: new Date() });
+    }
+    const parlay = req as Extract<PlaceBetRequest, { condition: string }>;
+    const direction = parlay.direction ?? 'up';
+    const { c, b } = findPair(ev, parlay.condition, parlay.target, direction);
+    const offer = offerFrom(asSeen(c, direction), asSeen(b, direction));
+    if (!offer.offerable) throw new ApiError(422, { error: offer.reasons[0]?.message ?? 'This bet is not on offer.', code: offer.reasons[0]?.code ?? 'offer_refused', refused: true, quote: offer }, 'refused');
+    return makeParlay({ id: `d${hex(3)}`, ev, c, b, direction, stake: parlay.stake, createdAt: new Date() });
+  }
 
   return {
     mode: 'mock',
@@ -305,20 +471,21 @@ export function mockApi(): Api {
       };
     },
 
-    async quote({ event, condition, target, stake }): Promise<QuoteResponse> {
+    async quote({ event, condition, target, stake, direction = 'up' }): Promise<QuoteResponse> {
       await sleep(180);
-      const ev = events().find((e) => e.ticker === event);
-      if (!ev) throw new ApiError(404, { error: `Gemini has no event "${event}".`, code: 'unknown_event' }, 'unknown');
-      const { c, b } = findPair(ev, condition, target);
-      const offer = offerFrom(c, b);
+      const ev = eventOf(event);
+      const { c, b } = findPair(ev, condition, target, direction);
+      const mc = asSeen(c, direction);
+      const mb = asSeen(b, direction);
+      const offer = offerFrom(mc, mb);
       let stakePlan: QuoteResponse['stake'] = null;
       let depth: QuoteResponse['depth'] = null;
       if (stake !== undefined && offer.pricePaid !== null) {
-        const p = plan(stake, c, b);
+        const p = plan(stake, mc, mb);
         const maxStake = 40 + Math.round(Math.abs(Math.sin(c.strike)) * 60);
         depth = { outcomeAvailable: 120, conditionAvailable: 400, maxStake };
         const capped = Math.min(stake, maxStake);
-        const pc = plan(capped, c, b);
+        const pc = plan(capped, mc, mb);
         stakePlan = {
           requested: stake,
           reduced: capped < stake,
@@ -332,21 +499,65 @@ export function mockApi(): Api {
           cashOutNow: offer.cashOutPer100 === null ? null : cents((offer.cashOutPer100 * pc.cost) / 100),
         };
       }
-      return { venue: 'Demo data', asOf: new Date().toISOString(), event: { ticker: ev.ticker, title: ev.title, expiry: ev.expiry }, condition: toLeg(c), target: toLeg(b), quote: offer, stake: stakePlan, depth };
+      return { venue: 'Demo data', asOf: new Date().toISOString(), product: 'parlay', direction, event: { ticker: ev.ticker, title: ev.title, expiry: ev.expiry }, condition: toLeg(c), target: toLeg(b), quote: offer, stake: stakePlan, depth };
+    },
+
+    async quoteRange({ event, low, high, stake }): Promise<RangeQuoteResponse> {
+      await sleep(180);
+      const ev = eventOf(event);
+      const { l, h } = findRange(ev, low, high);
+      const offer = rangeOfferFrom(l, h);
+      const e = rangeEstimate({ bid: l.bid, ask: l.ask }, { bid: h.bid, ask: h.ask }, 0);
+      let stakePlan: RangeQuoteResponse['stake'] = null;
+      let depth: RangeQuoteResponse['depth'] = null;
+      if (stake !== undefined && e !== null) {
+        const maxStake = 40 + Math.round(Math.abs(Math.sin(l.strike)) * 60);
+        depth = { outcomeAvailable: 120, conditionAvailable: 400, maxStake };
+        const capped = Math.min(stake, maxStake);
+        const o = rangeOutcomesFor(capped, e.unitCost);
+        stakePlan = {
+          requested: stake,
+          reduced: capped < stake,
+          contracts: o.contracts,
+          cost: o.cost,
+          backAlways: o.backAlways,
+          ifInRange: o.ifInRange,
+          ifOutside: o.ifOutside,
+          feesAtProductionRates: cents(o.contracts * 0.02),
+          cashOutNow: offer.cashOutPer100 === null ? null : cents((offer.cashOutPer100 * o.cost) / 100),
+        };
+      }
+      return { venue: 'Demo data', asOf: new Date().toISOString(), product: 'range', event: { ticker: ev.ticker, title: ev.title, expiry: ev.expiry }, low: toLeg(l), high: toLeg(h), quote: offer, stake: stakePlan, depth };
     },
 
     async placeBet(req: PlaceBetRequest) {
       seed();
       await sleep(1900);
-      const ev = events().find((e) => e.ticker === req.event);
-      if (!ev) throw new ApiError(404, { error: `Gemini has no event "${req.event}".`, code: 'unknown_event' }, 'unknown');
-      const { c, b } = findPair(ev, req.condition, req.target);
-      const offer = offerFrom(c, b);
-      if (!offer.offerable) throw new ApiError(422, { error: offer.reasons[0]?.message ?? 'This bet is not on offer.', code: offer.reasons[0]?.code ?? 'offer_refused', refused: true, quote: offer }, 'refused');
-      if (req.stake > 100) throw new ApiError(400, { error: 'Demo bets are capped at $100.', code: 'invalid_stake' }, 'stake');
-      const bet = makeBet({ id: `d${hex(3)}`, ev, c, b, stake: req.stake, createdAt: new Date() });
+      const bet = placeOne(req);
       bets.push(bet);
       return { bet, stakeReduced: null };
+    },
+
+    async placeBasket(req: PlaceBasketRequest) {
+      seed();
+      if (req.legs.length < 2 || req.legs.length > 6) throw new ApiError(400, { error: 'A basket needs from 2 to 6 legs.', code: 'invalid_legs' }, 'legs');
+      // Every leg is checked before the first is placed, so a basket that cannot be placed is refused whole.
+      const checked = req.legs.map((leg, i) => {
+        try {
+          return placeOne({ ...leg, user: req.user });
+        } catch (err) {
+          if (err instanceof ApiError) throw new ApiError(err.status, { ...(err.body ?? { error: err.message, code: err.code }), error: `Leg ${i + 1}: ${err.message}`, leg: i }, err.message);
+          throw err;
+        }
+      });
+      await sleep(900 * checked.length);
+      const id = `bk-${hex(3)}`;
+      const name = req.name?.trim() || undefined;
+      checked.forEach((bet, index) => {
+        bet.basket = { id, ...(name ? { name } : {}), index, size: checked.length };
+        bets.push(bet);
+      });
+      return { basket: { id, name: name ?? null, size: checked.length, failed: null }, bets: checked };
     },
 
     async bets() {
@@ -363,11 +574,22 @@ export function mockApi(): Api {
         if (bet.status !== 'open' || Date.now() - new Date(bet.createdAt).getTime() < 15_000) continue;
         const a = ASSETS.find((x) => bet.eventTitle.startsWith(x.name)) ?? ASSETS[0]!;
         const s = spotNow(a, Date.now());
-        const conditionResolved = s >= bet.condition.strike ? 'yes' : 'no';
-        const targetResolved = s >= bet.target.strike ? 'yes' : 'no';
-        const qB = bet.legs[0]?.quantityFilled ?? 0;
-        const qA = bet.legs[1]?.quantityFilled ?? 0;
-        const payout = cents((targetResolved === 'yes' ? qB : 0) + (conditionResolved === 'no' ? qA : 0));
+        const qOutcome = bet.legs[0]?.quantityFilled ?? 0;
+        const qHedge = bet.legs[1]?.quantityFilled ?? 0;
+        let conditionResolved: 'yes' | 'no';
+        let targetResolved: 'yes' | 'no';
+        let payout: number;
+        if (bet.product === 'range') {
+          const inside = s >= bet.condition.strike && s < bet.target.strike;
+          conditionResolved = 'yes';
+          targetResolved = inside ? 'yes' : 'no';
+          payout = cents(inside ? qOutcome + qHedge : Math.min(qOutcome, qHedge));
+        } else {
+          const falling = bet.direction === 'down';
+          conditionResolved = (falling ? s < bet.condition.strike : s >= bet.condition.strike) ? 'yes' : 'no';
+          targetResolved = (falling ? s < bet.target.strike : s >= bet.target.strike) ? 'yes' : 'no';
+          payout = cents((targetResolved === 'yes' ? qOutcome : 0) + (conditionResolved === 'no' ? qHedge : 0));
+        }
         bet.status = 'settled';
         bet.scorable = true;
         bet.settlement = { conditionResolved, targetResolved, payout, pnl: cents(payout - bet.cost), settledAt: new Date().toISOString() };
@@ -424,7 +646,8 @@ export function mockApi(): Api {
       await sleep(1100);
       const existing = calls.find((c) => c.betId === betId);
       if (existing) return existing;
-      const call: CallRecord = { id: `call-${hex(3)}`, handle: 'you', betId, state: 'committed', commitHash: hex(32), commitSignature: fakeSignature(), committedAt: new Date().toISOString(), network: 'fake' };
+      const bet = bets.find((b) => b.id === betId);
+      const call: CallRecord = { id: `call-${hex(3)}`, handle: 'you', betId, state: 'committed', commitHash: hex(32), commitSignature: fakeSignature(), committedAt: bet?.createdAt ?? new Date().toISOString(), network: 'fake' };
       calls.push(call);
       return call;
     },
@@ -454,6 +677,7 @@ export function mockApi(): Api {
         signature,
         commitSignature: call.commitSignature,
         handle: call.handle,
+        betId: bet.id,
         event: bet.eventTicker,
         condition: bet.condition.symbol,
         target: bet.target.symbol,
@@ -492,7 +716,7 @@ export function mockApi(): Api {
           edge: cents(mine.reduce((n, c) => n + (c.reveal?.edge ?? 0), 0)),
           hitRate: mine.filter((c) => c.reveal?.outcome === 1).length / mine.length,
           lastRevealedAt: mine[mine.length - 1]!.reveal!.revealedAt,
-          recent: [...mine].reverse().slice(0, 5).map((c) => ({ signature: c.reveal!.signature, revealedAt: c.reveal!.revealedAt, outcome: c.reveal!.outcome === 1 ? 1 : 0, edge: c.reveal!.edge ?? 0 })),
+          recent: [...mine].reverse().slice(0, 5).map((c) => ({ signature: c.reveal!.signature, betId: c.betId, revealedAt: c.reveal!.revealedAt, outcome: c.reveal!.outcome === 1 ? 1 : 0, edge: c.reveal!.edge ?? 0 })),
         });
       }
       rows.sort((x, y) => y.edge - x.edge);

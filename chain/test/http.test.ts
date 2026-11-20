@@ -123,6 +123,10 @@ test('webhook: a delivery without the secret is refused, with it the signatures 
     assert.equal(board.rows[0].recent.length, 1);
     assert.equal(board.rows[0].recent[0].signature, rev.json.reveal.signature);
     assert.equal(board.rows[0].recent[0].outcome, 1);
+    // The bet id was committed with the call, so it says what kind of bet it was; the proof page reads it from here.
+    assert.equal(board.rows[0].recent[0].betId, 'b1');
+    const proof = (await s.call('GET', `/reveals/${rev.json.reveal.signature}`)).json;
+    assert.equal(proof.betId, 'b1');
     // The same delivery again changes nothing.
     await s.call('POST', '/hooks/quicknode', payload, { 'X-Given-Token': 'hook-secret' });
     await s.service.idle();

@@ -1,7 +1,7 @@
 import { Suspense, lazy } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import Shell from './components/Shell';
-import Build from './pages/Build';
+import Parlay from './pages/Parlay';
 import Landing from './pages/Landing';
 
 // The first screens load at once; the rest are fetched when first visited, so the opening download stays small.
@@ -50,7 +50,7 @@ export default function App() {
     <Routes>
       <Route element={<Shell />}>
         <Route index element={<Landing />} />
-        <Route path="parlay" element={<Build />} />
+        <Route path="parlay" element={<Parlay />} />
         <Route path="range" element={lazyPage(<Range />, 'Range')} />
         <Route path="basket" element={lazyPage(<Basket />, 'Basket')} />
         <Route path="bets" element={lazyPage(<Bets />, 'My bets')} />

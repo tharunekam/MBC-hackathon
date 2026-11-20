@@ -8,6 +8,12 @@
  * implements it so the UI can be built against it.
  */
 
+/** The kinds of bet. A parlay refunds the stake if its first condition fails; a range wins if the price finishes between two levels. */
+export type Product = 'parlay' | 'range';
+
+/** Which way a parlay looks: "up" bets that a price reaches a higher level, "down" that it falls to a lower one. */
+export type Direction = 'up' | 'down';
+
 // ------------------------------------------------------------------ executor: markets
 
 export interface Rung {
@@ -71,6 +77,8 @@ export interface MarketEvent {
   offerableCount: number;
   refusedCount: number;
   refusedByReason: Record<string, number>;
+  /** The same for a parlay that a price falls: the condition is the higher strike and the target the lower. */
+  down: { pairs: Pair[]; offerableCount: number; refusedCount: number };
 }
 
 export interface MarketsResponse {
@@ -96,9 +104,61 @@ export interface StakePlan {
   cashOutNow: number | null;
 }
 
+/** The offer rule's verdict and numbers for a range. The same verdict words as a parlay's quote. */
+export interface RangeQuote {
+  verdict: 'ok' | 'warn' | 'refuse';
+  reasons: { code: RefusalCode; message: string }[];
+  warnings: string[];
+  offerable: boolean;
+  overridden: boolean;
+  /** Chance the price finishes at or above the lower strike and below the higher one. */
+  chanceInRange: number | null;
+  /** What a $1 "inside the range" payout is worth with no spread and no fees. The same as the chance. */
+  fairPrice: number | null;
+  /** Price per $1 of "inside the range" payout on this venue. */
+  pricePaid: number | null;
+  /** The same at Gemini's production fee rate. */
+  allInPrice: number | null;
+  markup: number | null;
+  markupPct: number | null;
+  cashOutPer100: number | null;
+  cashOutPer100AtProductionFees: number | null;
+  feeCoefCharged: number;
+}
+
+export interface RangeStakePlan {
+  requested: number;
+  reduced: boolean;
+  /** Contracts of each leg. */
+  contracts: number;
+  cost: number;
+  /** Dollars that come back whatever happens. */
+  backAlways: number;
+  /** Net result if the price finishes inside the range. */
+  ifInRange: number;
+  /** Net result if it finishes outside. */
+  ifOutside: number;
+  feesAtProductionRates: number;
+  cashOutNow: number | null;
+}
+
+export interface RangeQuoteResponse {
+  venue: string;
+  asOf: string;
+  product: 'range';
+  event: { ticker: string; title: string; expiry: string | null };
+  low: PairLeg;
+  high: PairLeg;
+  quote: RangeQuote;
+  stake: RangeStakePlan | null;
+  depth: { outcomeAvailable: number; conditionAvailable: number; maxStake: number } | { unavailable: string } | null;
+}
+
 export interface QuoteResponse {
   venue: string;
   asOf: string;
+  product?: 'parlay';
+  direction?: Direction;
   event: { ticker: string; title: string; expiry: string | null };
   condition: PairLeg;
   target: PairLeg;
@@ -139,6 +199,16 @@ export interface BetFlow {
   feesCharged: number;
 }
 
+/** Set on a bet placed as one leg of a basket. */
+export interface BasketTag {
+  id: string;
+  name?: string;
+  /** Which leg this bet is, from 0. */
+  index: number;
+  /** How many legs the basket was asked to have. */
+  size: number;
+}
+
 export interface Bet {
   id: string;
   user: string;
@@ -146,6 +216,14 @@ export interface Bet {
   eventTicker: string;
   eventTitle: string;
   expiry: string | null;
+  /** Absent on bets recorded before there were ranges: those are rising parlays. */
+  product?: Product;
+  direction?: Direction;
+  basket?: BasketTag;
+  /**
+   * A parlay's condition is the strike that has to hold first (the HIGHER one for a falling parlay) and its target the strike
+   * it is really about. A range has no condition: here its lower strike is the "condition" and its higher the "target".
+   */
   condition: { symbol: string; label: string; strike: number };
   target: { symbol: string; label: string; strike: number };
   requestedStake: number;
@@ -153,15 +231,21 @@ export interface Bet {
   status: BetStatus;
   legs: LegRecord[];
   cost: number;
+  /**
+   * For a parlay: ifBothHit is the win, ifConditionOnly the loss and ifConditionFails the refund. For a range: ifInRange and
+   * ifOutside, and ifBothHit / ifConditionOnly carry the same two numbers; there is no refund line.
+   */
   payoffs?: {
     stake: number;
-    ifConditionFails: number;
+    ifConditionFails?: number;
     ifBothHit: number;
     ifConditionOnly: number;
+    ifInRange?: number;
+    ifOutside?: number;
     conditionalPrice: number | null;
     hedged: boolean;
   };
-  offer?: OfferQuote;
+  offer?: OfferQuote | RangeQuote;
   stakeReduced?: { requested: number; reducedTo: number; outcomeAvailable: number; conditionAvailable: number; reason: string };
   settlement?: {
     conditionResolved: 'yes' | 'no';
@@ -180,20 +264,61 @@ export interface Bet {
   flow: BetFlow;
 }
 
-export interface PlaceBetRequest {
+export interface PlaceParlayRequest {
   user: string;
   event: string;
   condition: string;
   target: string;
+  direction?: Direction;
   stake: number;
   maxPrice?: number;
   slippageTicks?: number;
   onHedgeFail?: 'unwind' | 'leave';
 }
 
+export interface PlaceRangeRequest {
+  product: 'range';
+  user: string;
+  event: string;
+  /** Symbol of the lower strike. */
+  low: string;
+  /** Symbol of the higher strike. */
+  high: string;
+  /** Dollars to spend on the two orders together. */
+  stake: number;
+  maxPrice?: number;
+  slippageTicks?: number;
+}
+
+export type PlaceBetRequest = PlaceParlayRequest | PlaceRangeRequest;
+
 export interface PlaceBetResponse {
   bet: Bet;
   stakeReduced: Bet['stakeReduced'] | null;
+}
+
+/** One leg of a basket request: a parlay (either way) or a range, with its own stake. */
+export type BasketLegRequest =
+  | { product?: 'parlay'; event: string; condition: string; target: string; direction?: Direction; stake: number }
+  | { product: 'range'; event: string; low: string; high: string; stake: number };
+
+export interface PlaceBasketRequest {
+  user: string;
+  name?: string;
+  legs: BasketLegRequest[];
+}
+
+export interface PlaceBasketResponse {
+  basket: {
+    id: string;
+    name: string | null;
+    /** How many legs were asked for. */
+    size: number;
+    /** Set when a leg could not be completed: which, and why. The legs after it were not attempted. */
+    failed: { index: number; code: string; message: string } | null;
+  };
+  /** The bets that were placed, in leg order. */
+  bets: Bet[];
 }
 
 export interface FlowResponse {
@@ -229,7 +354,9 @@ export interface ApiErrorBody {
   error: string;
   code: string;
   refused?: boolean;
-  quote?: OfferQuote | null;
+  quote?: OfferQuote | RangeQuote | null;
+  /** On a basket that was refused: the leg that did not pass, from 0. */
+  leg?: number;
 }
 
 // ------------------------------------------------------------------ executor: planned
@@ -293,6 +420,8 @@ export interface PublicReveal {
   signature: string;
   commitSignature: string;
   handle: string;
+  /** Committed with the call, so it cannot be changed afterwards. It says what kind of bet this was (see `kindOfBetId`). */
+  betId: string;
   event: string;
   condition: string;
   target: string;
@@ -316,7 +445,7 @@ export interface LeaderboardRow {
   hitRate: number;
   lastRevealedAt: string;
   /** Up to five of this player's newest verified calls, each openable on /verify/:signature. */
-  recent?: { signature: string; revealedAt: string; outcome: 0 | 1; edge: number }[];
+  recent?: { signature: string; betId: string; revealedAt: string; outcome: 0 | 1; edge: number }[];
 }
 
 export interface LeaderboardResponse {

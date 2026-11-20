@@ -5,12 +5,29 @@ import { money } from '../lib/format';
 import { across, spacedLabels } from '../lib/ladders';
 import { useWidth } from '../lib/hooks';
 
+/**
+ * What the two handles stand for.
+ *   up      a rising parlay: the first handle is the level that has to hold, the second the level to reach (higher)
+ *   down    a falling parlay: the first handle is the level to stay under, the second the level to fall below (lower)
+ *   range   the first handle is the floor and the second the ceiling
+ */
+export type ChartMode = 'up' | 'down' | 'range';
+
 interface Props {
   rungs: Rung[];
+  /** The first handle's rung. */
   condition: string;
+  /** The second handle's rung. */
   target: string;
+  mode?: ChartMode;
   onChange: (condition: string, target: string) => void;
 }
+
+const WORDS: Record<ChartMode, { first: (price: string) => string; second: (price: string) => string; firstName: string; secondName: string; group: string }> = {
+  up: { first: (p) => `Given ≥ ${p}`, second: (p) => `Reaches ≥ ${p}`, firstName: 'Condition price', secondName: 'Target price', group: 'Chance of finishing at or above each price, with two handles to choose your bet' },
+  down: { first: (p) => `Stays below ${p}`, second: (p) => `Falls below ${p}`, firstName: 'Condition price', secondName: 'Target price', group: 'Chance of finishing at or above each price, with two handles to choose a bet that it falls' },
+  range: { first: (p) => `From ≥ ${p}`, second: (p) => `Below ${p}`, firstName: 'Lower price', secondName: 'Upper price', group: 'Chance of finishing at or above each price, with two handles to choose a range' },
+};
 
 const strikeText = (r: Rung) => money(r.strike);
 const mid = (r: Rung) => (r.bid !== null && r.ask !== null ? (r.bid + r.ask) / 2 : null);
@@ -51,7 +68,8 @@ function smoothPath(pts: [number, number][]): string {
   return d;
 }
 
-export default function LadderChart({ rungs, condition, target, onChange }: Props) {
+export default function LadderChart({ rungs, condition, target, mode = 'up', onChange }: Props) {
+  const words = WORDS[mode];
   const [wrapRef, width] = useWidth<HTMLDivElement>();
   const svgRef = useRef<SVGSVGElement>(null);
   const [dragging, setDragging] = useState<'condition' | 'target' | null>(null);
@@ -104,7 +122,11 @@ export default function LadderChart({ rungs, condition, target, onChange }: Prop
     const last = sorted.length - 1;
     let c = ci;
     let t = ti;
-    if (which === 'condition') c = Math.min(Math.max(0, index), Math.max(0, t - 1));
+    if (mode === 'down') {
+      // the level to stay under is the higher one, the level to fall below the lower
+      if (which === 'condition') c = Math.max(Math.min(last, index), Math.min(last, t + 1));
+      else t = Math.min(Math.max(0, index), Math.max(0, c - 1));
+    } else if (which === 'condition') c = Math.min(Math.max(0, index), Math.max(0, t - 1));
     else t = Math.max(Math.min(last, index), Math.min(last, c + 1));
     const cs = sorted[c]?.symbol;
     const ts = sorted[t]?.symbol;
@@ -148,7 +170,7 @@ export default function LadderChart({ rungs, condition, target, onChange }: Prop
 
   const pill = (which: 'condition' | 'target', r: Rung | undefined, x: number, row: number) => {
     if (!r) return null;
-    const text = which === 'condition' ? `Given ≥ ${strikeText(r)}` : `Reaches ≥ ${strikeText(r)}`;
+    const text = (which === 'condition' ? words.first : words.second)(strikeText(r));
     const w = text.length * 6.9 + 22;
     const px = Math.min(Math.max(x - w / 2, 2), width - w - 2);
     const py = 6 + row * 28;
@@ -162,14 +184,16 @@ export default function LadderChart({ rungs, condition, target, onChange }: Prop
     );
   };
 
-  const overlap = width > 0 && Math.abs(xC - xT) < 150;
+  const apart = Math.abs(xT - xC);
+  const overlap = width > 0 && apart < 150;
+  const left = Math.min(xC, xT);
 
   // Show a label only where there is room for it: at least ~68px apart, and the last one always. Measured where each
   // rung is actually drawn, because ladders are not always evenly stepped.
   const labelled = spacedLabels(sorted.map((r) => xOf(r.strike)));
 
   return (
-    <div className="lc" ref={wrapRef} role="group" aria-label="Chance of finishing at or above each price, with two handles to choose your bet">
+    <div className="lc" ref={wrapRef} role="group" aria-label={words.group}>
       {width > 0 && (
         <svg ref={svgRef} width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
           {/* grid and axes */}
@@ -190,7 +214,7 @@ export default function LadderChart({ rungs, condition, target, onChange }: Prop
           )}
 
           {/* the window between the two handles */}
-          {cr && tr && <rect className="lc-window" x={xC} y={pad.top} width={Math.max(0, xT - xC)} height={plotH} />}
+          {cr && tr && <rect className="lc-window" x={left} y={pad.top} width={apart} height={plotH} />}
 
           {/* the market: spread band, mid curve, and every real rung */}
           <path className="lc-band" d={band} />
@@ -219,7 +243,7 @@ export default function LadderChart({ rungs, condition, target, onChange }: Prop
                 style={{ transform: `translate(${x}px, 0)` }}
                 tabIndex={0}
                 role="slider"
-                aria-label={which === 'condition' ? 'Condition price' : 'Target price'}
+                aria-label={which === 'condition' ? words.firstName : words.secondName}
                 aria-valuemin={0}
                 aria-valuemax={sorted.length - 1}
                 aria-valuenow={idx}
@@ -240,9 +264,9 @@ export default function LadderChart({ rungs, condition, target, onChange }: Prop
                   className="lc-chance"
                   // Near the top of the plot the label goes below its dot, out from under the pills; two close handles put
                   // theirs on opposite sides so the numbers never sit on each other; at the right edge it flips inward.
-                  x={(x > width - pad.right - 44 || (which === 'condition' && xT - xC < 56 && x > pad.left + 40)) ? -14 : 14}
+                  x={(x > width - pad.right - 44 || (x === left && apart < 56 && x > pad.left + 40)) ? -14 : 14}
                   y={y < pad.top + 18 ? y + 26 : y - 12}
-                  textAnchor={(x > width - pad.right - 44 || (which === 'condition' && xT - xC < 56 && x > pad.left + 40)) ? 'end' : 'start'}
+                  textAnchor={(x > width - pad.right - 44 || (x === left && apart < 56 && x > pad.left + 40)) ? 'end' : 'start'}
                 >
                   {Math.round(m * 100)}%
                 </text>

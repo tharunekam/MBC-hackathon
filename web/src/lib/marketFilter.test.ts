@@ -15,6 +15,7 @@ const ev = (ticker: string, title: string, over: Partial<MarketEvent> = {}): Mar
   offerableCount: 2,
   refusedCount: 0,
   refusedByReason: {},
+  down: { pairs: [], offerableCount: 0, refusedCount: 0 },
   ...over,
 });
 

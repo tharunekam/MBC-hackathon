@@ -14,6 +14,7 @@ const ev = (ticker: string, title: string, expiry: string | null, over: Partial<
   offerableCount: 0,
   refusedCount: 0,
   refusedByReason: {},
+  down: { pairs: [], offerableCount: 0, refusedCount: 0 },
   ...over,
 });
 

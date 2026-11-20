@@ -1,6 +1,6 @@
-/* The builder: flat panels, hairlines, one accent. Everything here is scoped under .build so it only touches this screen. */
+/* The builder: flat panels, hairlines, one accent. Everything here is scoped under .builder so it only touches this screen. */
 
-.build .page-head {
+.builder .page-head {
   align-items: flex-end;
   margin-bottom: 28px;
 }
@@ -19,14 +19,14 @@
   border-color: var(--ink);
 }
 
-.build .build-grid {
+.builder .build-grid {
   grid-template-columns: minmax(0, 1.55fr) minmax(340px, 0.85fr);
   gap: 20px;
 }
-.build .left-col {
+.builder .left-col {
   gap: 20px;
 }
-.build .card {
+.builder .card {
   padding: 24px;
   box-shadow: none;
 }
@@ -45,10 +45,10 @@
 }
 
 /* ------------------------------------------------------------ market bar */
-.build .chart-card {
+.builder .chart-card {
   padding: 0 0 20px;
 }
-.build .chart-card > :not(.market-bar):not(.more-markets) {
+.builder .chart-card > :not(.market-bar):not(.more-markets) {
   margin-left: 24px;
   margin-right: 24px;
 }
@@ -147,13 +147,13 @@
 .expiry-note a:hover {
   color: var(--ink);
 }
-.build .more-markets {
+.builder .more-markets {
   margin: 0;
   padding: 10px 24px;
   border-bottom: 1px solid var(--line);
   font-size: 13px;
 }
-.build .chart-hint {
+.builder .chart-hint {
   margin-top: 20px;
   margin-bottom: 4px;
 }
@@ -241,46 +241,46 @@
 }
 
 /* ------------------------------------------------------------ ticket */
-.build .quote-card {
+.builder .quote-card {
   top: 84px;
   gap: 20px;
   padding: 24px;
 }
-.build .q-title {
+.builder .q-title {
   gap: 8px;
 }
-.build .q-sentence {
+.builder .q-sentence {
   font-size: 21px;
   line-height: 1.2;
 }
-.build .nums {
+.builder .nums {
   gap: 0;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
 }
-.build .nums > div {
+.builder .nums > div {
   display: grid;
   gap: 6px;
   padding: 14px 16px;
 }
-.build .nums > div:nth-child(odd) {
+.builder .nums > div:nth-child(odd) {
   border-right: 1px solid var(--line);
 }
-.build .nums > div:nth-child(-n + 2) {
+.builder .nums > div:nth-child(-n + 2) {
   border-bottom: 1px solid var(--line);
 }
-.build .nums dd {
+.builder .nums dd {
   font-size: 22px;
   line-height: 1;
 }
-.build .stake-row {
+.builder .stake-row {
   grid-template-columns: 1fr;
   gap: 10px;
 }
-.build .field {
+.builder .field {
   border-radius: var(--r-md);
 }
-.build .presets {
+.builder .presets {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 0;
@@ -288,7 +288,7 @@
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
 }
-.build .presets .chip {
+.builder .presets .chip {
   justify-content: center;
   height: 38px;
   border: 0;
@@ -296,21 +296,21 @@
   border-radius: 0;
   font-weight: 500;
 }
-.build .presets .chip:last-child {
+.builder .presets .chip:last-child {
   border-right: 0;
 }
-.build .btn-wide {
+.builder .btn-wide {
   height: 48px;
   font-size: 15px;
 }
 
 @media (max-width: 960px) {
-  .build .build-grid {
+  .builder .build-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 720px) {
-  .build .page-head {
+  .builder .page-head {
     align-items: flex-start;
   }
   .expiry-row {
@@ -321,34 +321,94 @@
     display: none;
   }
   /* The quote has to sit within a screen of the chart on a phone, so the ticket is set tighter here. */
-  .build .quote-card {
+  .builder .quote-card {
     gap: 14px;
     padding: 16px;
   }
-  .build .q-title .eyebrow {
+  .builder .q-title .eyebrow {
     display: none;
   }
-  .build .q-sentence {
+  .builder .q-sentence {
     font-size: 19px;
   }
-  .build .nums > div {
+  .builder .nums > div {
     gap: 4px;
     padding: 10px 12px;
   }
-  .build .nums dd {
+  .builder .nums dd {
     font-size: 20px;
   }
-  .build .presets .chip {
+  .builder .presets .chip {
     height: 34px;
   }
-  .build .btn-wide {
+  .builder .btn-wide {
     height: 46px;
   }
-  .build .chart-card > :not(.market-bar):not(.more-markets) {
+  .builder .chart-card > :not(.market-bar):not(.more-markets) {
     margin-left: 16px;
     margin-right: 16px;
   }
-  .build .more-markets {
+  .builder .more-markets {
     padding: 10px 16px;
+  }
+}
+
+/* ------------------------------------------------------------ direction */
+.builder .direction {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 16px;
+}
+.switch {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+}
+.switch button {
+  height: 34px;
+  padding: 0 14px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 160ms var(--ease), background 160ms var(--ease);
+}
+.switch button + button {
+  border-left: 1px solid var(--line);
+}
+.switch button:hover:not(.is-on):not(:disabled) {
+  color: var(--ink);
+}
+.switch button.is-on {
+  background: var(--ink);
+  color: var(--bg);
+}
+.switch button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+@media (max-width: 720px) {
+  /* The quote must sit within about a screen of the chart on a phone, so the chart's own furniture is set tighter. */
+  .builder .chart-hint {
+    margin-top: 12px;
+  }
+  .builder .chart-foot {
+    gap: 14px;
+    font-size: 12px;
+  }
+  .builder .direction .eyebrow {
+    display: none;
+  }
+  .builder .direction .switch {
+    width: 100%;
+  }
+  .builder .direction .switch button {
+    flex: 1;
   }
 }

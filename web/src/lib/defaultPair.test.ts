@@ -23,6 +23,7 @@ const event = (rungs: Rung[], pairs: Pair[] = []): MarketEvent => ({
   offerableCount: pairs.length,
   refusedCount: 0,
   refusedByReason: {},
+  down: { pairs: [], offerableCount: 0, refusedCount: 0 },
 });
 
 describe('the pair the builder starts on', () => {
@@ -50,5 +51,33 @@ describe('the pair the builder starts on', () => {
   it('copes with a ladder of fewer than two usable rungs', () => {
     expect(defaultPair(event([rung(61500, 0.5)]))).toBeNull();
     expect(defaultPair(event([]))).toBeNull();
+  });
+});
+
+describe('the pair a falling parlay starts on', () => {
+  const mids = [0.97, 0.95, 0.85, 0.62, 0.38, 0.17, 0.06, 0.02];
+
+  it('puts the condition on the higher strike and the target on the lower one', () => {
+    const ev = event(ladder(mids));
+    const p = defaultPair(ev, 'down')!;
+    const c = ev.rungs.find((r) => r.symbol === p.c)!;
+    const t = ev.rungs.find((r) => r.symbol === p.t)!;
+    expect(c.strike).toBeGreaterThan(t.strike);
+    // a likely condition from the falling side: a high strike that the price is likely to stay under
+    expect((c.bid! + c.ask!) / 2).toBeLessThan(0.4);
+    expect((t.bid! + t.ask!) / 2).toBeGreaterThan((c.bid! + c.ask!) / 2);
+  });
+
+  it('prefers an offerable falling pair when there is one', () => {
+    const rungs = ladder(mids);
+    const pair = { condition: rungs[5]!, target: rungs[3]!, quote: { offerable: true, chanceCondition: 0.83, chanceBothHappen: 0.38 } } as unknown as Pair;
+    const ev = { ...event(rungs), down: { pairs: [pair], offerableCount: 1, refusedCount: 0 } };
+    expect(defaultPair(ev, 'down')).toEqual({ c: 'S64000', t: 'S63000' });
+  });
+
+  it('is not disturbed by the rising pairs', () => {
+    const rungs = ladder(mids);
+    const up = { condition: rungs[2]!, target: rungs[4]!, quote: { offerable: true, chanceCondition: 0.85, chanceBothHappen: 0.38 } } as unknown as Pair;
+    expect(defaultPair({ ...event(rungs, [up]) }, 'up')).toEqual({ c: 'S62500', t: 'S63500' });
   });
 });

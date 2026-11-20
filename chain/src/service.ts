@@ -472,6 +472,8 @@ export class ChainService {
       signature: r.signature,
       commitSignature: r.commitSignature,
       handle: r.handle,
+      /** What kind of bet it was is part of its id (see executor/src/bet-id.ts), which was committed with the call. */
+      betId: r.betId,
       event: r.event,
       condition: r.condition,
       target: r.target,
@@ -489,7 +491,7 @@ export class ChainService {
   }
 
   leaderboard() {
-    const by = new Map<string, { calls: number; wins: number; edge: number; last: number; recent: { signature: string; revealedAt: number; outcome: 0 | 1; edge: number }[] }>();
+    const by = new Map<string, { calls: number; wins: number; edge: number; last: number; recent: { signature: string; betId: string; revealedAt: number; outcome: 0 | 1; edge: number }[] }>();
     for (const r of Object.values(this.store.data.reveals)) {
       if (!r.verified) continue;
       const cur = by.get(r.handle) ?? { calls: 0, wins: 0, edge: 0, last: 0, recent: [] };
@@ -497,7 +499,7 @@ export class ChainService {
       cur.wins += r.outcome;
       cur.edge += r.edge;
       cur.last = Math.max(cur.last, r.revealedAt);
-      cur.recent.push({ signature: r.signature, revealedAt: r.revealedAt, outcome: r.outcome, edge: r.edge });
+      cur.recent.push({ signature: r.signature, betId: r.betId, revealedAt: r.revealedAt, outcome: r.outcome, edge: r.edge });
       by.set(r.handle, cur);
     }
     const rows = [...by.entries()]
@@ -512,7 +514,7 @@ export class ChainService {
         recent: v.recent
           .sort((a, b) => b.revealedAt - a.revealedAt)
           .slice(0, 5)
-          .map((c) => ({ signature: c.signature, revealedAt: new Date(c.revealedAt * 1000).toISOString(), outcome: c.outcome, edge: Math.round(c.edge * 10_000) / 10_000 })),
+          .map((c) => ({ signature: c.signature, betId: c.betId, revealedAt: new Date(c.revealedAt * 1000).toISOString(), outcome: c.outcome, edge: Math.round(c.edge * 10_000) / 10_000 })),
       }))
       .sort((a, b) => b.edge - a.edge || b.calls - a.calls || a.handle.localeCompare(b.handle))
       .map((r, i) => ({ rank: i + 1, ...r }));

@@ -24,6 +24,7 @@ const ladder = (ticker: string, o: { priced?: number; offerable?: number; outOfO
     offerableCount: o.offerable ?? 0,
     refusedCount: 0,
     refusedByReason: {},
+    down: { pairs: [], offerableCount: 0, refusedCount: 0 },
   };
 };
 
