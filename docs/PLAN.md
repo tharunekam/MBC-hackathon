@@ -128,6 +128,9 @@ has no contract that links them (`docs/GIVEN.md`: decisions 5 and 7 and the list
   had gone out of order by the time the second leg was checked, once because the first leg's hedge could not be filled
   and it was sold back. Those legs are in the ledger and reconciled, so the "not all-or-nothing" behaviour is seen for
   real too. **For the demo, put a basket's legs on different ladders, and not in a ladder's last half hour.**
+- **Both of that basket's bets won at 04:00 UTC**: the BTC leg paid $2.69 (+$0.64) and the XRP leg $3.82 (+$2.82),
+  settled 80 seconds after expiry, and `reconcile` tied out. These bets were placed through the executor alone, with
+  no chain service running, so they have no Solana call.
 - **The cash check drifts by a hundredth of a cent per odd fill.** When a fill spans two price levels Gemini reports
   a rounded average, and each one has moved the cash difference by about $0.000085 (two so far: $0.00017). The check
   passes within half a cent, so it would take dozens of such fills to fail it. Worth knowing before seeding a long
