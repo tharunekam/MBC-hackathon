@@ -28,6 +28,7 @@
   --r-lg: 16px;
   --shadow: 0 1px 0 rgba(23, 21, 15, 0.04), 0 18px 40px -22px rgba(23, 21, 15, 0.28);
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --feather: clamp(72px, 8vw, 120px);
 
   --font-display: 'Schibsted Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-ui: 'Schibsted Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;

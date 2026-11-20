@@ -110,14 +110,28 @@ export function Footer() {
   const venue = useVenue();
   return (
     <footer className="foot">
-      <div className="wrap foot-in">
-        <div>
-          <div className="brand brand-foot">
-            Given
+      <div className="wrap">
+        <div className="foot-top">
+          <div className="foot-brand">
+            <div className="brand brand-foot">Given</div>
+            <p>Bets that give your money back if the first half of your hunch doesn’t happen.</p>
           </div>
-          <p>Bets that give your money back if the first half of your hunch doesn’t happen.</p>
+          <nav className="foot-cols" aria-label="Footer">
+            <div>
+              <h2>Product</h2>
+              <Link to="/app">Build a bet</Link>
+              <Link to="/app/bets">My bets</Link>
+              <Link to="/leaderboard">Leaderboard</Link>
+            </div>
+            <div>
+              <h2>Trust</h2>
+              <Link to="/proof">Proof</Link>
+              <Link to={{ pathname: '/', hash: '#how' }}>How it works</Link>
+              <Link to={{ pathname: '/', hash: '#cost' }}>What it costs</Link>
+            </div>
+          </nav>
         </div>
-        <p className="fine">
+        <p className="fine foot-legal">
           Given uses Gemini’s prediction market API and is not affiliated with Gemini. {venue.footnote} Prediction markets involve risk and can lose the amount you stake.
         </p>
       </div>
@@ -127,10 +141,13 @@ export function Footer() {
 
 /** Layout for every route. Scrolls to the top on navigation. */
 export default function Shell() {
-  const { pathname } = useLocation();
+  const { pathname, hash } = useLocation();
   useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [pathname]);
+    // A link to a section of the landing page lands on it; every other navigation starts at the top.
+    const target = hash ? document.getElementById(hash.slice(1)) : null;
+    if (target) target.scrollIntoView();
+    else window.scrollTo(0, 0);
+  }, [pathname, hash]);
   return (
     <>
       <Nav />

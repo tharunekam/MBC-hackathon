@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import ProbBar from '../components/ProbBar';
+import Reveal from '../components/Reveal';
 
 /** A fixed, labelled example: it explains the product without needing a live market. */
 function Example() {
@@ -86,36 +87,28 @@ function Outcomes() {
   );
 }
 
-/** A fan of the curves this app is built on: each line is a market's chance of finishing at or above a price. Decorative only. */
+/** A few of the curves this app is built on: each line is a market's chance of finishing at or above a price. Decorative only. */
 function Ladder() {
   const lines = useMemo(() => {
     const W = 1200;
     const H = 700;
-    const N = 46;
+    const N = 22;
     return Array.from({ length: N }, (_, i) => {
       const t = i / (N - 1);
-      const centre = 0.16 + t * 0.68;
-      const steep = 0.05 + 0.055 * Math.sin(t * Math.PI);
+      const centre = 0.22 + t * 0.58;
+      const steep = 0.06 + 0.05 * Math.sin(t * Math.PI);
       const pts: string[] = [];
-      for (let k = 0; k <= 64; k++) {
-        const x = k / 64;
+      for (let k = 0; k <= 72; k++) {
+        const x = k / 72;
         const y = 1 / (1 + Math.exp((x - centre) / steep));
-        pts.push(`${(x * W).toFixed(1)},${(70 + (1 - y) * (H - 140) * (0.82 + 0.18 * t)).toFixed(1)}`);
+        pts.push(`${(x * W).toFixed(1)},${(150 + (1 - y) * (H - 280) * (0.8 + 0.2 * t)).toFixed(1)}`);
       }
-      const key = i === 13 || i === 29;
-      return { d: `M${pts.join('L')}`, key, o: key ? 0.7 : 0.06 + 0.2 * Math.sin(t * Math.PI), delay: i * 34 };
+      const key = i === 7 || i === 15;
+      return { d: `M${pts.join('L')}`, key, o: key ? 0.75 : 0.12 + 0.2 * Math.sin(t * Math.PI), delay: 300 + i * 70 };
     });
   }, []);
   return (
     <svg className="ladder" viewBox="0 0 1200 700" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">
-      <g className="ladder-grid">
-        {[0.25, 0.5, 0.75].map((f) => (
-          <line key={f} x1="0" x2="1200" y1={70 + f * 560} y2={70 + f * 560} />
-        ))}
-      </g>
-      <rect className="ladder-band" x="430" y="70" width="290" height="560" />
-      <line className="ladder-mark" x1="430" x2="430" y1="70" y2="630" />
-      <line className="ladder-mark" x1="720" x2="720" y1="70" y2="630" />
       <g className="ladder-lines">
         {lines.map((l, i) => (
           <path key={i} d={l.d} pathLength={1} data-key={l.key ? '' : undefined} style={{ opacity: l.o, animationDelay: `${l.delay}ms` }} />
@@ -154,8 +147,8 @@ export default function Landing() {
       </section>
 
       <section className="band" id="story">
-        <div className="wrap hero-in">
-          <div className="hero-copy">
+        <div className="wrap split">
+          <Reveal className="hero-copy">
             <span className="eyebrow">Prediction markets, with a safety net</span>
             <h2 className="h-section">Your stake comes back if the first half fails</h2>
             <p className="lede">A bet has two halves: something that has to hold first, then the thing you are really betting on. You only lose when the first half is right and the second half isn’t.</p>
@@ -164,14 +157,17 @@ export default function Landing() {
                 Build a bet
               </Link>
             </div>
-          </div>
-          <Example />
+          </Reveal>
+          <Reveal delay={120}>
+            <Example />
+          </Reveal>
         </div>
       </section>
 
       <section className="band band-dark" id="how">
-        <div className="wrap split">
-          <div>
+        <div className="wrap split flip">
+          <Reveal>
+            <span className="eyebrow">How it works</span>
             <h2 className="h-section">Two prices, three outcomes</h2>
             <p className="lede">Every bet is two real orders on Gemini, in your own account. Nothing is held anywhere else.</p>
             <ol className="orders-list">
@@ -186,14 +182,17 @@ export default function Landing() {
                 <p>This is the refund. It is sized so that if the first half fails, it pays your stake back.</p>
               </li>
             </ol>
-          </div>
-          <Outcomes />
+          </Reveal>
+          <Reveal delay={120}>
+            <Outcomes />
+          </Reveal>
         </div>
       </section>
 
-      <section className="band">
+      <section className="band" id="cost">
         <div className="wrap split">
-          <div>
+          <Reveal>
+            <span className="eyebrow">The price</span>
             <h2 className="h-section">We show you the cost</h2>
             <p className="lede">Two orders cost a little more than the fair price, and we say so before you bet. If a pair is poor value, we won’t offer it.</p>
             <ul className="ticks">
@@ -202,55 +201,75 @@ export default function Landing() {
               <li>What you pay, spread and fees included</li>
               <li>What you would get if you sold right away</li>
             </ul>
-          </div>
-          <div className="card quad" aria-label="The four numbers on every quote">
-            <dl className="nums">
-              <div>
-                <dt>Chance both happen</dt>
-                <dd>40%</dd>
-              </div>
-              <div>
-                <dt>Fair price per $1</dt>
-                <dd>45¢</dd>
-              </div>
-              <div>
-                <dt>You pay per $1</dt>
-                <dd>51¢</dd>
-              </div>
-              <div>
-                <dt>Sell back now, per $100</dt>
-                <dd>$91</dd>
-              </div>
-            </dl>
-            <p className="fine">Example quote.</p>
-          </div>
+          </Reveal>
+          <Reveal delay={120}>
+            <div className="card quad" aria-label="The four numbers on every quote">
+              <dl className="nums">
+                <div>
+                  <dt>Chance both happen</dt>
+                  <dd>40%</dd>
+                </div>
+                <div>
+                  <dt>Fair price per $1</dt>
+                  <dd>45¢</dd>
+                </div>
+                <div>
+                  <dt>You pay per $1</dt>
+                  <dd>51¢</dd>
+                </div>
+                <div>
+                  <dt>Sell back now, per $100</dt>
+                  <dd>$91</dd>
+                </div>
+              </dl>
+              <p className="fine">Example quote.</p>
+            </div>
+          </Reveal>
         </div>
       </section>
 
-      <section className="band band-dark">
-        <div className="wrap split">
-          <div>
+      <section className="band band-dark" id="proof">
+        <div className="wrap split flip">
+          <Reveal>
+            <span className="eyebrow">The record</span>
             <h2 className="h-section">Proof, not promises</h2>
             <p className="lede">Each call is fingerprinted on Solana the moment you bet, so nobody can claim afterwards that they saw it coming. You choose whether to reveal it.</p>
             <Link to="/proof" className="btn btn-accent-line">
               See the proof page
             </Link>
-          </div>
-          <ul className="proof-list">
-            <li>
-              <b>Committed</b>
-              <span>A hash goes on chain when you bet. It shows nothing about the bet.</span>
-            </li>
-            <li>
-              <b>Revealed</b>
-              <span>After the result, show the call and it counts on the leaderboard.</span>
-            </li>
-            <li>
-              <b>Reconciled</b>
-              <span>Our records are checked against Gemini’s orders and cash, to the cent.</span>
-            </li>
-          </ul>
+          </Reveal>
+          <Reveal delay={120}>
+            <ul className="proof-list">
+              <li>
+                <b>Committed</b>
+                <span>A hash goes on chain when you bet. It shows nothing about the bet.</span>
+              </li>
+              <li>
+                <b>Revealed</b>
+                <span>After the result, show the call and it counts on the leaderboard.</span>
+              </li>
+              <li>
+                <b>Reconciled</b>
+                <span>Our records are checked against Gemini’s orders and cash, to the cent.</span>
+              </li>
+            </ul>
+          </Reveal>
         </div>
+      </section>
+
+      <section className="band closing">
+        <Reveal className="wrap closing-in">
+          <h2 className="closing-title">Bet on the half you believe in</h2>
+          <p className="lede">Pick two prices, see exactly what it costs, and place it. If the first half fails, your stake comes back.</p>
+          <div className="row-actions">
+            <Link to="/app" className="btn btn-primary btn-lg">
+              Build a bet
+            </Link>
+            <Link to="/leaderboard" className="btn btn-ghost btn-lg">
+              See the leaderboard
+            </Link>
+          </div>
+        </Reveal>
       </section>
     </>
   );
