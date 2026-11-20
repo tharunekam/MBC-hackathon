@@ -373,7 +373,7 @@ await check('with dozens of ladders listed and most unpriced: the builder opens 
 });
 
 // ---- 6c. the other products, from their own pages
-await check('Return Parlay going down: the switch turns the bet round, and the placed bet is a NO on the lower strike and a YES on the higher', async () => {
+await check('Stake Back going down: the switch turns the bet round, and the placed bet is a NO on the lower strike and a YES on the higher', async () => {
   await dev('/dev/reset');
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`${base}/parlay`);
@@ -414,7 +414,7 @@ await check('Basket: three bets of three kinds are placed in one step, and My be
   await until('the basket to be ready to place', ready, 15_000);
   need((await page.locator('.legs > li').count()) === 2, 'the basket should open on two legs');
   await page.getByRole('button', { name: 'Add a leg' }).click();
-  await page.getByRole('radiogroup', { name: 'Leg 3 bet type' }).getByRole('radio', { name: 'Return Parlay, falling' }).click();
+  await page.getByRole('radiogroup', { name: 'Leg 3 bet type' }).getByRole('radio', { name: 'Stake Back down' }).click();
   await until('all three legs to be ready', ready, 15_000);
   await page.getByLabel('Name, optional').fill('Mixed bag');
   await place.click();

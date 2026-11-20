@@ -251,7 +251,7 @@ export default function Parlay() {
     <div className="page builder">
       <header className="page-head">
         <div>
-          <h1 className="h-page">Return Parlay</h1>
+          <h1 className="h-page">Stake Back</h1>
           <p className="lede">{words.lede}</p>
         </div>
         <Link to={{ pathname: '/', hash: '#how' }} className="head-link">

@@ -87,7 +87,7 @@ function Figure({ id }: { id: string }) {
   if (id === 'basket') return <BasketFigure />;
   if (id === 'range') return <Shape pieces={RANGE} label="Range: wins if the price finishes between the two levels, loses the stake if it finishes below or above them." />;
   if (id === 'breakout') return <Shape pieces={BREAKOUT} label="Breakout: wins if the price finishes below the lower level or above the higher one, loses the stake if it finishes between them." />;
-  return <Shape pieces={PARLAY} label="Return Parlay: the stake comes back if the first level fails, it loses if only the first level holds, and it wins if the target is reached." />;
+  return <Shape pieces={PARLAY} label="Stake Back: the stake comes back if the first level fails, it loses if only the first level holds, and it wins if the target is reached." />;
 }
 
 const product = (id: string) => PRODUCTS.find((p) => p.id === id)!;

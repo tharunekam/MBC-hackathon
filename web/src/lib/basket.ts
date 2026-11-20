@@ -2,7 +2,7 @@
  * A basket's legs as pure data: what each leg starts on, which levels it may take, what it can win and lose, whether it is
  * ready to place, and the request that places them. Kept apart from the page so every rule is tested on its own.
  *
- * A basket is several ordinary bets placed in one step. Each leg is a Return Parlay (rising or falling), a Range or a Breakout
+ * A basket is several ordinary bets placed in one step. Each leg is a Stake Back (rising or falling), a Range or a Breakout
  * on its own ladder, with its own two orders and its own result. Nothing links the legs on the exchange.
  */
 import { ApiError } from '../api/client';
@@ -45,7 +45,7 @@ export const MAX_LEGS = 6;
 export const LEG_MAX_STAKE = 100;
 export const NAME_MAX = 40;
 
-/** The four kinds of leg: a Return Parlay going up, one going down, a Range, and a Breakout (the range's other side). */
+/** The four kinds of leg: a Stake Back going up, one going down, a Range, and a Breakout (the range's other side). */
 export type LegKind = 'up' | 'down' | 'range' | 'breakout';
 
 export interface LegDraft {

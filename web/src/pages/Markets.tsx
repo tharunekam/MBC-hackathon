@@ -108,7 +108,7 @@ export default function Markets() {
           <dl className="mk-stats" aria-label="Summary">
             <Stat label="Markets open" value={totals.ladders} />
             <Stat label="With live prices" value={totals.priced} />
-            <Stat label="Parlays on offer" value={totals.offers} />
+            <Stat label="Stake Back bets on offer" value={totals.offers} />
             <Stat label="Assets" value={totals.assets} />
           </dl>
 
@@ -187,7 +187,7 @@ export default function Markets() {
                           <th role="columnheader" scope="col" className="mk-c-num">Price range</th>
                           <th role="columnheader" scope="col" className="mk-c-num mk-c-rungs">Levels</th>
                           <th role="columnheader" scope="col" className="mk-c-num mk-c-move">Expected move</th>
-                          <th role="columnheader" scope="col" className="mk-c-num mk-c-offers">Parlays on offer</th>
+                          <th role="columnheader" scope="col" className="mk-c-num mk-c-offers">Stake Back bets on offer</th>
                           <th role="columnheader" scope="col" className="mk-c-state">Status</th>
                           <th role="columnheader" scope="col" className="mk-c-act">
                             <span className="sr-only">Action</span>
@@ -214,7 +214,7 @@ export default function Markets() {
                               <td role="cell" className="mk-num" data-label="Expected move">
                                 {expectedMove(e)}
                               </td>
-                              <td role="cell" className="mk-num" data-label="Parlays on offer">
+                              <td role="cell" className="mk-num" data-label="Stake Back bets on offer">
                                 {parlaysOnOffer(e) > 0 ? parlaysOnOffer(e) : <span className="mk-none">None</span>}
                               </td>
                               <td role="cell" className="mk-state-cell" data-label="Status">
@@ -226,7 +226,7 @@ export default function Markets() {
                                   <span className="mk-links">
                                     {PRODUCTS.slice(0, 2).map((p) => (
                                       <Link key={p.id} className="mk-link" to={`${p.to}?market=${encodeURIComponent(e.ticker)}`}>
-                                        {p.id === 'parlay' ? 'Parlay' : p.short}
+                                        {p.short}
                                         <span className="sr-only">
                                           {' '}
                                           on {g.label}, {closesLabel(e.expiry, now)}

@@ -22,8 +22,8 @@ describe('a bet record without a kind is a rising parlay', () => {
 
 describe('words for each product', () => {
   it('names the products as the header does', () => {
-    expect(productName({ product: 'parlay', direction: 'up' })).toBe('Return Parlay');
-    expect(productName({ product: 'parlay', direction: 'down' })).toBe('Return Parlay');
+    expect(productName({ product: 'parlay', direction: 'up' })).toBe('Stake Back');
+    expect(productName({ product: 'parlay', direction: 'down' })).toBe('Stake Back');
     expect(productName({ product: 'range', direction: 'up' })).toBe('Range');
     expect(productName({ product: 'breakout', direction: 'up' })).toBe('Breakout');
   });

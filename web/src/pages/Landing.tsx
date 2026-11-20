@@ -39,7 +39,7 @@ interface Example {
 const EXAMPLES: readonly Example[] = [
   {
     id: 'parlay',
-    name: 'Return Parlay',
+    name: 'Stake Back',
     zones: [
       { kind: 'back', from: LOW, to: FIRST, amount: 'Stake back', when: `Below ${dollars(FIRST)}`, say: 'you get your $10 back', why: 'The first half failed, so your stake comes back.' },
       { kind: 'lose', from: FIRST, to: SECOND, amount: '−$10.00', when: `${dollars(FIRST)} to ${dollars(SECOND)}`, say: 'you lose $10.00', why: 'The first half held and the second didn’t. This is the only way you lose.' },

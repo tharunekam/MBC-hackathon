@@ -54,8 +54,8 @@ describe('the state of a bet', () => {
   });
 
   it('tags a falling parlay as one', () => {
-    expect(kindLabel({ product: 'parlay', direction: 'up' })).toBe('Return Parlay');
-    expect(kindLabel({ product: 'parlay', direction: 'down' })).toBe('Return Parlay · falling');
+    expect(kindLabel({ product: 'parlay', direction: 'up' })).toBe('Stake Back');
+    expect(kindLabel({ product: 'parlay', direction: 'down' })).toBe('Stake Back · falling');
     expect(kindLabel({ product: 'range', direction: 'up' })).toBe('Range');
     expect(kindLabel({ product: 'breakout', direction: 'up' })).toBe('Breakout');
   });

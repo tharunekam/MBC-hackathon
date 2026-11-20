@@ -22,7 +22,7 @@ export function kindOfBetId(id: string): BetKind {
 export const kindOf = (bet: Pick<Bet, 'product' | 'direction'>): BetKind => ({ product: bet.product ?? 'parlay', direction: bet.direction ?? 'up' });
 
 /** The product's name as it appears in the header. A falling parlay is the same product going the other way. */
-export const productName = (kind: BetKind): string => (kind.product === 'range' ? 'Range' : kind.product === 'breakout' ? 'Breakout' : 'Return Parlay');
+export const productName = (kind: BetKind): string => (kind.product === 'range' ? 'Range' : kind.product === 'breakout' ? 'Breakout' : 'Stake Back');
 
 /** The bet in one line, from the two strikes it was built on. For a range or a breakout these are its lower and higher strike. */
 export function betSentence(kind: BetKind, strikes: { condition: number; target: number }): string {

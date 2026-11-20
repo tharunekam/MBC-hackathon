@@ -21,21 +21,21 @@ import { cleanStakeText } from '../lib/stake';
 
 /**
  * The four kinds of leg. `label` is what the switch shows where there is room and `short` what it shows on a phone, where
- * "Parlay down" would not fit beside the other three. `full` is the name a screen reader hears: it starts with the words on
+ * "Stake Back down" would not fit beside the other three. `full` is the name a screen reader hears: it starts with the words on
  * screen, so someone using voice control can say what they see, and then says which product it is.
  */
 const KINDS: { kind: LegKind; label: string; short: string; full: string }[] = [
   {
     kind: 'up',
-    label: 'Parlay up',
+    label: 'Stake Back up',
     short: 'Up',
-    full: 'Parlay up: Return Parlay, rising',
+    full: 'Stake Back up: rising',
   },
   {
     kind: 'down',
-    label: 'Parlay down',
+    label: 'Stake Back down',
     short: 'Down',
-    full: 'Parlay down: Return Parlay, falling',
+    full: 'Stake Back down: falling',
   },
   { kind: 'range', label: 'Range', short: 'Range', full: 'Range' },
   { kind: 'breakout', label: 'Breakout', short: 'Breakout', full: 'Breakout' },

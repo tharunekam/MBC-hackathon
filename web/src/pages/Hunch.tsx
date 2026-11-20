@@ -43,7 +43,7 @@ function Sentence({ idea }: { idea: Idea }) {
   );
 }
 
-const productName = (idea: Idea) => (idea.product === 'range' ? 'Range' : idea.product === 'breakout' ? 'Breakout' : idea.direction === 'up' ? 'Return Parlay' : 'Return Parlay, falling');
+const productName = (idea: Idea) => (idea.product === 'range' ? 'Range' : idea.product === 'breakout' ? 'Breakout' : idea.direction === 'up' ? 'Stake Back' : 'Stake Back, falling');
 
 export default function Hunch() {
   const now = useNow(20000);

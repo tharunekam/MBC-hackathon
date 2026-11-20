@@ -6,7 +6,7 @@ const SITE = 'Given';
 const HOME = "Given – money back if it doesn't happen";
 
 const PAGES: [prefix: string, title: string][] = [
-  ['/parlay', 'Return Parlay'],
+  ['/parlay', 'Stake Back'],
   ['/range', 'Range and Breakout'],
   ['/basket', 'Basket'],
   ['/hunch', 'Hunch'],
@@ -17,7 +17,7 @@ const PAGES: [prefix: string, title: string][] = [
   ['/verify', 'Proof of a call'],
   // Old addresses that are sent on to the builder.
   ['/app/bets', 'My bets'],
-  ['/app', 'Return Parlay'],
+  ['/app', 'Stake Back'],
 ];
 
 /** The title for an address. The landing page carries the site's own line; an address the app does not know says so. */

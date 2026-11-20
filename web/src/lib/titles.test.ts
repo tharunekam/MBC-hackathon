@@ -3,7 +3,7 @@ import { titleFor } from './titles';
 
 describe('page titles', () => {
   it('names each page, then the site', () => {
-    expect(titleFor('/parlay')).toBe('Return Parlay · Given');
+    expect(titleFor('/parlay')).toBe('Stake Back · Given');
     expect(titleFor('/range')).toBe('Range and Breakout · Given');
     expect(titleFor('/hunch')).toBe('Hunch · Given');
     expect(titleFor('/bets/')).toBe('My bets · Given');
@@ -18,7 +18,7 @@ describe('page titles', () => {
   });
 
   it('reads an old address as the page it is sent on to', () => {
-    expect(titleFor('/app')).toBe('Return Parlay · Given');
+    expect(titleFor('/app')).toBe('Stake Back · Given');
     expect(titleFor('/app/bets')).toBe('My bets · Given');
   });
 });

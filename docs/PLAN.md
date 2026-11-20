@@ -93,7 +93,7 @@ midnight CST; branch `run/live-sandbox-devnet`).** This is the machine that hold
   metadata carries Victor's personal email address and a machine-local address for Tharun; decide whether that is
   wanted before the repository goes public.
 
-**Three products, Thursday 2026-11-19.** The app has a tab for each product. **Return Parlay** goes either way: a falling
+**Three products, Thursday 2026-11-19.** The app has a tab for each product. **Stake Back** goes either way: a falling
 bet is the same engine on the mirror image of the ladder. **Range** wins if a price finishes between two levels. **Basket**
 places two to six of these bets in one request. All of them are placed, settled, committed on Solana, revealed and verified
 through the same code. `npm run rehearse` (33 checks, 34 with injected failures) does it through the real executor and chain
@@ -442,7 +442,7 @@ Office hours (6–7 PM CST, drop-in): Gemini Tue 17 and **Thu 19**; QuickNode
 - **Voice bet entry (ElevenLabs).** The bounty needs voice to be "a core
   feature" and the video must show audio. Prize is 3 months of ElevenLabs Scale
   per member, not cash, so only do it if the frontend is ahead. Decide Wed night.
-- ~~Range bets ("between A and B") and "given below X"~~ **Done 2026-11-19**: the Range and the falling Return Parlay.
+- ~~Range bets ("between A and B") and "given below X"~~ **Done 2026-11-19**: the Range and the falling Stake Back.
 - Read-only sports ladder browser.
 
 ### Cut

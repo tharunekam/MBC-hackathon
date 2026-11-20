@@ -78,7 +78,7 @@ export interface AssetGroup {
   offers: number;
 }
 
-/** Return Parlays a ladder offers right now, going either way. */
+/** Stake Back bets a ladder offers right now, going either way. */
 export const parlaysOnOffer = (e: MarketEvent): number => e.offerableCount + (e.down?.offerableCount ?? 0);
 
 const closes = (e: MarketEvent): number => (e.expiry ? new Date(e.expiry).getTime() : Infinity);

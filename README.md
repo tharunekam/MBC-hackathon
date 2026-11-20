@@ -4,8 +4,8 @@
 
 Given builds bets on [Gemini](https://www.gemini.com) prediction markets from ordinary orders in the user's own Gemini
 account, then records each call on Solana so it can be proven later without trusting us. Every outcome is known before
-you bet. The products: a **Return Parlay** (a parlay that pays your stake back if its first leg misses, going up or going
-down), a **Range** (win if a price finishes between two levels), its opposite the **Breakout** (win if it finishes outside
+you bet. The products: a **Stake Back** (a bet on a second price level that pays your stake back if the first level fails, going up or going
+down; called Return Parlay until 2026-11-19, and still `parlay` in the code and the API), a **Range** (win if a price finishes between two levels), its opposite the **Breakout** (win if it finishes outside
 them, whichever way) and a **Basket** (several of these bets, on different assets, placed together).
 
 > Given uses Gemini's prediction market API and is **not affiliated with Gemini**. Everything runs on Gemini's sandbox
@@ -53,7 +53,7 @@ app **refuses** pairs that cost too much over fair (all-in 95¢ or more, or more
 
 ### Going down, and the other two products
 
-- **Return Parlay, falling.** Bet that a price stays under a higher level, then falls below a lower one. It is the same bet
+- **Stake Back, falling.** Bet that a price stays under a higher level, then falls below a lower one. It is the same bet
   on the mirror image of the ladder (strikes negated, every book flipped), so the offer rule, the depth guard and the sizing
   are the ones the rising bet uses; only the order sides change: a NO on the lower level is the bet and a YES on the higher
   level is the refund.
@@ -82,7 +82,7 @@ app **refuses** pairs that cost too much over fair (all-in 95¢ or more, or more
 **Why these and not others.** A ladder has a contract at every level, which is what an options chain is, so the price of
 each contract is the market's chance of finishing at or above that level and any payoff that changes only at those levels
 can be built exactly from plain orders. Two orders on two levels can make four shapes. NO on the lower with YES on the
-higher is the Return Parlay when one order is sized to refund the other, and the Breakout when they are the same size. YES
+higher is the Stake Back when one order is sized to refund the other, and the Breakout when they are the same size. YES
 on the lower with NO on the higher is the Range. The other two (YES on both, or NO on both: a bet that pays more the
 further the price goes) are not built. Nothing is packaged, pooled, held or issued by us: each bet is two orders in the
 user's own account, and the page shows every result before they are sent.
@@ -141,7 +141,7 @@ web (React/Vite)  ──►  executor (Node)  ──►  Gemini REST + WebSocket
 | `executor/` | Quotes, the two-leg bets (parlay either way, range, breakout) with depth guard and sizing, cash-out, a ledger written before every order, settlement, and **reconcile to the cent against Gemini** (it counts Gemini's YES/NO netting). A sandbox liquidity seeder, disclosed (below). 258 tests. |
 | `chain/` | Commit and reveal on Solana, the QuickNode webhook, the leaderboard, a public proof endpoint. 126 tests. |
 | `receipts-program/` | `given_receipts`, our Solana program (Anchor): checks each reveal against its commit on chain, refuses a repeat, keeps each handle's score. Deployed on devnet, interface published on chain. 8 tests against the built program. |
-| `web/` | The app: a tab for each product (Return Parlay; Range with its Breakout switch, both over a probability ladder with draggable markers; Basket as a list of legs, with what they pay together at each finishing price), the quote, the market's view of where the price finishes as a histogram and as an expected move, Hunch (your view against the market's, and the bets that fit it), a market index, My bets with cash-out, a leaderboard that counts calls sealed beside calls revealed and can be re-read from the program, and a proof page. Pages update on their own over server-sent events. 551 tests. |
+| `web/` | The app: a tab for each product (Stake Back; Range with its Breakout switch, both over a probability ladder with draggable markers; Basket as a list of legs, with what they pay together at each finishing price), the quote, the market's view of where the price finishes as a histogram and as an expected move, Hunch (your view against the market's, and the bets that fit it), a market index, My bets with cash-out, a leaderboard that counts calls sealed beside calls revealed and can be re-read from the program, and a proof page. Pages update on their own over server-sent events. 551 tests. |
 | `scripts/` | The dev stack, the hosted-demo server (`serve.mjs`: the built app plus an allowlist of API paths on one port), the deploy checker, the browser end-to-end test, and the rehearsals. A recorder and replayer for the stage (`docs/DEPLOY.md`). 52 tests. |
 | `docs/` | `PLAN.md`, `GIVEN.md` (decision log), `CONTRACTS.md` (interfaces), `GEMINI_API_NOTES.md`, `SUBMISSION.md`. |
 

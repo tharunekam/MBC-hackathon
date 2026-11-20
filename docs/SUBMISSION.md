@@ -21,7 +21,7 @@ the pitch. Items marked **FILL** need something that does not exist yet.*
 
 **What did you build?**
 Given is a consumer app for defined-outcome bets on Gemini prediction markets: every result is on screen before you bet.
-A **Return Parlay**: you pick a condition and a target on a live price ladder; if the target is reached you win, if the
+A **Stake Back**: you pick a condition and a target on a live price ladder; if the target is reached you win, if the
 condition fails you get your stake back, if it holds but the target is missed you lose the stake (and it works going down
 as well as up). A **Range**: win if a price finishes between two levels. A **Breakout**, its opposite: win if it finishes
 outside them, whichever way. A **Basket**: several of these bets on different assets, placed together. Each bet is two
