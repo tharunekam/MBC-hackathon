@@ -25,7 +25,7 @@ const ORDINARY: VenueNote = { chip: null, hint: '', readOnly: false, kind: 'exch
 
 /** The label for what the executor says it is. Kept apart from the hook so it can be tested. */
 export function describeVenue(mode: string, health: Pick<HealthResponse, 'venue' | 'readOnly' | 'seeded' | 'replay'> | null | undefined): VenueNote {
-  if (mode === 'mock') return { chip: 'Demo data', hint: 'Example markets and bets, kept in your browser. Nothing is sent anywhere.', readOnly: false, kind: 'demo' };
+  if (mode === 'mock') return { chip: null, hint: '', readOnly: false, kind: 'demo' };
   const venue = health?.venue;
   // Not connected yet: say nothing we do not know.
   if (!venue) return ORDINARY;

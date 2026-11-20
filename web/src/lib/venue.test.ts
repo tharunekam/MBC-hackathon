@@ -43,9 +43,8 @@ describe('the app labels only what changes what a person should expect', () => {
   it('demo data says nothing is sent anywhere, whatever the health says', () => {
     for (const health of [null, { venue: 'Gemini sandbox' }]) {
       const note = describeVenue('mock', health);
-      expect(note.chip).toBe('Demo data');
+      expect(note.chip).toBeNull();
       expect(note.kind).toBe('demo');
-      expect(note.hint).toMatch(/Nothing is sent anywhere/);
     }
   });
 
