@@ -196,7 +196,7 @@ export async function quoteCashOut(deps: Deps, bet: BetRecord): Promise<CashOutQ
 export interface CashOutRequest {
   /** Refuse unless the sale is quoted to bring in at least this many dollars. */
   minProceeds?: number;
-  /** How far below the best price each sell may reach, in cents. Default 1. */
+  /** How far below the best price each sell may reach, in cents. Default 1, or 0 when `minProceeds` is set. */
   slippageTicks?: number;
 }
 
@@ -221,10 +221,13 @@ export async function cashOutBet(deps: Deps, bet: BetRecord, req: CashOutRequest
     );
   }
 
-  const slip = (req.slippageTicks ?? 1) * PRICE_TICK;
+  // With a floor, each order sells at the price just quoted or better and never below it, so what the sale brings in
+  // cannot fall under the figure the floor was checked against. Without one, an order may reach a cent further.
+  const slip = (req.slippageTicks ?? (req.minProceeds !== undefined ? 0 : 1)) * PRICE_TICK;
   const stakeBefore = bet.cashOut?.stake ?? clean(bet.cost);
-  // Each attempt gets its own tags: an order tag can never be reused on Gemini.
-  const attempt = bet.legs.filter((l) => l.role === 'cashout' && l.clientOrderId.startsWith(`gv-${bet.id}-cb`)).length + 1;
+  // Each attempt gets its own tags: an order tag can never be reused on Gemini. Numbering from every cash-out order sent
+  // so far (not from the attempts) keeps them distinct even when an attempt sent only one of its two orders.
+  const attempt = bet.legs.filter((l) => l.role === 'cashout').length + 1;
   const sentNow: LegRecord[] = [];
 
   const [outcomeLeg, hedgeLeg] = quote.legs;

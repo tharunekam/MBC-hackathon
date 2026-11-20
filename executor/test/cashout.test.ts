@@ -229,6 +229,44 @@ test('a floor on the proceeds is checked against the live quote before anything 
   assert.equal(exchange.sent.length, 2);
   const done = await cashOutBet(deps, bet, { minProceeds: 9.59 });
   assert.equal(done.status, 'cashed_out');
+  // With a floor each order is limited at the quoted price itself, so the sale cannot come in under what was checked.
+  assert.deepEqual(exchange.sent.slice(2).map((o) => o.limitPrice), [0.6, 0.18]);
+  assert.ok(done.cashOut!.proceeds >= 9.59 - 0.005);
+});
+
+test('without a floor an order may reach one cent past the best price; with one, never', async () => {
+  const { exchange, deps, rising, refused } = await setup();
+  const bet = await rising();
+  // The depth read still shows a bid of 0.60; the real bid has slipped one cent.
+  exchange.reportedDepth.set(exchange.symbol(1820), { bid: 0.6, bidSize: 1000 });
+  exchange.setBook(1820, { bid: 0.59 });
+  const err = await refused(bet, { minProceeds: 9.5 });
+  assert.equal(err.code, 'nothing_sold', 'held to the quoted price, the order does not chase the lower bid');
+  assert.equal(bet.status, 'open');
+  const done = await cashOutBet(deps, bet);
+  assert.equal(done.status, 'cashed_out');
+  assert.equal(exchange.sent.at(-2)!.limitPrice, 0.59, 'one cent of reach');
+});
+
+test('order tags never repeat, however many part sales a bet goes through', async () => {
+  const { exchange, deps, rising, tiedOut } = await setup();
+  const bet = await rising();
+  // The outcome leg sells whole on the first attempt; the hedge then sells 4, 3 and the rest on three attempts.
+  exchange.reportedDepth.set(exchange.symbol(1800), { askSize: 1000 });
+  exchange.setBook(1800, { askSize: 4 });
+  await cashOutBet(deps, bet);
+  exchange.setBook(1800, { askSize: 3 });
+  const second = await cashOutBet(deps, bet);
+  assert.equal(second.cashOut?.complete, false);
+  exchange.reportedDepth.clear();
+  exchange.setBook(1800, { askSize: 1000 });
+  const done = await cashOutBet(deps, bet);
+  assert.equal(done.status, 'cashed_out');
+  const tags = done.legs.map((l) => l.clientOrderId);
+  assert.equal(new Set(tags).size, tags.length, `a tag was used twice: ${tags.join(', ')}`);
+  assert.deepEqual(tags.slice(2), ['gv-t1-cb1', 'gv-t1-ca1', 'gv-t1-ca3', 'gv-t1-ca4']);
+  near(done.cashOut!.proceeds, 12.9 * 0.6 + 10.26 * 0.18);
+  await tiedOut();
 });
 
 test('a bet whose contract another open bet holds the other side of is refused: Gemini has netted it away', async () => {

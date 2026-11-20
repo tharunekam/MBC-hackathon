@@ -215,8 +215,9 @@ an open bet is two ordinary positions, so leaving it early is two ordinary sells
    | `position_netted` | Another open bet holds the other side of one of these contracts. Gemini keeps one position per contract and has already paid $1 a pair for the overlap, so this bet's contracts are no longer there to sell on their own |
    | `below_minimum` | The proceeds are under the `minProceeds` the caller set (the web app sets the price it showed, less 2 cents) |
 
-3. **Sell the outcome leg, then the hedge**, each as one immediate-or-cancel order that may reach one cent past the best
-   price (`slippageTicks`). If the first sell fills nothing the bet is exactly as it was (`nothing_sold`). If the first
+3. **Sell the outcome leg, then the hedge**, each as one immediate-or-cancel order. With a `minProceeds` floor each
+   order is limited at the price just quoted, so the sale cannot come in under the figure the floor was checked
+   against; without one it may reach one cent past the best price (`slippageTicks` sets either). If the first sell fills nothing the bet is exactly as it was (`nothing_sold`). If the first
    sells and the second does not, what is left is the leg that pays the stake back when the condition fails, which is
    the safer half to be left holding; the bet stays live, `cashOut.complete` is false, and it can be cashed out again
    or left to settle on what it still holds.

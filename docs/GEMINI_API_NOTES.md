@@ -139,11 +139,15 @@ Hosts: sandbox REST `https://api.sandbox.gemini.com`, sandbox WebSocket
   went on single rungs within seconds. The sandbox's quoting bot appears to
   pull and replace its orders. Any check made before an order has to be made
   again immediately before it, which the bet path does.
-- **[verified 2026-11-20]** **Our own order can put a thin ladder out of
-  order for the next one.** Twice a basket's first leg filled and its second,
-  on the same SOL ladder, was then refused because a neighbouring rung's ask
-  now sat below the one we had just lifted. Put a basket's legs on different
-  ladders in a demo.
+- **[seen 2026-11-20, cause not isolated]** **A thin ladder is often out of
+  order, and a basket's second leg on the same ladder was refused for it
+  twice.** Each time the first leg had just filled and the second was refused
+  because one rung's ask sat above a lower strike's. Our own fill may have
+  caused it (it was suspected on 11-18 too), but the same ladder also went out
+  of order in that window with no order of ours, so the bot's requoting alone
+  may explain it. Either way: in a demo, put a basket's legs on different
+  ladders. **No full basket has been placed on the sandbox yet** (see
+  `docs/PLAN.md`).
 - **[verified 2026-11-18]** A contract's state can be `active/post_only`: the
   book is visible but taker orders are not accepted, so the offer rule refuses
   the pair as `market_closed`. What we saw on the sandbox's hourly ladders:
