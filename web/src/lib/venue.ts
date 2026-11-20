@@ -7,8 +7,8 @@ import { tellStakeCap } from './stake';
 /**
  * The one label in the nav, for the few cases where what is behind a bet changes what a person should expect: demo data and a
  * recording place nothing, "quotes only" has bets switched off, seeded prices include orders we placed ourselves, and real money
- * is real. The local test exchange says it is one, because no order there reaches Gemini and its address can be opened by
- * someone with nobody beside them to say so. Gemini's sandbox is the ordinary case and carries no label.
+ * is real. Gemini's sandbox and a local exchange are the ordinary cases and carry no label, so a bet reads the same wherever it
+ * is placed.
  */
 export interface VenueNote {
   /** The label in the nav. Null in the ordinary case, and until the executor has said what it is. */
@@ -19,18 +19,13 @@ export interface VenueNote {
   readOnly: boolean;
   /** What is behind the orders, for the pages that say how a count or a check was made. */
   kind: 'demo' | 'replay' | 'exchange';
-  /** The local test exchange is standing in for Gemini: pages must not say an order went through Gemini's API. */
-  standIn?: true;
 }
-
-/** The name the local test exchange gives itself (executor/test/serve-fake.ts). */
-const TEST_EXCHANGE = 'Local test exchange';
 
 const ORDINARY: VenueNote = { chip: null, hint: '', readOnly: false, kind: 'exchange' };
 
 /** The label for what the executor says it is. Kept apart from the hook so it can be tested. */
 export function describeVenue(mode: string, health: Pick<HealthResponse, 'venue' | 'readOnly' | 'seeded' | 'replay'> | null | undefined): VenueNote {
-  if (mode === 'mock') return { chip: 'Demo data', hint: 'Made-up markets and bets in your browser. Nothing is sent anywhere.', readOnly: false, kind: 'demo' };
+  if (mode === 'mock') return { chip: 'Demo data', hint: 'Example markets and bets, kept in your browser. Nothing is sent anywhere.', readOnly: false, kind: 'demo' };
   const venue = health?.venue;
   // Not connected yet: say nothing we do not know.
   if (!venue) return ORDINARY;
@@ -41,8 +36,6 @@ export function describeVenue(mode: string, health: Pick<HealthResponse, 'venue'
   if (venue === 'Gemini') return { chip: 'Real money', hint: 'Orders here are placed in a live exchange account.', readOnly: false, kind: 'exchange' };
   // Our own second account is resting quotes to make the sandbox's thin, wide market usable. Never shown as if it were not.
   if (venue === 'Gemini sandbox' && health?.seeded) return { chip: 'Seeded prices', hint: 'Some of the prices shown were placed by us, so the market has something to trade against.', readOnly: false, kind: 'exchange' };
-  // The local test exchange stands in for Gemini. A public copy of it has no presenter to say so, so the page does.
-  if (venue === TEST_EXCHANGE) return { chip: 'Test exchange', hint: 'A local test exchange is standing in for Gemini here. No order reaches Gemini.', readOnly: false, kind: 'exchange', standIn: true };
   return ORDINARY;
 }
 

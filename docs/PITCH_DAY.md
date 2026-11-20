@@ -71,7 +71,7 @@ If any step fails, do not demo live: use the replay (`GIVEN_MODE=replay`, below)
 | Problem | What to do |
 |---|---|
 | The sandbox has no bettable ladder (top of the hour) | Wait a few minutes, or present from a recorded session: `GIVEN_MODE=replay` plays back a real recorded bet with nothing behind it (`docs/DEPLOY.md`, "Replay"). Say it is a replay |
-| Gemini sandbox is down or slow | The same replay, or `GIVEN_MODE=fake` (its nav says "Test exchange"; say aloud as well that it is the local test exchange, not Gemini; set `FAKE_ROUND_MINUTES=5` so its ladder settles by itself) |
+| Gemini sandbox is down or slow | The same replay, or `GIVEN_MODE=fake` (nothing on screen says it is a test, so say aloud that it is the local test exchange, not Gemini; set `FAKE_ROUND_MINUTES=5` so its ladder settles by itself) |
 | The Stream shows paused or failing | Find the cause first in the dashboard delivery log (401: the tokens differ; 404, 502 or 530: the address or the server), then `npm run quicknode -- pitch-on --recreate`: on the free plan a paused Stream is almost never resumable. The leaderboard keeps filling from the minute-by-minute read, so nothing on screen breaks |
 | The public address changed (quick tunnel restarted) | Update `GIVEN_PUBLIC_URL`, restart the server, then `npm run quicknode -- pitch-on --recreate` so the Stream points at the new address |
 | The laptop sleeps | Keep it awake while presenting (`caffeinate -dimsu`), or use a host |
