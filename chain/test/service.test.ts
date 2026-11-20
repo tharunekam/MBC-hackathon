@@ -77,7 +77,7 @@ test('commit: if Solana fails, nothing is written to the chain, no call is shown
   assert.equal(store.data.calls.length, 1);
 });
 
-test('reveal: a bet that was sold back keeps its call sealed, and nothing more is written to the chain', async () => {
+test('reveal: a bet that was sold back keeps its call sealed until its market settles, and nothing more is written before then', async () => {
   const { service, chain, bets } = setup();
   bets.add();
   const call = await service.commitCall('b1', 'primary');
@@ -89,6 +89,34 @@ test('reveal: a bet that was sold back keeps its call sealed, and nothing more i
   // A bet that is already cashed out cannot have a call recorded for it afterwards either.
   bets.add({ id: 'b2', status: 'cashed_out' });
   await rejects(service.commitCall('b2', 'primary'), 'bet_not_eligible');
+});
+
+test('reveal: once the market settles, a sold-back bet\'s call is revealed and scored like any other', async () => {
+  // Selling early does not change whether the call was right. The executor records how it turned out (`called`) and the
+  // call is scored against the fair price it was made at, exactly as if the bet had been held.
+  const { service, chain, bets } = setup();
+  bets.add(); // b1: sold back, and the call came off
+  bets.add(); // b2: sold back, and it did not
+  bets.add(); // b3: sold back, and the first half failed
+  const [hit, miss, off] = [await service.commitCall('b1', 'primary'), await service.commitCall('b2', 'primary'), await service.commitCall('b3', 'primary')];
+  for (const id of ['b1', 'b2', 'b3']) bets.bets.get(id)!.status = 'cashed_out';
+  bets.bets.get('b1')!.called = { conditionResolved: 'yes', targetResolved: 'yes' };
+  bets.bets.get('b2')!.called = { conditionResolved: 'yes', targetResolved: 'no' };
+  bets.bets.get('b3')!.called = { conditionResolved: 'no', targetResolved: 'no' };
+
+  const won = await service.revealCall(hit.id, 'primary');
+  assert.equal(won.state, 'revealed');
+  assert.equal(won.reveal?.outcome, 1);
+  assert.equal(won.reveal?.edge, 0.59); // 1 minus the fair price of 0.41 at entry
+  const lost = await service.revealCall(miss.id, 'primary');
+  assert.equal(lost.reveal?.outcome, 0);
+  assert.equal(lost.reveal?.edge, -0.41);
+  assert.equal((parseMemo(chain.txs.at(-1)!.memo) as RevealMemo).o, 0);
+  assert.equal((await service.verifyCall(hit.id, 'primary')).matches, true);
+
+  // The first half failed: void, as for a bet still held, but nothing came back here because the bet had been sold.
+  await assert.rejects(service.revealCall(off.id, 'primary'), (e: unknown) => e instanceof ServiceError && e.code === 'void_call' && !/stake came back/.test(e.message));
+  assert.equal(service.listCalls('primary').find((c) => c.id === off.id)!.state, 'void');
 });
 
 test('reveal: not before settlement; a refunded call is void and never scored', async () => {
@@ -269,6 +297,12 @@ test('leaderboard: ranks by total edge, applies the minimum-calls rule, and coun
       chain.forge(encode({ g: 1, t: 'r', c: c.signature, u: handle, b: f.betId, e: f.event, k: f.condition, x: f.target, p: f.entryPrice, f: fair, at: f.at, s: salt, o: outcome }), chain.authority);
     }
   }
+  // Two more calls by one player that were sealed and never revealed. A commit carries its handle, so they still count
+  // as calls made: a record cannot be built by keeping the losing ones sealed.
+  for (const n of [1, 2]) {
+    const f = { betId: `kept${n}`, event: 'EV', condition: 'C', target: 'T', entryPrice: 0.5, fairPrice: 0.45, at: 2000 + n };
+    chain.forge(encode({ g: 1, t: 'c', h: commitHash(f, `${n}f`.repeat(16)), u: 'bold-lynx-22', at: f.at }), chain.authority);
+  }
   void bets;
   const all = fresh({ minCalls: 1 });
   await all.backfill();
@@ -278,10 +312,90 @@ test('leaderboard: ranks by total edge, applies the minimum-calls rule, and coun
     [2, 'bold-lynx-22', 1, 0.8],
     [3, 'wry-hare-33', 2, -1.2],
   ]);
+  assert.deepEqual(board.rows.map((r) => [r.handle, r.sealed, r.refunded]), [
+    ['calm-fox-11', 3, 0], // every sealed call revealed
+    ['bold-lynx-22', 3, 0], // one of three revealed: the gap is on the board
+    ['wry-hare-33', 2, 0],
+  ]);
   assert.equal(board.rows[0]!.hitRate, 2 / 3);
   const strict = fresh({ minCalls: 2 });
   await strict.backfill();
   assert.deepEqual(strict.leaderboard().rows.map((r) => r.handle), ['calm-fox-11', 'wry-hare-33'], 'one-call players are held back until they have enough calls');
+});
+
+test('leaderboard: a player\'s row says how many calls they sealed, and how many of those were refunded and cannot be revealed', async () => {
+  const { service, bets } = setup({ minCalls: 1, selfIngest: true });
+  bets.add(); // b1: revealed as a hit
+  bets.add(); // b2: the first half fails, so the stake comes back and the call is void
+  bets.add(); // b3: sealed, settled as a miss, and never revealed
+  const [hit, refunded, kept] = [await service.commitCall('b1', 'primary'), await service.commitCall('b2', 'primary'), await service.commitCall('b3', 'primary')];
+  bets.settle('b1', 'yes', 'yes');
+  bets.settle('b2', 'no', 'no');
+  bets.settle('b3', 'yes', 'no');
+  await service.revealCall(hit.id, 'primary');
+  await rejects(service.revealCall(refunded.id, 'primary'), 'void_call');
+  void kept;
+
+  const row = service.leaderboard().rows[0]!;
+  assert.equal(row.calls, 1); // what is scored
+  assert.equal(row.sealed, 3); // what was called: on chain under the handle, whether or not it was ever revealed
+  assert.equal(row.refunded, 1); // of the two not revealed, one could not have been
+  assert.equal(row.hitRate, 1); // the rate is over revealed calls only, which is why the other two numbers sit beside it
+});
+
+test('a refunded call is counted as refunded without anyone trying to reveal it', async () => {
+  // The page never offers to reveal a call whose first half failed, so nothing used to mark it: on a board that shows
+  // calls sealed beside calls revealed, it would have read as a call the player was keeping back.
+  const { service, chain, bets } = setup({ minCalls: 1, selfIngest: true });
+  bets.add(); // b1: revealed as a hit
+  bets.add(); // b2: the first half fails, the stake comes back, and nobody ever asks to reveal it
+  bets.add(); // b3: still open
+  bets.add(); // b4: sold back, then its first half failed
+  const [hit, refunded, open, sold] = [await service.commitCall('b1', 'primary'), await service.commitCall('b2', 'primary'), await service.commitCall('b3', 'primary'), await service.commitCall('b4', 'primary')];
+  bets.settle('b1', 'yes', 'yes');
+  await service.revealCall(hit.id, 'primary');
+  assert.equal(service.leaderboard().rows[0]!.refunded, 0);
+
+  bets.settle('b2', 'no', 'no');
+  bets.bets.get('b4')!.status = 'cashed_out';
+  bets.bets.get('b4')!.called = { conditionResolved: 'no', targetResolved: 'no' };
+  const written = chain.txs.length;
+  assert.equal(await service.noteRefunds(), 2);
+  assert.equal(chain.txs.length, written); // nothing goes on chain for a refund
+  const states = Object.fromEntries(service.listCalls('primary').map((c) => [c.id, c.state]));
+  assert.deepEqual([states[hit.id], states[refunded.id], states[open.id], states[sold.id]], ['revealed', 'void', 'committed', 'void']);
+  const row = service.leaderboard().rows[0]!;
+  assert.deepEqual([row.calls, row.sealed, row.refunded], [1, 4, 2]);
+  assert.equal(await service.noteRefunds(), 0); // found once
+});
+
+test('looking for refunds waits its turn: it is throttled, and a bet service that is down is tried again later', async () => {
+  let clock = new Date('2026-11-18T01:30:00Z');
+  const { service, bets } = setup({ minCalls: 1, selfIngest: true, now: () => clock });
+  bets.add();
+  const call = await service.commitCall('b1', 'primary');
+  bets.settle('b1', 'no', 'no');
+  const real = bets.getBet.bind(bets);
+  let asked = 0;
+  let down = true;
+  bets.getBet = async (id) => {
+    asked++;
+    if (down) throw new ServiceError(502, 'executor_unreachable', 'down');
+    return real(id);
+  };
+  service.noteRefundsSoon();
+  service.noteRefundsSoon(); // the second is dropped: one is already running
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal(asked, 1);
+  assert.equal(service.listCalls('primary')[0]!.state, 'committed'); // the service was down: nothing was decided
+  down = false;
+  service.noteRefundsSoon(); // too soon after the last pass
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal(asked, 1);
+  clock = new Date(clock.getTime() + 21_000);
+  service.noteRefundsSoon();
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal(service.listCalls('primary').find((c) => c.id === call.id)!.state, 'void');
 });
 
 test('leaderboard names the program and the keys it counts, so a browser can read the same scores from Solana itself', async () => {

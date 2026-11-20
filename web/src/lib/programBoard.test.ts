@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import devnet from './fixtures/devnet-caller-stats.json';
-import { base58, boardRows, compareBoards, comparisonLine, decodeCallerStats, explorerAddress, readProblem, readProgramBoard, statsFilters, statsFromAnswer, STATS_DISCRIMINATOR } from './programBoard';
+import devnetCalls from './fixtures/devnet-call-records.json';
+import { CALL_DISCRIMINATOR, base58, boardRows, callFilters, callsFromAnswer, compareBoards, comparisonLine, decodeCallRecord, decodeCallerStats, explorerAddress, readProblem, readProgramBoard, sealedByHandle, statsFilters, statsFromAnswer, STATS_DISCRIMINATOR } from './programBoard';
 import type { CallerStats } from './programBoard';
 import type { Rpc } from './verify';
 
@@ -188,22 +189,44 @@ describe('boardRows', () => {
 });
 
 describe('readProgramBoard', () => {
-  it('asks the node once per key for that key\'s score accounts, and builds the board from the answers', async () => {
+  /** A node holding what devnet held: score accounts for every key, and the call accounts fetched for KEY_B. */
+  const devnetNode = (asked: unknown[][] = []): Rpc => async (method, params) => {
+    asked.push([method, ...params]);
+    const { filters } = params[1] as { filters: { memcmp: { bytes: string } }[] };
+    const [kind, key] = [filters[0]!.memcmp.bytes, filters[1]!.memcmp.bytes];
+    if (kind === base58(CALL_DISCRIMINATOR)) return key === devnetCalls.authority ? devnetCalls.accounts : [];
+    return answers[key] ?? [];
+  };
+
+  it('asks the node once per key for that key\'s score accounts, then once per key for its calls, and builds the board from the answers', async () => {
     const asked: unknown[][] = [];
-    const node: Rpc = async (method, params) => {
-      asked.push([method, ...params]);
-      const { filters } = params[1] as { filters: { memcmp: { bytes: string } }[] };
-      return answers[filters[1]!.memcmp.bytes] ?? [];
-    };
-    const rows = await readProgramBoard(node, PROGRAM, [KEY_B, KEY_C, KEY_B]);
-    expect(asked).toEqual([
-      ['getProgramAccounts', PROGRAM, { encoding: 'base64', commitment: 'confirmed', filters: [{ memcmp: { offset: 0, bytes: 'jPVhWXFTu4g' } }, { memcmp: { offset: 8, bytes: KEY_B } }] }],
-      ['getProgramAccounts', PROGRAM, { encoding: 'base64', commitment: 'confirmed', filters: [{ memcmp: { offset: 0, bytes: 'jPVhWXFTu4g' } }, { memcmp: { offset: 8, bytes: KEY_C } }] }],
-    ]);
+    const rows = await readProgramBoard(devnetNode(asked), PROGRAM, [KEY_B, KEY_C, KEY_B]);
+    const ask = (kind: string, key: string) => ['getProgramAccounts', PROGRAM, { encoding: 'base64', commitment: 'confirmed', filters: [{ memcmp: { offset: 0, bytes: kind } }, { memcmp: { offset: 8, bytes: key } }] }];
+    expect(asked).toEqual([ask('jPVhWXFTu4g', KEY_B), ask('jPVhWXFTu4g', KEY_C), ask('RnFVmNVZyfW', KEY_B), ask('RnFVmNVZyfW', KEY_C)]);
     expect(rows.map((r) => [r.handle, r.calls, r.edge])).toEqual([
       ['brisk-heron-69', 2, 1.18],
       ['north-tern-98', 2, 1.18],
       ['steady-finch-56', 4, 0.780163],
+    ]);
+  });
+  it('says how many calls each player sealed, from the program\'s own call accounts', async () => {
+    const rows = await readProgramBoard(devnetNode(), PROGRAM, [KEY_B]);
+    // On devnet steady-finch-56 sealed five calls under this key and revealed four: the fifth was refunded and can never be.
+    expect(rows.map((r) => [r.handle, r.calls, r.sealed])).toEqual([
+      ['steady-finch-56', 4, 5],
+      ['north-tern-98', 1, 1],
+    ]);
+  });
+  it('still shows the scores when the second read is turned away, only without the sealed counts', async () => {
+    const rationed: Rpc = async (method, params) => {
+      const { filters } = params[1] as { filters: { memcmp: { bytes: string } }[] };
+      if (filters[0]!.memcmp.bytes === base58(CALL_DISCRIMINATOR)) throw new Error('The Solana node answered 429.');
+      return devnetNode()(method, params);
+    };
+    const rows = await readProgramBoard(rationed, PROGRAM, [KEY_B]);
+    expect(rows.map((r) => [r.handle, r.calls, r.sealed])).toEqual([
+      ['steady-finch-56', 4, undefined],
+      ['north-tern-98', 1, undefined],
     ]);
   });
   it('is an empty board when the key has written nothing', async () => {
@@ -214,6 +237,38 @@ describe('readProgramBoard', () => {
       throw new Error('The Solana node answered 429.');
     };
     await expect(readProgramBoard(down, PROGRAM, [KEY_A])).rejects.toThrow('429');
+  });
+  it('reads a call account: who sealed it, under which key, and whether it has been revealed', () => {
+    // What https://api.devnet.solana.com answered on 2026-11-19 for the call accounts KEY_B has written: six calls, 147 bytes each.
+    const bytes = (i: number) => Uint8Array.from(Buffer.from(devnetCalls.accounts[i]!.account.data[0]!, 'base64'));
+    const calls = devnetCalls.accounts.map((_, i) => decodeCallRecord(bytes(i))!);
+    expect(calls.map((c) => [c.handle, c.revealed])).toEqual([
+      ['steady-finch-56', true],
+      ['steady-finch-56', true],
+      ['steady-finch-56', false],
+      ['north-tern-98', true],
+      ['steady-finch-56', true],
+      ['steady-finch-56', true],
+    ]);
+    expect(calls.every((c) => c.authority === KEY_B && c.committedAt > 1_794_000_000 && c.committedAt < 1_796_000_000)).toBe(true);
+    expect(callsFromAnswer(devnetCalls.accounts, PROGRAM, KEY_B)).toHaveLength(6);
+    expect(callsFromAnswer(devnetCalls.accounts, PROGRAM, KEY_A)).toHaveLength(0); // another key's calls are not counted
+    expect(callsFromAnswer(devnetCalls.accounts, KEY_A, KEY_B)).toHaveLength(0); // nor accounts some other program owns
+    expect([...sealedByHandle(calls)]).toEqual([
+      ['steady-finch-56', { sealed: 5, revealed: 4 }],
+      ['north-tern-98', { sealed: 1, revealed: 1 }],
+    ]);
+
+    // Not a call account: a score account's bytes, bytes cut short, and a state that is neither sealed nor revealed.
+    expect(decodeCallRecord(realBytes(KEY_A))).toBeNull();
+    expect(decodeCallRecord(bytes(0).subarray(0, 100))).toBeNull();
+    const odd = bytes(0);
+    odd[76 + new DataView(odd.buffer).getUint32(72, true) + 16] = 7;
+    expect(decodeCallRecord(odd)).toBeNull();
+  });
+  it('names the call account by the hash of its name, as Anchor does', () => {
+    expect([...CALL_DISCRIMINATOR]).toEqual([...createHash('sha256').update('account:CallRecord').digest().subarray(0, 8)]);
+    expect(callFilters(KEY_B)).toEqual([{ memcmp: { offset: 0, bytes: 'RnFVmNVZyfW' } }, { memcmp: { offset: 8, bytes: KEY_B } }]);
   });
   it('builds the same filters as the chain service', () => {
     expect(statsFilters(KEY_A)).toEqual([{ memcmp: { offset: 0, bytes: 'jPVhWXFTu4g' } }, { memcmp: { offset: 8, bytes: KEY_A } }]);

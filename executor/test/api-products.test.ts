@@ -51,7 +51,8 @@ test('GET /quote: a falling parlay is priced on the mirror and answered with rea
     near(res.json.quote.chanceBothHappen, 0.19);
     near(res.json.quote.pricePaid, 0.2 / 0.58);
     assert.ok(res.json.stake.cost <= 10.005);
-    assert.ok(res.json.stake.ifConditionFails > -0.01 && res.json.stake.ifConditionFails < 0.01);
+    // The refund covers the stake even if its order fills two cents worse, so at the best price it is a little more than the stake.
+    assert.ok(res.json.stake.ifConditionFails > -0.01 && res.json.stake.ifConditionFails < 0.5);
     assert.ok(res.json.depth.maxStake > 10);
 
     const up = await app.call('GET', `/quote?event=ETHTEST&condition=${app.exchange.symbol(1800)}&target=${app.exchange.symbol(1840)}&stake=10`);

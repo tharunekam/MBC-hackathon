@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allInPrice, cashOutPer100, estimate, mirrorBook, outcomesFor, rangeEstimate, rangeOutcomesFor, rangePrice, rangeUnitCost } from './pricing';
+import { allInPrice, breakoutEstimate, breakoutOutcomesFor, breakoutPrice, breakoutUnitCost, cashOutPer100, estimate, feeRate, mirrorBook, outcomesFor, rangeEstimate, rangeOutcomesFor, rangePrice, rangeUnitCost } from './pricing';
 
 // The worked example in executor/README.md (also executor/test/offer.test.ts):
 // condition 0.80 / 0.84, outcome 0.40 / 0.42.
@@ -87,6 +87,84 @@ describe('a range matches the executor', () => {
     expect(o.backAlways).toBe(10);
     expect(o.ifInRange).toBeCloseTo(5.8, 6);
     expect(o.ifOutside).toBeCloseTo(-4.2, 6);
+  });
+});
+
+// Pinned to the worked example in the README (also the executor's tests): lower strike 0.80 / 0.82, higher strike 0.40 / 0.42.
+describe('a breakout matches the executor', () => {
+  const low = { bid: 0.8, ask: 0.82 };
+  const high = { bid: 0.4, ask: 0.42 };
+
+  it('costs what the pair costs: a NO on the lower strike and a YES on the higher', () => {
+    expect(breakoutUnitCost(0.8, 0.42, 0)).toBeCloseTo(0.62, 8);
+    expect(breakoutPrice(0.8, 0.42, 0)).toBeCloseTo(0.62, 8);
+    expect(breakoutUnitCost(0.8, 0.42, 0.07)).toBeCloseTo(0.648252, 8);
+    expect(breakoutPrice(0.5, 0.52, 0)).toBeNull(); // a pair that costs a dollar or more for the dollar it can win
+    expect(breakoutPrice(0, 0.42, 0)).toBeNull(); // nobody bidding on the lower strike: the NO has no price
+  });
+
+  it('estimates the chance, the price, and the verdict at production fees', () => {
+    const e = breakoutEstimate(low, high, 0)!;
+    expect(e.chanceOutside).toBeCloseTo(0.6, 8);
+    expect(e.fairPrice).toBeCloseTo(0.6, 8);
+    expect(e.pricePaid).toBeCloseTo(0.62, 8);
+    expect(e.unitCost).toBeCloseTo(0.62, 8);
+    expect(e.allIn).toBeCloseTo(0.648252, 8);
+    expect(e.markup).toBeCloseTo(0.048252, 8);
+    expect(e.markupPct).toBeCloseTo(0.048252 / 0.6, 6);
+    expect(e.verdict).toBe('ok');
+    expect(e.code).toBeNull();
+    // Selling straight back: the NO at 1 - 0.82 and the YES at 0.40, on 100 / 0.62 pairs.
+    expect(e.cashOutPer100).toBe(93.55);
+  });
+
+  it('charges the venue fee in the price paid and on the way back out', () => {
+    const e = breakoutEstimate(low, high, 0.07)!;
+    expect(e.pricePaid).toBeCloseTo(0.648252, 8);
+    expect(e.allIn).toBeCloseTo(e.pricePaid, 8);
+    const back = (100 / 0.648252) * (0.18 - feeRate(0.18, 0.07) + 0.4 - feeRate(0.4, 0.07));
+    expect(e.cashOutPer100).toBeCloseTo(back, 2);
+  });
+
+  it('is the other side of the range on the same two levels', () => {
+    const r = rangeEstimate(low, high, 0)!;
+    const b = breakoutEstimate(low, high, 0)!;
+    expect(r.chanceInRange + b.chanceOutside).toBeCloseTo(1, 8);
+    // Buying both sides costs the dollar one of them pays, plus the two spreads.
+    expect(r.pricePaid + b.pricePaid).toBeCloseTo(1 + (0.82 - 0.8) + (0.42 - 0.4), 8);
+  });
+
+  it('says what a stake buys: a dollar a contract outside the two levels, nothing between them', () => {
+    const o = breakoutOutcomesFor(10, 0.62);
+    expect(o.contracts).toBe(16.12);
+    expect(o.cost.toFixed(2)).toBe('9.99');
+    expect(o.ifOutside.toFixed(2)).toBe('6.13');
+    expect(o.ifInRange.toFixed(2)).toBe('-9.99');
+    expect(o.ifOutside - o.ifInRange).toBeCloseTo(o.contracts, 8);
+  });
+
+  it('refuses a near-certain breakout for its price and a wide pair of books for markup', () => {
+    // Both levels far below where the price is: finishing outside them is all but sure.
+    const sure = breakoutEstimate({ bid: 0.97, ask: 0.99 }, { bid: 0.93, ask: 0.95 }, 0)!;
+    expect(sure.verdict).toBe('refuse');
+    expect(sure.code).toBe('price_too_high');
+    expect(sure.refusal).toMatch(/further apart/);
+    const wide = breakoutEstimate({ bid: 0.7, ask: 0.9 }, { bid: 0.1, ask: 0.3 }, 0)!;
+    expect(wide.verdict).toBe('refuse');
+    expect(wide.code).toBe('markup_too_high');
+  });
+
+  it('warns when it costs a little over fair, by the same thresholds as every other bet', () => {
+    const e = breakoutEstimate({ bid: 0.79, ask: 0.83 }, { bid: 0.17, ask: 0.21 }, 0)!;
+    expect(e.markup).toBeGreaterThanOrEqual(0.05);
+    expect(e.markup).toBeLessThanOrEqual(0.08);
+    expect(e.verdict).toBe('warn');
+  });
+
+  it('has no price with a side missing, no chance between the levels, or a pair that costs a dollar', () => {
+    expect(breakoutEstimate({ bid: null, ask: 0.8 }, high, 0)).toBeNull();
+    expect(breakoutEstimate(high, low, 0)).toBeNull(); // the "lower" level less likely than the "higher": nothing in between
+    expect(breakoutEstimate({ bid: 0.5, ask: 0.56 }, { bid: 0.46, ask: 0.52 }, 0)).toBeNull();
   });
 });
 

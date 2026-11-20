@@ -1,4 +1,5 @@
-/* The range builder. It reuses the builder's panels and tables; only what a range adds is here, scoped to .range-page. */
+/* The range builder, for a range and for a breakout on the same two levels. It reuses the builder's panels and tables; only
+   what a bet on two levels adds is here, scoped to .range-page. */
 
 /* ------------------------------------------------------------ inside / outside bar */
 .rb-track {
@@ -49,6 +50,19 @@
   color: var(--ink);
 }
 
+/* ------------------------------------------------------------ the market's expected move, under the chart */
+.range-page .chart-even {
+  margin-top: 12px;
+  margin-bottom: 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--soft);
+}
+.range-page .chart-even b {
+  font-weight: 600;
+  color: var(--ink);
+}
+
 /* ------------------------------------------------------------ ticket */
 /* The four figures and the line under them read as one block: the line sits on the grid's bottom edge. */
 .range-page .rg-figures .nums {
@@ -75,7 +89,10 @@
 }
 
 /* ------------------------------------------------------------ tables */
+/* What the two orders do is said once per screen: on the ticket (.rg-pay) where there is room for it, and under the payoff
+   table, straight after the ticket, on a phone. */
 .range-page .rg-always {
+  display: none;
   margin: 12px 0 0;
   padding-top: 12px;
   border-top: 1px solid var(--line);
@@ -85,15 +102,36 @@
   border-left: 2px solid var(--good);
   padding-left: 8px;
 }
+/* The same rungs for a breakout, where finishing between the two levels is the loss. */
+.range-page .rungs .is-between td:first-child {
+  border-left: 2px solid var(--bad);
+  padding-left: 8px;
+}
 
 @media (max-width: 720px) {
   /* On a phone the figures below carry the same two numbers; the bar alone keeps the ticket within a screen of the chart. */
   .range-page .rb-legend {
     display: none;
   }
-  .rg-pay {
-    padding: 8px 12px;
+  /* The Place bet button has to stay within about a screen of the chart, so the ticket's own line moves to the payoff
+     table, which follows it on a phone, and the grid of figures gets its bottom corners back. */
+  .range-page .rg-pay {
+    display: none;
+  }
+  .range-page .rg-always {
+    display: block;
+  }
+  .range-page .rg-figures .nums {
+    border-bottom-left-radius: var(--r-md);
+    border-bottom-right-radius: var(--r-md);
+  }
+  /* The market's expected move in one line: "Even chance between $62,820 and $63,650." */
+  .range-page .chart-even {
+    margin-top: 8px;
     font-size: 13px;
+  }
+  .range-page .chart-even::first-letter {
+    text-transform: uppercase;
   }
 }
 

@@ -1,0 +1,43 @@
+/*
+ * Cash out, on an open bet in My bets. The row and its buttons are laid out in bets.css; this adds what the cash-out
+ * itself needs. Every selector names two classes so it wins over bets.css whichever of the two files loads first.
+ */
+
+/* Nothing to say yet: the sentence gives way and the button keeps the place its buttons take once there is a price. */
+.bl-foot.bl-cash > p:empty {
+  display: none;
+}
+.bl-foot.bl-cash .bl-cash-actions {
+  margin-left: auto;
+}
+.bl-foot.bl-cash > p {
+  max-width: 68ch;
+}
+/* What selling means, under the price. */
+.bl-cash .bl-cash-means {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+@media (max-width: 720px) {
+  /* Fingers: each button 44px tall, and far enough apart that "Keep the bet" is not pressed for "Sell". */
+  .bl-foot.bl-cash .bl-cash-actions {
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-left: 0;
+  }
+  .bl-cash .bl-btn {
+    height: 44px;
+    padding: 0 16px;
+  }
+  /* The two answers to a price share the row's width. */
+  .bl-cash[data-cashout='priced'] .bl-cash-actions,
+  .bl-cash[data-cashout='selling'] .bl-cash-actions {
+    width: 100%;
+  }
+  .bl-cash[data-cashout='priced'] .bl-btn,
+  .bl-cash[data-cashout='selling'] .bl-btn {
+    flex: 1 1 0;
+  }
+}

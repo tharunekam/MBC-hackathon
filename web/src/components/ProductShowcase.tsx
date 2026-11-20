@@ -1,102 +1,137 @@
+import type { CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import { PRODUCTS } from '../lib/nav';
+import { keepMode } from '../lib/venue';
 import Reveal from './Reveal';
 
+/** What a bet does over one stretch of finishing prices. The same colours mean the same thing everywhere in the app. */
+type Kind = 'back' | 'lose' | 'win';
+const WORD: Record<Kind, string> = { back: 'Stake back', lose: 'Loses', win: 'Wins' };
+
+/** A bet, read left to right along where the price finishes: each piece is a result and the share of the width it takes. */
+type Pieces = readonly (readonly [Kind, number])[];
+const PARLAY: Pieces = [['back', 0.36], ['lose', 0.28], ['win', 0.36]];
+const RANGE: Pieces = [['lose', 0.29], ['win', 0.42], ['lose', 0.29]];
+const BREAKOUT: Pieces = [['win', 0.29], ['lose', 0.42], ['win', 0.29]];
+
 /**
- * What each bet pays, drawn against where the price finishes (left to right). Each is a few lines and no data: a picture of
- * the rule, labelled as an illustration. The same colours mean the same thing everywhere in the app: amber is the stake coming
- * back, red a loss, green a win.
+ * One bet as a stepped line: a flat piece at the height of each result (above the dotted line is ahead, on it is the stake
+ * back, below it is behind), joined by thin risers where the result changes. `nth` staggers the drawing-in.
  */
-function Figure({ id }: { id: string }) {
-  if (id === 'range') {
-    return (
-      <svg className="fig" viewBox="0 0 240 92" role="img" aria-label="A range pays when the price finishes between two levels, and loses a little outside them">
-        <line className="fig-zero" x1="8" x2="232" y1="44" y2="44" />
-        <path className="fig-join" pathLength={1} d="M72,58 V14 M168,14 V58" />
-        <path className="fig-lose" pathLength={1} d="M8,58 H72" />
-        <path className="fig-win" pathLength={1} d="M72,14 H168" />
-        <path className="fig-lose" pathLength={1} d="M168,58 H232" />
-        <text className="fig-label" x="40" y="86" textAnchor="middle">
-          Below
-        </text>
-        <text className="fig-label" x="120" y="86" textAnchor="middle">
-          Between
-        </text>
-        <text className="fig-label" x="200" y="86" textAnchor="middle">
-          Above
-        </text>
-      </svg>
-    );
-  }
-  if (id === 'basket') {
-    const rows = [
-      { y: 6, name: 'BTC' },
-      { y: 34, name: 'ETH' },
-      { y: 62, name: 'SOL' },
-    ];
-    return (
-      <svg className="fig" viewBox="0 0 240 92" role="img" aria-label="A basket is several bets, each with its own result, placed together">
-        {rows.map((r) => (
-          <g key={r.name}>
-            <text className="fig-label" x="6" y={r.y + 17} textAnchor="start">
-              {r.name}
-            </text>
-            <line className="fig-zero" x1="40" x2="232" y1={r.y + 12} y2={r.y + 12} />
-            <path className="fig-join" pathLength={1} d={`M104,${r.y + 12} V${r.y + 22} M158,${r.y + 22} V${r.y + 2}`} />
-            <path className="fig-back" pathLength={1} d={`M40,${r.y + 12} H104`} />
-            <path className="fig-lose" pathLength={1} d={`M104,${r.y + 22} H158`} />
-            <path className="fig-win" pathLength={1} d={`M158,${r.y + 2} H232`} />
-          </g>
-        ))}
-      </svg>
-    );
-  }
+function Steps({ pieces, left, right, zero, swing, nth = 0 }: { pieces: Pieces; left: number; right: number; zero: number; swing: number; nth?: number }) {
+  const yOf = (kind: Kind) => zero + (kind === 'win' ? -swing : kind === 'lose' ? swing : 0);
+  let x = left;
+  const flats = pieces.map(([kind, share]) => {
+    const from = x;
+    x += (right - left) * share;
+    return { kind, from, to: x, y: yOf(kind) };
+  });
+  const risers = flats
+    .slice(1)
+    .map((f, i) => `M${f.from.toFixed(1)},${flats[i]!.y} V${f.y}`)
+    .join(' ');
+  const delay = (i: number) => ({ '--i': nth + i }) as CSSProperties;
   return (
-    <svg className="fig" viewBox="0 0 240 92" role="img" aria-label="A Return Parlay gives the stake back if the first level fails, loses it if only the first holds, and wins if both hold">
-      <line className="fig-zero" x1="8" x2="232" y1="44" y2="44" />
-      <path className="fig-join" pathLength={1} d="M88,44 V70 M152,70 V14" />
-      <path className="fig-back" pathLength={1} d="M8,44 H88" />
-      <path className="fig-lose" pathLength={1} d="M88,70 H152" />
-      <path className="fig-win" pathLength={1} d="M152,14 H232" />
-      <text className="fig-label" x="48" y="86" textAnchor="middle">
-        Stake back
-      </text>
-      <text className="fig-label" x="120" y="86" textAnchor="middle">
-        Loses
-      </text>
-      <text className="fig-label" x="192" y="86" textAnchor="middle">
-        Wins
-      </text>
-    </svg>
+    <g>
+      <line className="fig-zero" x1={left} x2={right} y1={zero} y2={zero} />
+      <path className="fig-join" pathLength={1} d={risers} style={delay(1)} />
+      {flats.map((f, i) => (
+        <path key={i} className={`fig-${f.kind}`} pathLength={1} d={`M${f.from.toFixed(1)},${f.y} H${f.to.toFixed(1)}`} style={delay(i)} />
+      ))}
+    </g>
   );
 }
 
-/** The three products side by side: what each pays, in one line and one picture, and a way in. */
+/** A single bet's picture, with each stretch named underneath in words, so the colours are never the only clue. */
+function Shape({ pieces, label }: { pieces: Pieces; label: string }) {
+  return (
+    <div className="fig-box" role="img" aria-label={label}>
+      <svg className="fig" viewBox="0 0 240 76" aria-hidden="true" focusable="false">
+        <Steps pieces={pieces} left={8} right={232} zero={38} swing={27} />
+      </svg>
+      <div className="fig-labels" style={{ gridTemplateColumns: pieces.map(([, share]) => `${share}fr`).join(' ') }}>
+        {pieces.map(([kind], i) => (
+          <span key={i} data-kind={kind}>
+            {WORD[kind]}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** A basket: one bet per asset, each a shape of its own. The three rows are thirds of the drawing, so the names line up with them. */
+function BasketFigure() {
+  const rows = [
+    { name: 'BTC', pieces: PARLAY },
+    { name: 'ETH', pieces: RANGE },
+    { name: 'SOL', pieces: BREAKOUT },
+  ];
+  return (
+    <div className="fig-box fig-basket" role="img" aria-label="Basket: three bets on three assets, each with its own results, placed together.">
+      <div className="fig-names">
+        {rows.map((r) => (
+          <span key={r.name}>{r.name}</span>
+        ))}
+      </div>
+      <svg className="fig" viewBox="0 0 200 96" aria-hidden="true" focusable="false">
+        {rows.map((r, i) => (
+          <Steps key={r.name} pieces={r.pieces} left={4} right={196} zero={16 + i * 32} swing={8} nth={i} />
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+function Figure({ id }: { id: string }) {
+  if (id === 'basket') return <BasketFigure />;
+  if (id === 'range') return <Shape pieces={RANGE} label="Range: wins if the price finishes between the two levels, loses the stake if it finishes below or above them." />;
+  if (id === 'breakout') return <Shape pieces={BREAKOUT} label="Breakout: wins if the price finishes below the lower level or above the higher one, loses the stake if it finishes between them." />;
+  return <Shape pieces={PARLAY} label="Return Parlay: the stake comes back if the first level fails, it loses if only the first level holds, and it wins if the target is reached." />;
+}
+
+const product = (id: string) => PRODUCTS.find((p) => p.id === id)!;
+
+/**
+ * The four shapes a bet can take. Three are pages of their own. Breakout is the Range page with its switch the other way (the
+ * same two levels, the opposite result), so it is a shape here without being a tab in the nav.
+ */
+const SHAPES = [
+  { id: 'parlay', name: product('parlay').name, to: product('parlay').to, line: 'Win if the price reaches your target, up or down. Stake back if the first level fails, lose in between.' },
+  { id: 'range', name: product('range').name, to: product('range').to, line: 'Win if the price stays put and finishes between two levels.' },
+  { id: 'breakout', name: 'Breakout', to: `${product('range').to}?side=out`, line: 'Win on a big move, finishing outside two levels. No need to pick a direction.' },
+  { id: 'basket', name: product('basket').name, to: product('basket').to, line: 'Several of these on different assets, placed in one step. The page shows how they move together.' },
+];
+
+/** The four shapes side by side: what each pays, in one line and one picture, and a way in. */
 export default function ProductShowcase() {
   return (
     <div className="wrap">
       <Reveal className="showcase-head">
-        <span className="eyebrow">Products</span>
-        <h2 className="h-section">Three ways to bet on a price</h2>
-        <p className="lede">Each is priced from the exchange’s own ladders and placed as real orders in your account.</p>
+        <span className="eyebrow">Defined-outcome bets</span>
+        <h2 className="h-section">Bet the shape, not just the direction</h2>
+        <p className="lede">Up, down, stays put or a big move. Pick the shape of what you think will happen. Every result is on screen before you bet.</p>
       </Reveal>
       <Reveal delay={100}>
         <ul className="showcase">
-          {PRODUCTS.map((p, i) => (
-            <li key={p.id}>
-              <Link to={p.to}>
-                <span className="showcase-index">0{i + 1}</span>
-                <Figure id={p.id} />
-                <b>{p.name}</b>
-                <span className="showcase-line">{p.tagline}</span>
-                <span className="showcase-go">
-                  Open <span aria-hidden="true">→</span>
-                </span>
-              </Link>
+          {SHAPES.map((s, i) => (
+            // The name is the link, stretched over the whole cell, so the cell is one target with a short name.
+            <li key={s.id}>
+              <span className="showcase-index" aria-hidden="true">
+                0{i + 1}
+              </span>
+              <h3 className="showcase-name">
+                <Link to={keepMode(s.to)}>{s.name}</Link>
+              </h3>
+              <Figure id={s.id} />
+              <p className="showcase-line">{s.line}</p>
+              <span className="showcase-go" aria-hidden="true">
+                Open <span>→</span>
+              </span>
             </li>
           ))}
         </ul>
-        <p className="fine showcase-note">Drawn against where the price finishes. Illustrative.</p>
+        <p className="fine showcase-note">Each picture reads left to right along where the price could finish. Above the dotted line you are ahead, below it you are behind. Illustrative, not to scale.</p>
       </Reveal>
     </div>
   );

@@ -195,20 +195,25 @@
   border-collapse: collapse;
   font-size: 15px;
 }
-.mk-table .mk-c-closes {
-  width: 24%;
-}
+/* "Closes" has no width of its own: it takes what the others leave. */
 .mk-table .mk-c-num {
-  width: 18%;
+  width: 17%;
 }
 .mk-table .mk-c-rungs {
-  width: 9%;
+  width: 7%;
+}
+.mk-table .mk-c-move {
+  width: 12%;
+}
+.mk-table .mk-c-offers {
+  width: 14%;
 }
 .mk-table .mk-c-state {
-  width: 15%;
+  width: 12%;
 }
+/* As wide as its three links need, whatever the table's width: a share of the table cut the last link off. */
 .mk-table .mk-c-act {
-  width: 16%;
+  width: 200px;
 }
 .mk-table th {
   padding: 10px 16px;
@@ -364,9 +369,14 @@
     padding-left: 12px;
     padding-right: 12px;
   }
+  /* Seven columns on a tablet: a two-word heading takes two lines instead of running into its neighbour. */
+  .mk-table th {
+    white-space: normal;
+    vertical-align: bottom;
+  }
 }
 
-/* ---------------------------------------------------------- phone: each ladder is a stacked block */
+/* ---------------------------------------------------------- phone */
 @media (max-width: 719px) {
   .mk-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -402,7 +412,14 @@
     margin-left: 0;
     flex-basis: 100%;
   }
+  .mk-state {
+    padding: 24px 16px;
+  }
+}
 
+/* ---------------------------------------------------------- narrow: each ladder is a stacked block */
+/* Seven columns need about 900px. Below that every ladder is a block of its own, each figure with its name beside it. */
+@media (max-width: 899px) {
   .mk-table,
   .mk-table tbody {
     display: block;
@@ -479,8 +496,9 @@
   .mk-table td.mk-state-cell {
     white-space: normal;
   }
-  .mk-state {
-    padding: 24px 16px;
+  /* The dot stays beside its word, at the right, instead of drifting to the middle of the row. */
+  .mk-table td.mk-state-cell .mk-dot {
+    margin-left: auto;
   }
 }
 

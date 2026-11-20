@@ -9,7 +9,7 @@
  * so a pair is never shown as better value than it would be for real money.
  */
 import type { Rung } from './pairs.ts';
-import { ceilToStep, clean, feeRate, floorToStep, hedgeQuantity, takerFee } from './pricing.ts';
+import { PRICE_TICK, QTY_STEP, ceilToStep, clean, feeRate, floorToStep, hedgeQuantity, takerFee } from './pricing.ts';
 
 /** Gemini's published production taker fee coefficient. */
 export const PRODUCTION_TAKER_FEE_COEF = 0.07;
@@ -263,11 +263,23 @@ export interface BetPlan {
   feesAtProductionRates: number;
 }
 
-/** What a bet of `outcomeContracts` costs and pays at the quoted prices. */
-export function planForQuantity(outcomeContracts: number, askB: number, bidA: number, coef: number): BetPlan {
+/** How far past the best price an order may reach unless the request says otherwise: two cents. */
+export const DEFAULT_SLIP = 2 * PRICE_TICK;
+
+/**
+ * What a bet of `outcomeContracts` costs and pays at the quoted prices.
+ *
+ * `hedgeSlip` is how far past the best price the refund order is allowed to reach. That order is sized so the refund still
+ * covers the stake if it fills at its limit, which takes a few more contracts than the best price needs; when it fills at
+ * the best price, as it usually does, those extra contracts are bought too. Passing the slip here makes the plan the bet
+ * that will really be placed: without it a "$10.00" bet came to $10.04 (seen on the local exchange, 2026-11-19), a few
+ * cents over the figure the person had just agreed to. The refund is then a few cents more than the stake, never less.
+ */
+export function planForQuantity(outcomeContracts: number, askB: number, bidA: number, coef: number, hedgeSlip = 0): BetPlan {
   const noPrice = clean(1 - bidA);
+  const sizedAt = Math.min(0.99, clean(noPrice + hedgeSlip));
   const costB = clean(outcomeContracts * askB + takerFee(outcomeContracts, askB, coef));
-  const hedgeContracts = outcomeContracts > 0 ? hedgeQuantity(costB, noPrice, 0, 0, coef) : 0;
+  const hedgeContracts = outcomeContracts > 0 ? hedgeQuantity(costB, sizedAt, 0, 0, coef) : 0;
   const cost = clean(costB + hedgeContracts * noPrice + takerFee(hedgeContracts, noPrice, coef));
   return {
     outcomeContracts,
@@ -283,19 +295,33 @@ export function planForQuantity(outcomeContracts: number, askB: number, bidA: nu
 }
 
 /**
+ * How many outcome contracts a stake buys, never planning to spend more than the stake once the refund order is counted
+ * as it will really be sized (see `planForQuantity`). Zero when the pair has no price.
+ */
+export function contractsForStake(stake: number, askB: number, bidA: number, coef: number, hedgeSlip = 0): number {
+  const price = rawPrice(askB, bidA, coef);
+  if (price === null || !(stake > 0)) return 0;
+  let quantity = floorToStep(stake / price);
+  const first = planForQuantity(quantity, askB, bidA, coef, hedgeSlip).cost;
+  if (first > stake + EPS) quantity = floorToStep((quantity * stake) / first); // one jump close, then step down to fit
+  while (quantity > 0 && planForQuantity(quantity, askB, bidA, coef, hedgeSlip).cost > stake + EPS) quantity = clean(quantity - QTY_STEP);
+  return quantity;
+}
+
+/**
  * The depth guard. Shrinks the outcome quantity until BOTH legs fit in what is
  * resting at the best price: `askSizeB` YES contracts offered on the outcome
  * and `bidSizeA` YES bids on the condition (which is what a NO buy trades
  * against). Returns 0 when not even the smallest bet fits.
  */
-export function capToDepth(wanted: number, askB: number, bidA: number, coef: number, askSizeB: number, bidSizeA: number): number {
+export function capToDepth(wanted: number, askB: number, bidA: number, coef: number, askSizeB: number, bidSizeA: number, hedgeSlip = 0): number {
   let quantity = floorToStep(Math.max(0, Math.min(wanted, askSizeB)));
   if (quantity <= 0 || bidSizeA <= 0) return 0;
   const price = rawPrice(askB, bidA, coef);
   if (price === null) return 0;
   // First guess from the price, then step down until the rounded-up hedge really fits.
   quantity = Math.min(quantity, floorToStep(bidSizeA / price));
-  while (quantity > 0 && planForQuantity(quantity, askB, bidA, coef).hedgeContracts > bidSizeA + EPS) {
+  while (quantity > 0 && planForQuantity(quantity, askB, bidA, coef, hedgeSlip).hedgeContracts > bidSizeA + EPS) {
     quantity = clean(quantity - 0.01);
   }
   return quantity > 0 ? floorToStep(quantity) : 0;

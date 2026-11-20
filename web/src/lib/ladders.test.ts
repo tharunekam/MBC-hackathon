@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MarketEvent, Rung } from '../api/types';
-import { across, hasPrices, listLadders, shortTitle, spacedLabels } from './ladders';
+import { across, hasPrices, listLadders, rungGap, snap, spacedLabels, tickFor } from './ladders';
 
 const rung = (strike: number, priced: boolean): Rung => ({
   symbol: `S${strike}`,
@@ -37,12 +37,26 @@ const sandbox = (): MarketEvent[] => [
   ...Array.from({ length: 30 }, (_, i) => ladder(`DEAD${i}`, { priced: i % 7 === 0 ? 1 : 0 })),
 ];
 
-describe('a tab is named, not asked', () => {
-  it('drops the exchange\'s "price on" and its question mark', () => {
-    expect(shortTitle('Oil (Brent) price on November 18?')).toBe('Oil (Brent) · November 18');
-    expect(shortTitle('XRP price on November 18')).toBe('XRP · November 18');
-    expect(shortTitle('BTC price today at 5pm EST')).toBe('BTC · 5pm EST');
-    expect(shortTitle('Will it rain?')).toBe('Will it rain');
+describe('a round step for a price read between rungs', () => {
+  it('is a hundredth of the gap between rungs, as a power of ten', () => {
+    expect(tickFor(500)).toBe(10);
+    expect(tickFor(20)).toBe(1);
+    expect(tickFor(2)).toBeCloseTo(0.1, 10);
+    expect(tickFor(0.02)).toBeCloseTo(0.001, 10);
+    expect(tickFor(0)).toBe(1);
+  });
+
+  it('rounds a price to it', () => {
+    expect(snap(62675.4, 10)).toBe(62680);
+    expect(snap(63880.95, 10)).toBe(63880);
+    expect(snap(1793.6, 1)).toBe(1794);
+  });
+
+  it('takes the gap as the span shared out over the rungs', () => {
+    expect(rungGap([61500, 62000, 62500, 63000])).toBe(500);
+    expect(rungGap([3, 1, 2])).toBe(1);
+    expect(rungGap([5])).toBe(0);
+    expect(rungGap([])).toBe(0);
   });
 });
 

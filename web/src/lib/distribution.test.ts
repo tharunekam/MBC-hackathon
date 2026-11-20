@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Rung } from '../api/types';
-import { bucketLabel, chanceAt, distributionOf, likeliest, marketView, neverRising, priceAtChance, viewBuckets, viewOf, zoneChances, zoneOf, type Shape } from './distribution';
+import { bucketLabel, chanceAt, distributionOf, evenBand, likeliest, marketView, moveText, neverRising, priceAtChance, viewBuckets, viewOf, zoneChances, zoneOf, type Shape } from './distribution';
 
 const rung = (strike: number, chance: number | null, spread = 0.02): Rung => ({
   symbol: `S${strike}`,
@@ -79,6 +79,62 @@ describe('reading a price off the ladder', () => {
   it('is null beyond either end of the ladder', () => {
     expect(priceAtChance(levels, 0.99)).toBeNull();
     expect(priceAtChance(levels, 0.01)).toBeNull();
+  });
+});
+
+describe('how far the market expects the price to travel', () => {
+  const { levels } = distributionOf(ladder)!;
+
+  it('is the band between the prices it gives a 75% and a 25% chance of finishing at or above', () => {
+    const band = evenBand(levels)!;
+    // 82% at 62,500 and 62% at 63,000: 75% is 7/20 of the way across. 41% at 63,500 and 20% at 64,000: 25% is 16/21.
+    expect(band.low).toBeCloseTo(62500 + (7 / 20) * 500, 6);
+    expect(band.high).toBeCloseTo(63500 + (16 / 21) * 500, 6);
+    expect(band.low).toBeCloseTo(priceAtChance(levels, 0.75)!, 6);
+    expect(band.high).toBeCloseTo(priceAtChance(levels, 0.25)!, 6);
+  });
+
+  it('holds half of the market’s weight: an even chance inside, an even chance outside', () => {
+    const band = evenBand(levels)!;
+    expect(chanceAt(levels, band.low) - chanceAt(levels, band.high)).toBeCloseTo(0.5, 8);
+  });
+
+  it('gives its half-width as a fraction of its middle price', () => {
+    const band = evenBand(levels)!;
+    const middle = (band.low + band.high) / 2;
+    expect(band.halfWidth).toBeCloseTo((band.high - band.low) / 2 / middle, 10);
+    expect(band.halfWidth).toBeCloseTo(0.00953, 4);
+  });
+
+  it('is wider for a market that is less sure, on the same strikes', () => {
+    const calm = distributionOf([rung(100, 0.99), rung(101, 0.9), rung(102, 0.5), rung(103, 0.1), rung(104, 0.01)])!;
+    const jumpy = distributionOf([rung(100, 0.8), rung(101, 0.65), rung(102, 0.5), rung(103, 0.35), rung(104, 0.2)])!;
+    expect(evenBand(jumpy.levels)!.halfWidth).toBeGreaterThan(evenBand(calm.levels)!.halfWidth * 2);
+  });
+
+  it('is unknown when the ladder does not reach those chances, and on a ladder too short to read', () => {
+    // Every rung is likelier than not: the ladder says nothing about where a 25% chance lies.
+    expect(evenBand(distributionOf([rung(1, 0.95), rung(2, 0.8), rung(3, 0.6)])!.levels)).toBeNull();
+    expect(evenBand(distributionOf([rung(1, 0.4), rung(2, 0.2), rung(3, 0.1)])!.levels)).toBeNull();
+    expect(evenBand([])).toBeNull();
+    expect(evenBand([{ symbol: 'a', strike: 1, chance: 0.5 }])).toBeNull();
+  });
+
+  it('still reads a ladder whose prices were out of order, after they are evened out', () => {
+    const crossed = distributionOf([rung(1, 0.9), rung(2, 0.5), rung(3, 0.6), rung(4, 0.2)])!;
+    const band = evenBand(crossed.levels)!;
+    expect(band.low).toBeGreaterThan(1);
+    expect(band.high).toBeLessThan(4);
+    expect(band.high).toBeGreaterThan(band.low);
+  });
+
+  it('is written as plus or minus a percent, and as a dash when it is not known', () => {
+    expect(moveText(evenBand(levels))).toBe('±1.0%');
+    expect(moveText({ halfWidth: 0.0061 })).toBe('±0.6%');
+    expect(moveText({ halfWidth: 0.0995 })).toBe('±10%');
+    expect(moveText({ halfWidth: 0.237 })).toBe('±24%');
+    expect(moveText(null)).toBe('–');
+    expect(moveText({ halfWidth: Number.NaN })).toBe('–');
   });
 });
 
@@ -182,5 +238,21 @@ describe('what a bet does in each bar', () => {
     const z = zoneChances(shape, buckets);
     expect(z.win).toBeCloseTo(chanceAt(62500) - chanceAt(63500), 8);
     expect(z.back).toBe(0);
+  });
+
+  it('a breakout is the range turned inside out: it wins outside, either way, and loses inside', () => {
+    const shape: Shape = { kind: 'breakout', low: 62500, high: 63500 };
+    expect(buckets.map((b) => zoneOf(shape, b))).toEqual(['win', 'win', 'win', 'lose', 'lose', 'win', 'win', 'win']);
+    const z = zoneChances(shape, buckets);
+    expect(z.win).toBeCloseTo(1 - chanceAt(62500) + chanceAt(63500), 8);
+    expect(z.lose).toBeCloseTo(chanceAt(62500) - chanceAt(63500), 8);
+    expect(z.back).toBe(0);
+  });
+
+  it('a range and a breakout on the same two levels split every bar between them', () => {
+    const range: Shape = { kind: 'range', low: 62000, high: 64000 };
+    const breakout: Shape = { kind: 'breakout', low: 62000, high: 64000 };
+    for (const b of buckets) expect(zoneOf(range, b) === 'win').toBe(zoneOf(breakout, b) === 'lose');
+    expect(zoneChances(range, buckets).win + zoneChances(breakout, buckets).win).toBeCloseTo(1, 8);
   });
 });

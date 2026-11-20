@@ -42,6 +42,29 @@ export function closesLabel(expiry: string | null, now = Date.now()): string {
   return sameDay ? `Today ${time}` : `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${time}`;
 }
 
+/**
+ * The same close time as the end of a line: "closes today 9:35 PM", "closes Nov 30, 5 PM", or "closed 9:35 PM" once it has
+ * passed. Always the viewer's own time, like the picker's tabs. Null when the ladder has no close time.
+ */
+export function closesPhrase(expiry: string | null, now = Date.now()): string | null {
+  if (!expiry) return null;
+  const d = new Date(expiry);
+  if (Number.isNaN(d.getTime())) return null;
+  const sameDay = d.toDateString() === new Date(now).toDateString();
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: d.getMinutes() ? '2-digit' : undefined });
+  const day = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (d.getTime() <= now) return sameDay ? `closed ${time}` : `closed ${day}, ${time}`;
+  return sameDay ? `closes today ${time}` : `closes ${day}, ${time}`;
+}
+
+/**
+ * The line over a ticket: what the market is and when it closes, "Bitcoin · closes today 9:35 PM". The exchange's own title
+ * ("BTC price today at 10pm EST") gives the hour in New York time, which on the same card as the picker's local time read as
+ * two different closes; the page keeps that title for a tooltip and shows this.
+ */
+export const marketHeading = (e: Pick<MarketEvent, 'title' | 'ticker' | 'expiry'>, now = Date.now()): string =>
+  [assetLabel(e), closesPhrase(e.expiry, now)].filter(Boolean).join(' · ');
+
 export interface AssetGroup {
   key: string;
   name: string;

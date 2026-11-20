@@ -3,7 +3,7 @@ import type { Bet, CallRecord } from '../api/types';
 import { explorerTx } from '../api/types';
 import { kindOf } from '../lib/betKind';
 import { cents, timeLeft, trunc, usd, usdSigned } from '../lib/format';
-import { receiptWords } from '../lib/receiptWords';
+import { rangeComesBack, receiptWords } from '../lib/receiptWords';
 
 interface Props {
   bet: Bet;
@@ -19,6 +19,9 @@ export default function Receipt({ bet, call, callError, onAgain }: Props) {
   const words = receiptWords(bet);
   const range = kindOf(bet).product === 'range';
   const filled = (leg: typeof first) => `${leg?.quantityFilled} contracts at ${leg?.avgPrice !== null && leg?.avgPrice !== undefined ? cents(leg.avgPrice) : '–'}`;
+  // A bare "Closed. The result appears…" read as if something had gone wrong with the bet. It is the market that has closed.
+  const left = timeLeft(bet.expiry);
+  const closes = left === 'Closed' ? 'This market has closed' : (left ?? 'The market closes soon');
 
   return (
     <div className="receipt">
@@ -79,10 +82,10 @@ export default function Receipt({ bet, call, callError, onAgain }: Props) {
           </li>
         ))}
       </ul>
-      {range && <p className="fine">{usd(Math.min(first?.quantityFilled ?? 0, second?.quantityFilled ?? 0))} comes back whatever happens. The rest depends on where it finishes.</p>}
+      {range && <p className="fine">{rangeComesBack(usd(Math.min(first?.quantityFilled ?? 0, second?.quantityFilled ?? 0)), true)} The rest depends on where it finishes.</p>}
 
       <p className="fine next-step">
-        {timeLeft(bet.expiry) ?? 'The market closes soon'}. The result appears on My bets by itself, and you do not need to keep this page open.
+        {closes}. The result appears on My bets by itself, and you do not need to keep this page open.
       </p>
 
       <div className="row-actions">

@@ -4,12 +4,17 @@ import { api } from '../api';
 import { ApiError } from '../api/client';
 import { explorerTx } from '../api/types';
 import { kindLabel } from '../lib/betsView';
+import { calledWords, resultWord } from '../lib/callWords';
 import { cents, trunc } from '../lib/format';
+import { friendly } from '../lib/friendly';
 import { useAsync } from '../lib/hooks';
+import { readProblem } from '../lib/programBoard';
 import { savePng, shareCardSvg } from '../lib/shareCard';
+import { keepMode } from '../lib/venue';
 import { callQuestion, solanaRpc, verifyOnChain } from '../lib/verify';
 import type { Verification } from '../lib/verify';
 import '../styles/bets.css';
+import '../styles/proof.css';
 
 const RPC: string = import.meta.env.VITE_SOLANA_RPC ?? 'https://api.devnet.solana.com';
 
@@ -33,7 +38,8 @@ export default function Verify() {
     try {
       setResult(await verifyOnChain(solanaRpc(RPC), c.signature, c.authority, c.program));
     } catch (e) {
-      setProblem(e instanceof Error ? e.message : 'Could not reach Solana.');
+      // The same words as the leaderboard's own read of Solana: a busy node and an unreachable one are each named.
+      setProblem(readProblem(e));
     } finally {
       setRunning(false);
     }
@@ -51,7 +57,8 @@ export default function Verify() {
 
   if (call.loading && !c) {
     return (
-      <div className="page narrow">
+      <div className="page narrow" aria-busy="true">
+        <h1 className="sr-only">Proof of a call</h1>
         <div className="skeleton row-skel" />
       </div>
     );
@@ -62,10 +69,17 @@ export default function Verify() {
       <div className="page narrow">
         <div className="pf-empty">
           <h1 className="h-card">{notFound ? 'This call is not public' : 'We could not load this call'}</h1>
-          <p>{notFound ? 'It may not exist, or its owner has not revealed it yet.' : (call.error?.message ?? 'Try again in a moment.')}</p>
-          <Link to="/leaderboard" className="btn btn-ghost">
-            Back to the leaderboard
-          </Link>
+          <p>{notFound ? 'It may not exist, or its owner has not revealed it yet.' : call.error ? friendly(call.error) : 'Try again in a moment.'}</p>
+          <div className="pc-actions">
+            {!notFound && (
+              <button type="button" className="btn btn-ghost" onClick={() => call.reload()}>
+                Try again
+              </button>
+            )}
+            <Link to={keepMode('/leaderboard')} className="btn btn-ghost">
+              Back to the leaderboard
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -110,7 +124,7 @@ export default function Verify() {
         <div>
           <span className="eyebrow">Check a call</span>
           <h1 className="h-page">Proof of a call</h1>
-          <p className="lede">Made before the result, and checkable on Solana by anyone.</p>
+          <p className="lede">{real ? 'Made before the result, and checkable on Solana by anyone.' : 'Made before the result. This one is on a test chain; on Solana devnet anyone can check a call from their own browser.'}</p>
         </div>
       </header>
 
@@ -122,7 +136,11 @@ export default function Verify() {
           </span>
           <span className="chip chip-quiet">{real ? 'Solana devnet' : 'Test chain'}</span>
         </div>
-        <p className="pc-verdict">{won ? 'Called it' : 'Missed'}</p>
+        {/* The result in the two words the rest of the app uses, then the proof page's own: where the price finished. */}
+        <div className="pc-result">
+          <p className="pc-verdict">{resultWord(c.outcome)}</p>
+          <p className="pc-called">{calledWords(c)}</p>
+        </div>
         <h2 className="q-sentence pc-question">
           {q.parts.map((p, i) => (p.em ? <em key={i}>{p.text}</em> : <Fragment key={i}>{p.text}</Fragment>))}
         </h2>
@@ -140,19 +158,17 @@ export default function Verify() {
             <dd className={won ? 'good' : 'bad'}>{q.result}</dd>
           </div>
           <div>
-            <dt>Edge</dt>
-            <dd className={c.edge >= 0 ? 'good' : 'bad'}>
-              {edgeText}
-            </dd>
+            <dt title="The result, 1 for a hit and 0 for a miss, minus the fair price">Edge per $1</dt>
+            <dd className={c.edge >= 0 ? 'good' : 'bad'}>{edgeText}</dd>
           </div>
         </dl>
         <div className="pc-foot">
           <span className="fine">Revealed {revealedOn.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</span>
           <div className="pc-actions">
-            <button className="btn btn-ghost" onClick={savePicture}>
+            <button type="button" className="btn btn-ghost" onClick={savePicture}>
               {picture === 'saved' ? 'Image saved' : picture === 'failed' ? 'Could not save' : 'Save image'}
             </button>
-            <button className="btn btn-ghost" onClick={copy}>
+            <button type="button" className="btn btn-ghost" onClick={copy}>
               {copied ? 'Link copied' : 'Copy link'}
             </button>
           </div>
@@ -169,7 +185,7 @@ export default function Verify() {
             <p>
               Your browser will read both records straight from a Solana node, then recompute the fingerprint from the call above. Nothing here asks our server whether the call is genuine.
             </p>
-            <button className="btn btn-primary" onClick={run} disabled={running}>
+            <button type="button" className="btn btn-primary" onClick={run} disabled={running}>
               {running ? (
                 <>
                   <span className="spin" aria-hidden="true" /> Reading Solana
@@ -186,48 +202,50 @@ export default function Verify() {
         )}
 
         <div className="pc-live" aria-live="polite">
-        {problem && (
-          <p className="note note-bad" role="alert">
-            {problem}
-          </p>
-        )}
-
-        {result && (
-          <>
-            <ul className="checks">
-              {result.checks.map((k) => (
-                <li key={k.id} data-ok={k.ok} data-optional={k.optional ? 'true' : undefined}>
-                  <span className="mark" aria-hidden="true">
-                    {k.ok ? '✓' : k.optional ? '–' : '✕'}
-                  </span>
-                  <div>
-                    <b>{k.label}</b>
-                    {k.detail && <p>{k.detail}</p>}
-                  </div>
-                </li>
-              ))}
-            </ul>
-            <p className={`note ${result.ok ? 'note-info' : 'note-bad'}`}>
-              {result.ok
-                ? 'Verified. The call was fixed on Solana before the result was known and was not changed afterwards.'
-                : 'This call did not verify. Treat it as unproven.'}
+          {problem && (
+            <p className="note note-bad" role="alert">
+              {problem}
             </p>
-          </>
-        )}
+          )}
+
+          {result && (
+            <>
+              <ul className="checks">
+                {result.checks.map((k) => (
+                  <li key={k.id} data-ok={k.ok} data-optional={k.optional ? 'true' : undefined}>
+                    <span className="mark" aria-hidden="true">
+                      {k.ok ? '✓' : k.optional ? '–' : '✕'}
+                    </span>
+                    <div>
+                      <b>
+                        {/* The mark is drawn for the eye; this says the same to a screen reader. */}
+                        <span className="sr-only">{k.ok ? 'Passed: ' : k.optional ? 'Note: ' : 'Failed: '}</span>
+                        {k.label}
+                      </b>
+                      {k.detail && <p>{k.detail}</p>}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <p className={`note ${result.ok ? 'note-info' : 'note-bad'}`}>
+                {result.ok ? 'Verified. The call was fixed on Solana before the result was known and was not changed afterwards.' : 'This call did not verify. Treat it as unproven.'}
+              </p>
+            </>
+          )}
         </div>
 
         {real && (
           <div className="links">
             <a className="mono-chip link" href={explorerTx(c.commitSignature)} target="_blank" rel="noreferrer">
-              Commit {trunc(c.commitSignature, 6, 4)} ↗
+              Commit {trunc(c.commitSignature, 6, 4)} ↗<span className="sr-only"> (opens the Solana explorer in a new tab)</span>
             </a>
             <a className="mono-chip link" href={explorerTx(c.signature)} target="_blank" rel="noreferrer">
-              Reveal {trunc(c.signature, 6, 4)} ↗
+              Reveal {trunc(c.signature, 6, 4)} ↗<span className="sr-only"> (opens the Solana explorer in a new tab)</span>
             </a>
           </div>
         )}
         <p className="fine">
-          This proves the call was committed before the result. The result itself, hit or miss, is reported by our signing key, with Gemini’s order IDs as the evidence.
+          This proves the call was committed before the result. The result itself, won or lost, is reported by our signing key, with the exchange’s order IDs as the evidence.
         </p>
       </section>
     </div>

@@ -6,12 +6,34 @@ import type { Bet, CallRecord } from '../api/types';
 import { explorerTx } from '../api/types';
 import { betTitle, kindOf } from '../lib/betKind';
 import { CashOut } from '../components/CashOut';
-import { basketSummary, filterEntries, groupBets, ifItComesOff, isSettled, kindLabel, orderLine, outcomeOf, realised, stakeOf, statusWords, summarize } from '../lib/betsView';
+import {
+  basketSummary,
+  canRevealCall,
+  checkedWords,
+  filterEntries,
+  finishedWords,
+  groupBets,
+  hasPending,
+  ifItComesOff,
+  isSettled,
+  kindLabel,
+  netLabel,
+  orderIdWords,
+  orderLine,
+  outcomeOf,
+  realised,
+  sellOrdersWords,
+  soldCallWords,
+  stakeOf,
+  statusWords,
+  summarize,
+} from '../lib/betsView';
 import type { Entry, Filter } from '../lib/betsView';
 import { ago, cents, money, trunc, usd, usdSigned } from '../lib/format';
 import { useNow, useResource } from '../lib/hooks';
 import { chainLive, execLive } from '../lib/liveClients';
 import { PRODUCTS } from '../lib/nav';
+import { keepMode, useVenue } from '../lib/venue';
 import '../styles/bets.css';
 
 const tone = (n: number) => (n > 0.004 ? 'good' : n < -0.004 ? 'bad' : '');
@@ -38,7 +60,15 @@ interface RowProps {
 function Result({ bet }: { bet: Bet }) {
   const o = outcomeOf(bet);
   const paid = realised(bet);
-  if (o === 'back') return <b className="back">Stake back</b>;
+  // Under a settled result: where the price ended, when the exchange said.
+  const finished = finishedWords(bet);
+  if (o === 'back')
+    return (
+      <>
+        <b className="back">Stake back</b>
+        {finished && <small>{finished}</small>}
+      </>
+    );
   if (o === 'open') {
     const p = ifItComesOff(bet);
     return (
@@ -56,7 +86,13 @@ function Result({ bet }: { bet: Bet }) {
         <small>{paid ? 'entered by hand' : 'being checked'}</small>
       </>
     );
-  if (paid) return <b className={tone(paid.pnl)}>{usdSigned(paid.pnl)}</b>;
+  if (paid)
+    return (
+      <>
+        <b className={tone(paid.pnl)}>{usdSigned(paid.pnl)}</b>
+        {finished && <small>{finished}</small>}
+      </>
+    );
   return <b className="bl-none">–</b>;
 }
 
@@ -66,6 +102,15 @@ function BetRow({ bet, call, revealing, onReveal, onCashedOut, leg }: RowProps) 
   const kind = kindOf(bet);
   const hand = bet.review?.resolved ?? null;
   const detailId = `bet-${bet.id}-orders`;
+  // A call can be revealed once it has a plain result: the bet settled won or lost, or it was sold back and its market has
+  // since settled. Selling a bet early ends the bet, not the call.
+  const revealable = !!call && call.state === 'committed' && canRevealCall(bet);
+  const revealButton = revealable && call && (
+    <button type="button" className="btn btn-ghost bl-btn" disabled={revealing === call.id} onClick={() => onReveal(call.id)}>
+      {revealing === call.id ? 'Revealing' : 'Reveal on Solana'}
+    </button>
+  );
+  const sellOrders = sellOrdersWords(bet);
 
   return (
     <div className="bl-row" data-bet={bet.id} data-outcome={o}>
@@ -96,12 +141,20 @@ function BetRow({ bet, call, revealing, onReveal, onCashedOut, leg }: RowProps) 
         </div>
       </div>
 
-      {call && call.state === 'committed' && (o === 'won' || o === 'lost') && (
+      {/* What became of the money first, then what became of the call. */}
+      {o === 'cashed' && bet.cashOut && (
+        <div className="bl-foot">
+          <p>
+            Sold back for <b>{usd(bet.cashOut.proceeds)}</b> before the market settled{sellOrders ? `, ${sellOrders}` : ''}. {soldCallWords(bet)}
+            {revealable && ' Reveal it to put it on the leaderboard. It shows the bet and the result, never your account.'}
+          </p>
+          {revealButton}
+        </div>
+      )}
+      {revealable && o !== 'cashed' && (
         <div className="bl-foot">
           <p>Reveal this call to put it on the leaderboard. It shows the bet and the result, never your account.</p>
-          <button type="button" className="btn btn-ghost bl-btn" disabled={revealing === call.id} onClick={() => onReveal(call.id)}>
-            {revealing === call.id ? 'Revealing' : 'Reveal on Solana'}
-          </button>
+          {revealButton}
         </div>
       )}
       {call?.state === 'revealed' && call.reveal && (
@@ -110,19 +163,12 @@ function BetRow({ bet, call, revealing, onReveal, onCashedOut, leg }: RowProps) 
             Revealed on Solana. Edge scored <b className={call.reveal.edge !== null ? tone(call.reveal.edge) : ''}>{call.reveal.edge !== null ? edgeText(call.reveal.edge) : '–'}</b>
           </p>
           <div className="bl-links">
-            <Link to={`/verify/${call.reveal.signature}`}>Proof page</Link>
-            <Link to="/leaderboard">Leaderboard</Link>
+            <Link to={keepMode(`/verify/${call.reveal.signature}`)}>Call proof</Link>
+            <Link to={keepMode('/leaderboard')}>Leaderboard</Link>
           </div>
         </div>
       )}
       {(bet.status === 'open' || bet.status === 'unhedged') && <CashOut bet={bet} onDone={onCashedOut} />}
-      {o === 'cashed' && bet.cashOut && (
-        <div className="bl-foot">
-          <p>
-            Sold back for <b>{usd(bet.cashOut.proceeds)}</b> before the market settled, as two sell orders on Gemini. This call is not scored.
-          </p>
-        </div>
-      )}
       {o === 'back' && (
         <div className="bl-foot">
           <p>The first level failed, so your stake came back. This call is not scored.</p>
@@ -131,7 +177,7 @@ function BetRow({ bet, call, revealing, onReveal, onCashedOut, leg }: RowProps) 
       {o === 'review' && (
         <div className="bl-foot">
           <p>
-            Gemini settled this market without a plain yes or no. {hand ? `It paid ${usd(hand.payout)}, read from the account and entered by hand.` : 'We are checking what it paid.'} This call is not scored.
+            This market was settled without a plain yes or no. {hand ? `It paid ${usd(hand.payout)}, read from the account and entered by hand.` : 'We are checking what it paid.'} This call is not scored.
           </p>
         </div>
       )}
@@ -141,7 +187,7 @@ function BetRow({ bet, call, revealing, onReveal, onCashedOut, leg }: RowProps) 
         Orders and proof
       </button>
       <div id={detailId} className="bl-detail" hidden={!open}>
-        <ol className="bl-orders" aria-label="Orders on Gemini">
+        <ol className="bl-orders" aria-label="Orders">
           {bet.legs.map((l) => {
             const w = orderLine(bet, l);
             return (
@@ -155,7 +201,7 @@ function BetRow({ bet, call, revealing, onReveal, onCashedOut, leg }: RowProps) 
                     {l.status !== 'filled' ? ` · ${l.status}` : ''}
                   </span>
                 </span>
-                {l.orderId ? <code className="bl-id">{trunc(l.orderId, 6, 4)}</code> : <span className="bl-id bl-none">No order id</span>}
+                {l.orderId ? <code className="bl-id">{orderIdWords(l.orderId)}</code> : <span className="bl-id bl-none">{orderIdWords(undefined)}</span>}
               </li>
             );
           })}
@@ -172,7 +218,7 @@ function BetRow({ bet, call, revealing, onReveal, onCashedOut, leg }: RowProps) 
             <div>
               <dt className="bl-k">On Solana</dt>
               <dd>
-                {call.state === 'revealed' ? 'Revealed' : call.state === 'void' ? 'Refunded, not scored' : 'Committed'}
+                {call.state === 'revealed' ? 'Revealed' : call.state === 'void' ? (o === 'cashed' ? 'Not scored, the first level failed' : 'Refunded, not scored') : 'Committed'}
                 {call.network === 'devnet' ? (
                   <a className="bl-id" href={explorerTx(call.commitSignature)} target="_blank" rel="noreferrer">
                     {trunc(call.commitSignature, 8, 6)} ↗<span className="sr-only"> (opens the explorer in a new tab)</span>
@@ -216,7 +262,7 @@ function BasketPanel({ entry, all, ...rest }: { entry: Extract<Entry, { type: 'b
           </div>
           {s.net !== null && (
             <div>
-              <dt className="bl-k">Net so far</dt>
+              <dt className="bl-k">{netLabel(s)}</dt>
               <dd className={tone(s.net)}>{usdSigned(s.net)}</dd>
             </div>
           )}
@@ -234,6 +280,7 @@ function BasketPanel({ entry, all, ...rest }: { entry: Extract<Entry, { type: 'b
 }
 
 export default function Bets() {
+  const venue = useVenue();
   const bets = useResource('bets', () => api.bets(), { live: [[execLive, 'bets']], pollMs: 8000 });
   const calls = useResource('calls', () => api.calls(), { live: [[chainLive, 'calls']], pollMs: 8000 });
   const [checking, setChecking] = useState(false);
@@ -256,7 +303,9 @@ export default function Bets() {
     setError(null);
     try {
       const r = await api.settle();
-      setNote(r.settled.length > 0 ? `${r.settled.length} bet${r.settled.length === 1 ? '' : 's'} settled.` : r.stillOpen > 0 ? 'Nothing has closed yet. Markets settle a few seconds after they expire.' : 'Everything is up to date.');
+      // The executor also lists the sold-back bets whose call has just been given its result; an older one sends no such list.
+      const called = r.called?.length ?? 0;
+      setNote(checkedWords({ settled: r.settled.length, called, stillOpen: r.stillOpen }));
       bets.reload();
       calls.reload();
     } catch (e) {
@@ -271,10 +320,11 @@ export default function Bets() {
     setError(null);
     try {
       await api.revealCall(callId);
-      calls.reload();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not reveal this call.');
     } finally {
+      // Reloaded either way: a refusal can change the call too (a call whose first level failed is marked as not counting).
+      calls.reload();
       setRevealing(null);
     }
   }
@@ -287,24 +337,28 @@ export default function Bets() {
 
   const loading = bets.loading && !bets.data;
   const failed = !bets.data && bets.error;
+  const checkable = useMemo(() => hasPending(list), [list]);
 
   return (
     <div className="page bets">
       <header className="page-head">
         <div>
-          <span className="eyebrow">Your positions</span>
+          <span className="eyebrow">Open and settled</span>
           <h1 className="h-page">My bets</h1>
-          <p className="lede">Each bet is a pair of orders in your own Gemini account. Results arrive here as markets settle.</p>
+          <p className="lede">Each bet is a pair of orders placed on {venue.place}. Results arrive here as markets settle.</p>
         </div>
-        <button type="button" className="btn btn-ghost" onClick={check} disabled={checking}>
-          {checking ? (
-            <>
-              <span className="spin" aria-hidden="true" /> Checking
-            </>
-          ) : (
-            'Check results'
-          )}
-        </button>
+        {/* Only while something can still change: an open bet, one under review, or one sold back whose market has not settled. */}
+        {(checkable || checking) && (
+          <button type="button" className="btn btn-ghost" onClick={check} disabled={checking}>
+            {checking ? (
+              <>
+                <span className="spin" aria-hidden="true" /> Checking
+              </>
+            ) : (
+              'Check results'
+            )}
+          </button>
+        )}
       </header>
 
       {(note || error) && (
@@ -323,7 +377,7 @@ export default function Bets() {
       ) : failed ? (
         <div className="bl-empty" role="alert">
           <h2 className="h-card">We could not load your bets</h2>
-          <p>{bets.error?.message ?? 'The service did not answer.'} Your orders are safe in your Gemini account either way.</p>
+          <p>{bets.error?.message ?? 'The service did not answer.'} Bets you have placed are not affected: this page only reads them.</p>
           <button type="button" className="btn btn-ghost" onClick={() => bets.reload()}>
             Try again
           </button>
@@ -364,7 +418,7 @@ export default function Bets() {
               <ul className="bl-start">
                 {PRODUCTS.map((p) => (
                   <li key={p.id}>
-                    <Link to={p.to}>
+                    <Link to={keepMode(p.to)}>
                       <b>{p.name}</b>
                       <span>{p.tagline}</span>
                     </Link>

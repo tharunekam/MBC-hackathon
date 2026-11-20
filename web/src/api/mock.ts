@@ -7,11 +7,13 @@
  * Prices are generated from a drifting spot with a normal-distribution ladder;
  * quotes use the same maths as the executor (`lib/pricing.ts`).
  */
-import { estimate, mirrorBook, PRODUCTION_FEE_COEF, rangeEstimate, rangeOutcomesFor } from '../lib/pricing';
+import { breakoutEstimate, breakoutOutcomesFor, estimate, feeRate, mirrorBook, PRODUCTION_FEE_COEF, rangeEstimate, rangeOutcomesFor } from '../lib/pricing';
 import { ApiError, type Api } from './client';
 import type {
   BasketLegRequest,
   Bet,
+  BreakoutQuote,
+  BreakoutQuoteResponse,
   CallRecord,
   CashOutQuote,
   Direction,
@@ -23,6 +25,7 @@ import type {
   PairLeg,
   PlaceBasketRequest,
   PlaceBetRequest,
+  Product,
   QuoteResponse,
   RangeQuote,
   RangeQuoteResponse,
@@ -212,6 +215,48 @@ function rangeOfferFrom(low: Rung, high: Rung): RangeQuote {
   };
 }
 
+/** The offer rule's numbers for a breakout: finishing outside two strikes, either way. */
+function breakoutOfferFrom(low: Rung, high: Rung): BreakoutQuote {
+  const e = breakoutEstimate({ bid: low.bid, ask: low.ask }, { bid: high.bid, ask: high.ask }, 0);
+  const base = { feeCoefCharged: 0, overridden: false };
+  if (e === null) {
+    return {
+      ...base,
+      verdict: 'refuse',
+      reasons: [{ code: 'no_price', message: 'No sensible price exists: the pair costs a dollar or more for the dollar it can win.' }],
+      warnings: [],
+      offerable: false,
+      chanceOutside: null,
+      fairPrice: null,
+      pricePaid: null,
+      allInPrice: null,
+      markup: null,
+      markupPct: null,
+      cashOutPer100: null,
+      cashOutPer100AtProductionFees: null,
+    };
+  }
+  return {
+    ...base,
+    verdict: e.verdict,
+    reasons: e.refusal && e.code ? [{ code: e.code, message: e.refusal }] : [],
+    warnings: e.verdict === 'warn' ? [`Costs ${(e.markup * 100).toFixed(1)} cents (${(e.markupPct * 100).toFixed(1)}%) more than the fair price with fees.`] : [],
+    offerable: e.verdict !== 'refuse',
+    chanceOutside: e.chanceOutside,
+    fairPrice: e.fairPrice,
+    pricePaid: e.pricePaid,
+    allInPrice: e.allIn,
+    markup: e.markup,
+    markupPct: e.markupPct,
+    cashOutPer100: e.cashOutPer100,
+    cashOutPer100AtProductionFees: null,
+  };
+}
+
+/** What both orders of a breakout would pay in taker fees at Gemini's production rate. The demo itself charges none. */
+const breakoutProdFee = (contracts: number, low: Rung, high: Rung) =>
+  cents(contracts * (feeRate(1 - (low.bid ?? 0), PRODUCTION_FEE_COEF) + feeRate(high.ask ?? 0, PRODUCTION_FEE_COEF)));
+
 /** Every pair of a parlay going `direction`: a rising one has the lower strike as its condition, a falling one the higher. */
 function pairsFor(rungs: Rung[], direction: Direction): Pair[] {
   const out: Pair[] = [];
@@ -259,8 +304,40 @@ const fakeOrderId = () => `${Math.floor(1e17 + Math.random() * 9e17)}`;
 const WORDS_A = ['quiet', 'amber', 'lucky', 'steady', 'bright', 'north', 'calm', 'swift'];
 const WORDS_B = ['otter', 'heron', 'fox', 'lynx', 'wren', 'finch', 'marten', 'crane'];
 
+/**
+ * A finishing price that fits a seeded result, for bets whose result the demo data decides: four tenths of the way from one
+ * level to the other, or the same distance beyond the level that settled it. A bet settled later finishes where the demo's
+ * own price is.
+ */
+const finishNear = (from: number, to: number) => cents(from + (to - from) * 0.4);
+
 /** Bet ids carry their product, as the executor's do (see `executor/src/bet-id.ts`). */
-const idFor = (kind: { product: 'parlay' | 'range'; direction: Direction }, id: string) => (kind.product === 'range' ? `rg-${id}` : kind.direction === 'down' ? `dn-${id}` : id);
+const idFor = (kind: { product: Product; direction: Direction }, id: string) =>
+  kind.product === 'range' ? `rg-${id}` : kind.product === 'breakout' ? `bo-${id}` : kind.direction === 'down' ? `dn-${id}` : id;
+
+/** Sells a bet back at a quote: two sell orders on its ledger, what they brought in, and the bet marked as cashed out. */
+function sellBack(bet: Bet, quote: CashOutQuote & { proceeds: number }, sentAt: string): NonNullable<Bet['cashOut']> {
+  quote.legs.forEach((l, i) => {
+    bet.legs.push({
+      clientOrderId: `gv-${bet.id}-c${i === 0 ? 'b' : 'a'}1`,
+      role: 'cashout',
+      symbol: l.symbol,
+      side: 'sell',
+      outcome: l.outcome,
+      limitPrice: l.price ?? 0,
+      quantityRequested: l.quantity,
+      quantityFilled: l.quantity,
+      avgPrice: l.price,
+      fee: 0,
+      status: 'filled',
+      orderId: `7${hex(5)}`,
+      sentAt,
+    });
+  });
+  bet.cashOut = { at: sentAt, stake: quote.stake, proceeds: quote.proceeds, pnl: cents(quote.proceeds - quote.stake), complete: true };
+  bet.status = 'cashed_out';
+  return bet.cashOut;
+}
 
 // ------------------------------------------------------------------ the mock service
 
@@ -345,9 +422,12 @@ export function mockApi(): Api {
       const conditionResolved = args.outcome === 'refunded' ? 'no' : 'yes';
       const targetResolved = args.outcome === 'won' ? 'yes' : 'no';
       const payout = cents((targetResolved === 'yes' ? qB : 0) + (conditionResolved === 'no' ? qA : 0));
+      const [c, t] = [args.c.strike, args.b.strike];
+      // Past the target for a win, back past the condition for a refund, and between the two for a loss; either way up.
+      const finishedAt = args.outcome === 'won' ? finishNear(t, t + (t - c)) : args.outcome === 'refunded' ? finishNear(c, c - (t - c)) : finishNear(c, t);
       bet.status = 'settled';
       bet.scorable = true;
-      bet.settlement = { conditionResolved, targetResolved, payout, pnl: cents(payout - cost), settledAt: args.ev.expiry ?? sent };
+      bet.settlement = { conditionResolved, targetResolved, payout, pnl: cents(payout - cost), settledAt: args.ev.expiry ?? sent, finishedAt };
     }
     return bet;
   }
@@ -386,9 +466,56 @@ export function mockApi(): Api {
     if (args.outcome && args.outcome !== 'open') {
       const inRange = args.outcome === 'won';
       const payout = cents(inRange ? out.contracts * 2 : out.contracts);
+      const [lo, hi] = [args.low.strike, args.high.strike];
       bet.status = 'settled';
       bet.scorable = true;
-      bet.settlement = { conditionResolved: 'yes', targetResolved: inRange ? 'yes' : 'no', payout, pnl: cents(payout - out.cost), settledAt: args.ev.expiry ?? sent };
+      bet.settlement = { conditionResolved: 'yes', targetResolved: inRange ? 'yes' : 'no', payout, pnl: cents(payout - out.cost), settledAt: args.ev.expiry ?? sent, finishedAt: inRange ? finishNear(lo, hi) : finishNear(hi, hi + (hi - lo)) };
+    }
+    return bet;
+  }
+
+  /**
+   * A breakout as the executor records it: the first order is the YES on the higher strike and the second the NO on the lower,
+   * the same size. The strikes are named as a range names them, lower as `condition` and higher as `target`.
+   */
+  function makeBreakout(args: { id: string; ev: MarketEvent; low: Rung; high: Rung; stake: number; createdAt: Date; outcome?: 'won' | 'lost' | 'open' }): Bet {
+    const offer = breakoutOfferFrom(args.low, args.high);
+    const out = breakoutOutcomesFor(args.stake, offer.pricePaid ?? 0.5);
+    const sent = args.createdAt.toISOString();
+    const id = idFor({ product: 'breakout', direction: 'up' }, args.id);
+    const noPrice = cents(1 - (args.low.bid ?? 0));
+    const legs: Bet['legs'] = [
+      { clientOrderId: `gv-${id}-b`, role: 'outcome', symbol: args.high.symbol, side: 'buy', outcome: 'yes', limitPrice: args.high.ask ?? 0, quantityRequested: out.contracts, quantityFilled: out.contracts, avgPrice: args.high.ask, fee: 0, status: 'filled', orderId: fakeOrderId(), sentAt: sent },
+      { clientOrderId: `gv-${id}-a1`, role: 'hedge', symbol: args.low.symbol, side: 'buy', outcome: 'no', limitPrice: noPrice, quantityRequested: out.contracts, quantityFilled: out.contracts, avgPrice: noPrice, fee: 0, status: 'filled', orderId: fakeOrderId(), sentAt: sent },
+    ];
+    const bet: Bet = {
+      id,
+      user: 'primary',
+      createdAt: sent,
+      eventTicker: args.ev.ticker,
+      eventTitle: args.ev.title,
+      expiry: args.ev.expiry,
+      product: 'breakout',
+      condition: { symbol: args.low.symbol, label: args.low.label, strike: args.low.strike },
+      target: { symbol: args.high.symbol, label: args.high.label, strike: args.high.strike },
+      requestedStake: args.stake,
+      quotedPrice: offer.pricePaid ?? 0,
+      status: 'open',
+      legs,
+      cost: out.cost,
+      payoffs: { stake: out.cost, ifBothHit: out.ifOutside, ifConditionOnly: out.ifInRange, ifInRange: out.ifInRange, ifOutside: out.ifOutside, conditionalPrice: offer.pricePaid, hedged: true },
+      offer,
+      scorable: false,
+      flow: { bets: 1, ordersSent: 2, ordersFilled: 2, contracts: cents(out.contracts * 2), premium: out.cost, feesAtProductionRates: breakoutProdFee(out.contracts, args.low, args.high), feesCharged: 0 },
+    };
+    if (args.outcome && args.outcome !== 'open') {
+      // Never refunded: the "condition" always reads yes, and the target says whether it finished outside.
+      const outside = args.outcome === 'won';
+      const payout = cents(outside ? out.contracts : 0);
+      const [lo, hi] = [args.low.strike, args.high.strike];
+      bet.status = 'settled';
+      bet.scorable = true;
+      bet.settlement = { conditionResolved: 'yes', targetResolved: outside ? 'yes' : 'no', payout, pnl: cents(payout - out.cost), settledAt: args.ev.expiry ?? sent, finishedAt: outside ? finishNear(hi, hi + (hi - lo)) : finishNear(lo, hi) };
     }
     return bet;
   }
@@ -442,6 +569,24 @@ export function mockApi(): Api {
     bets.push(range);
     calls.push(callFor(range, 'won'));
     const sol = base[2]!;
+    // And a breakout that finished between its two levels, so the bet with no money back shows what that looks like.
+    const breakout = makeBreakout({ id: 'demo9', ev: sol, low: sol.rungs[4]!, high: sol.rungs[6]!, stake: 10, createdAt: hoursAgo(7), outcome: 'lost' });
+    stale(breakout);
+    bets.push(breakout);
+    calls.push(callFor(breakout, 'lost'));
+    // A bet that was sold back before its market settled, and whose market has settled since: the call came off, so it can
+    // still be revealed and scored even though the bet itself was never paid.
+    const sold = makeParlay({ id: 'demo10', ev: eth, c: eth.rungs[1]!, b: eth.rungs[3]!, direction: 'up', stake: 20, createdAt: hoursAgo(2.5) });
+    stale(sold);
+    const sale = mockCashOutQuote(sold);
+    if (sale.proceeds !== null) {
+      sellBack(sold, { ...sale, proceeds: sale.proceeds }, hoursAgo(2.2).toISOString());
+      const [c, t] = [sold.condition.strike, sold.target.strike];
+      sold.called = { conditionResolved: 'yes', targetResolved: 'yes', at: hoursAgo(1.5).toISOString(), finishedAt: finishNear(t, t + (t - c)) };
+      sold.scorable = true;
+    }
+    bets.push(sold);
+    calls.push(callFor(sold));
     const legs: Bet[] = [
       makeParlay({ id: 'demo6', ev: btc, c: btc.rungs[2]!, b: btc.rungs[4]!, direction: 'up', stake: 10, createdAt: hoursAgo(0.2) }),
       makeParlay({ id: 'demo7', ev: eth, c: eth.rungs[5]!, b: eth.rungs[3]!, direction: 'down', stake: 10, createdAt: hoursAgo(0.2) }),
@@ -456,7 +601,7 @@ export function mockApi(): Api {
 
   const handleFor = (i: number) => `${WORDS_A[i % WORDS_A.length]}-${WORDS_B[(i * 3 + 1) % WORDS_B.length]}-${(i * 37 + 11) % 90}`;
 
-  /** Places one leg: the bet a parlay or range request describes, refused the way the executor refuses. */
+  /** Places one leg: the bet a parlay, range or breakout request describes, refused the way the executor refuses. */
   function placeOne(req: PlaceBetRequest | (BasketLegRequest & { user?: string })): Bet {
     if (req.stake > 100) throw new ApiError(400, { error: 'Demo bets are capped at $100.', code: 'invalid_stake' }, 'stake');
     const ev = eventOf(req.event);
@@ -465,6 +610,12 @@ export function mockApi(): Api {
       const offer = rangeOfferFrom(l, h);
       if (!offer.offerable) throw new ApiError(422, { error: offer.reasons[0]?.message ?? 'This bet is not on offer.', code: offer.reasons[0]?.code ?? 'offer_refused', refused: true, quote: offer }, 'refused');
       return makeRange({ id: `d${hex(3)}`, ev, low: l, high: h, stake: req.stake, createdAt: new Date() });
+    }
+    if ('product' in req && req.product === 'breakout') {
+      const { l, h } = findRange(ev, req.low, req.high);
+      const offer = breakoutOfferFrom(l, h);
+      if (!offer.offerable) throw new ApiError(422, { error: offer.reasons[0]?.message ?? 'This bet is not on offer.', code: offer.reasons[0]?.code ?? 'offer_refused', refused: true, quote: offer }, 'refused');
+      return makeBreakout({ id: `d${hex(3)}`, ev, low: l, high: h, stake: req.stake, createdAt: new Date() });
     }
     const parlay = req as Extract<PlaceBetRequest, { condition: string }>;
     const direction = parlay.direction ?? 'up';
@@ -478,7 +629,8 @@ export function mockApi(): Api {
     mode: 'mock',
 
     async health() {
-      return { ok: true, venue: 'Demo data', sandbox: true, users: [{ user: 'primary', connected: true }], time: new Date().toISOString() };
+      // The demo refuses a bet above $100, as the real services do when they set a limit, so it says so the same way.
+      return { ok: true, venue: 'Demo data', sandbox: true, maxStake: 100, users: [{ user: 'primary', connected: true }], time: new Date().toISOString() };
     },
 
     async markets(event) {
@@ -555,6 +707,32 @@ export function mockApi(): Api {
       return { venue: 'Demo data', asOf: new Date().toISOString(), product: 'range', event: { ticker: ev.ticker, title: ev.title, expiry: ev.expiry }, low: toLeg(l), high: toLeg(h), quote: offer, stake: stakePlan, depth };
     },
 
+    async quoteBreakout({ event, low, high, stake }): Promise<BreakoutQuoteResponse> {
+      await sleep(180);
+      const ev = eventOf(event);
+      const { l, h } = findRange(ev, low, high);
+      const offer = breakoutOfferFrom(l, h);
+      let stakePlan: BreakoutQuoteResponse['stake'] = null;
+      let depth: BreakoutQuoteResponse['depth'] = null;
+      if (stake !== undefined && offer.pricePaid !== null) {
+        const maxStake = 40 + Math.round(Math.abs(Math.sin(l.strike)) * 60);
+        depth = { outcomeAvailable: 120, conditionAvailable: 400, maxStake };
+        const capped = Math.min(stake, maxStake);
+        const o = breakoutOutcomesFor(capped, offer.pricePaid);
+        stakePlan = {
+          requested: stake,
+          reduced: capped < stake,
+          contracts: o.contracts,
+          cost: o.cost,
+          ifOutside: o.ifOutside,
+          ifInRange: o.ifInRange,
+          feesAtProductionRates: breakoutProdFee(o.contracts, l, h),
+          cashOutNow: offer.cashOutPer100 === null ? null : cents((offer.cashOutPer100 * o.cost) / 100),
+        };
+      }
+      return { venue: 'Demo data', asOf: new Date().toISOString(), product: 'breakout', event: { ticker: ev.ticker, title: ev.title, expiry: ev.expiry }, low: toLeg(l), high: toLeg(h), quote: offer, stake: stakePlan, depth };
+    },
+
     async placeBet(req: PlaceBetRequest) {
       seed();
       await sleep(1900);
@@ -605,41 +783,28 @@ export function mockApi(): Api {
         throw new ApiError(422, { error: `Selling now would bring in ${quote.proceeds.toFixed(2)} dollars, below the ${minProceeds.toFixed(2)} you asked for. Nothing was sold.`, code: 'below_minimum' }, 'refused');
       }
       await sleep(1400);
-      const sentAt = new Date().toISOString();
-      quote.legs.forEach((l, i) => {
-        bet.legs.push({
-          clientOrderId: `gv-${bet.id}-c${i === 0 ? 'b' : 'a'}1`,
-          role: 'cashout',
-          symbol: l.symbol,
-          side: 'sell',
-          outcome: l.outcome,
-          limitPrice: l.price ?? 0,
-          quantityRequested: l.quantity,
-          quantityFilled: l.quantity,
-          avgPrice: l.price,
-          fee: 0,
-          status: 'filled',
-          orderId: `7${hex(5)}`,
-          sentAt,
-        });
-      });
-      bet.cashOut = { at: sentAt, stake: quote.stake, proceeds: quote.proceeds, pnl: cents(quote.proceeds - quote.stake), complete: true };
-      bet.status = 'cashed_out';
-      return { bet, cashOut: bet.cashOut };
+      const cashOut = sellBack(bet, { ...quote, proceeds: quote.proceeds }, new Date().toISOString());
+      return { bet, cashOut };
     },
 
     async bets() {
       seed();
       await sleep(100);
-      return { bets: [...bets].reverse() };
+      // A copy, as a server's answer is. The bets here are changed in place when they are sold or settle; handing out the
+      // same objects let a page's old answer change underneath it, so its next answer looked like no news and the figures
+      // above the list stayed as they were.
+      return { bets: structuredClone([...bets].reverse()) };
     },
 
     async settle() {
       seed();
       await sleep(900);
       const settled: Bet[] = [];
+      // Sold-back bets whose market now has a result: nothing is paid, only how the call turned out is written down.
+      const called: Bet[] = [];
       for (const bet of bets) {
-        if (bet.status !== 'open' || Date.now() - new Date(bet.createdAt).getTime() < 15_000) continue;
+        const soldBack = bet.status === 'cashed_out' && !bet.called;
+        if ((bet.status !== 'open' && !soldBack) || Date.now() - new Date(bet.createdAt).getTime() < 15_000) continue;
         const a = ASSETS.find((x) => bet.eventTitle.startsWith(x.name)) ?? ASSETS[0]!;
         const s = spotNow(a, Date.now());
         const qOutcome = bet.legs[0]?.quantityFilled ?? 0;
@@ -652,20 +817,35 @@ export function mockApi(): Api {
           conditionResolved = 'yes';
           targetResolved = inside ? 'yes' : 'no';
           payout = cents(inside ? qOutcome + qHedge : Math.min(qOutcome, qHedge));
+        } else if (bet.product === 'breakout') {
+          // The YES on the higher strike pays at or above it, the NO on the lower strike below it, and neither in between.
+          const above = s >= bet.target.strike;
+          const below = s < bet.condition.strike;
+          conditionResolved = 'yes';
+          targetResolved = above || below ? 'yes' : 'no';
+          payout = cents(above ? qOutcome : below ? qHedge : 0);
         } else {
           const falling = bet.direction === 'down';
           conditionResolved = (falling ? s < bet.condition.strike : s >= bet.condition.strike) ? 'yes' : 'no';
           targetResolved = (falling ? s < bet.target.strike : s >= bet.target.strike) ? 'yes' : 'no';
           payout = cents((targetResolved === 'yes' ? qOutcome : 0) + (conditionResolved === 'no' ? qHedge : 0));
         }
-        bet.status = 'settled';
-        bet.scorable = true;
-        bet.settlement = { conditionResolved, targetResolved, payout, pnl: cents(payout - bet.cost), settledAt: new Date().toISOString() };
         const call = calls.find((c) => c.betId === bet.id);
-        if (call && conditionResolved === 'no') call.state = 'void';
+        if (call && call.state === 'committed' && conditionResolved === 'no') call.state = 'void';
+        bet.scorable = true;
+        if (soldBack) {
+          // The bet stays cashed out: it was sold, so it is never paid. Its call still has a result, as the executor records.
+          bet.called = { conditionResolved, targetResolved, at: new Date().toISOString(), finishedAt: cents(s) };
+          called.push(bet);
+          continue;
+        }
+        bet.status = 'settled';
+        bet.settlement = { conditionResolved, targetResolved, payout, pnl: cents(payout - bet.cost), settledAt: new Date().toISOString(), finishedAt: cents(s) };
         settled.push(bet);
       }
-      return { settled, needsReview: [], stillOpen: bets.filter((b) => b.status === 'open').length };
+      // `called` is what the executor's POST /settle also answers with; the client's type does not list it yet.
+      const result = { settled, needsReview: [], stillOpen: bets.filter((b) => b.status === 'open').length, called };
+      return result;
     },
 
     async flow() {
@@ -726,10 +906,21 @@ export function mockApi(): Api {
       const call = calls.find((c) => c.id === callId);
       const bet = call && bets.find((b) => b.id === call.betId);
       if (!call || !bet) throw new ApiError(404, { error: 'No such call.', code: 'not_found' }, 'missing');
-      if (!bet.settlement) throw new ApiError(409, { error: 'This bet has not settled yet, so there is nothing to reveal.', code: 'not_settled' }, 'open');
-      if (bet.settlement.conditionResolved === 'no') throw new ApiError(409, { error: 'The condition failed, so this call was refunded and does not count.', code: 'void_call' }, 'void');
+      if (call.state === 'revealed') return call;
+      // As the chain service does it: a settled bet is scored from its settlement, and a bet that was sold back from how its
+      // call turned out, once the market has said. Until then a sold-back call stays sealed.
+      const result = bet.settlement ?? (bet.status === 'cashed_out' ? bet.called : undefined);
+      if (!result && bet.status === 'cashed_out') {
+        throw new ApiError(409, { error: 'This bet was sold back before its market settled. Its call can be revealed once the market has settled.', code: 'cashed_out' }, 'sold');
+      }
+      if (!result) throw new ApiError(409, { error: 'This bet has not settled yet, so there is nothing to reveal.', code: 'not_settled' }, 'open');
+      if (result.conditionResolved === 'no') {
+        call.state = 'void';
+        // A bet still held got its stake back; one that was sold back had already been paid what it sold for.
+        throw new ApiError(409, { error: bet.settlement ? 'The first half failed, so your stake came back and this call does not count.' : 'The first half failed, so this call does not count.', code: 'void_call' }, 'void');
+      }
       const fair = bet.offer?.fairPrice ?? 0.5;
-      const o = bet.settlement.targetResolved === 'yes' ? 1 : 0;
+      const o = result.targetResolved === 'yes' ? 1 : 0;
       call.state = 'revealed';
       call.reveal = { signature: fakeSignature(), revealedAt: new Date().toISOString(), eventTitle: bet.eventTitle, conditionLabel: bet.condition.label, targetLabel: bet.target.label, fairPriceAtEntry: fair, outcome: o, edge: cents(o - fair) };
       return call;
@@ -762,29 +953,47 @@ export function mockApi(): Api {
     async calls() {
       seed();
       await sleep(80);
-      return { calls: [...calls].reverse() };
+      // A copy for the same reason as the bets: a call changes in place when it is revealed.
+      return { calls: structuredClone([...calls].reverse()) };
     },
 
     async leaderboard(): Promise<LeaderboardResponse> {
       seed();
       await sleep(150);
+      // `sealed` is every call a player has committed, revealed or not, and `refunded` the sealed ones whose first half failed.
+      // Most players have a call or two still sealed (open, or kept back); one has revealed every call; one had a refund.
       const others = [
-        { calls: 9, edge: 2.41, hitRate: 0.67 },
-        { calls: 6, edge: 1.77, hitRate: 0.67 },
-        { calls: 11, edge: 1.12, hitRate: 0.55 },
-        { calls: 4, edge: 0.58, hitRate: 0.5 },
-        { calls: 7, edge: -0.34, hitRate: 0.43 },
+        { calls: 9, sealed: 11, refunded: 1, edge: 2.41, hitRate: 0.67 },
+        { calls: 6, sealed: 6, refunded: 0, edge: 1.77, hitRate: 0.67 },
+        { calls: 11, sealed: 13, refunded: 0, edge: 1.12, hitRate: 0.55 },
+        { calls: 4, sealed: 5, refunded: 0, edge: 0.58, hitRate: 0.5 },
+        { calls: 7, sealed: 9, refunded: 0, edge: -0.34, hitRate: 0.43 },
       ].map((r, i) => ({ ...r, handle: handleFor(i), lastRevealedAt: new Date(startedAt - (i + 1) * 5400_000).toISOString() }));
-      const mine = calls.filter((c) => c.state === 'revealed' && c.reveal);
+      const own = calls.filter((c) => c.handle === 'you');
+      const mine = own.filter((c) => c.state === 'revealed' && c.reveal);
       const rows: Omit<LeaderboardRow, 'rank'>[] = [...others];
       if (mine.length >= 1) {
         rows.push({
           handle: 'you',
           calls: mine.length,
+          // Counted from the same calls My bets shows: every one committed, and the ones a failed first half made void.
+          sealed: own.length,
+          refunded: own.filter((c) => c.state === 'void').length,
           edge: cents(mine.reduce((n, c) => n + (c.reveal?.edge ?? 0), 0)),
           hitRate: mine.filter((c) => c.reveal?.outcome === 1).length / mine.length,
           lastRevealedAt: mine[mine.length - 1]!.reveal!.revealedAt,
-          recent: [...mine].reverse().slice(0, 5).map((c) => ({ signature: c.reveal!.signature, betId: c.betId, revealedAt: c.reveal!.revealedAt, outcome: c.reveal!.outcome === 1 ? 1 : 0, edge: c.reveal!.edge ?? 0 })),
+          recent: [...mine].reverse().slice(0, 5).map((c) => {
+            // The ticker and the two contract symbols a reveal publishes: the same ones `reveal()` answers with for this call.
+            const bet = bets.find((b) => b.id === c.betId);
+            return {
+              signature: c.reveal!.signature,
+              betId: c.betId,
+              ...(bet ? { event: bet.eventTicker, condition: bet.condition.symbol, target: bet.target.symbol } : {}),
+              revealedAt: c.reveal!.revealedAt,
+              outcome: c.reveal!.outcome === 1 ? (1 as const) : (0 as const),
+              edge: c.reveal!.edge ?? 0,
+            };
+          }),
         });
       }
       rows.sort((x, y) => y.edge - x.edge);

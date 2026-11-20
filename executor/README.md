@@ -152,6 +152,14 @@ $92.19 with no fees and $84.22 with production fees.
 4. Buy YES on B, immediate-or-cancel. Only what actually fills is hedged.
 5. Buy NO on A, sized from B's real cost and rounded up, so the refund covers
    the stake even at the worst allowed fill. Retried up to three times.
+   **The quote counts this order the way it is sent.** It is sized for its limit
+   (two cents past the best price by default) and usually fills at the best
+   price, so a few more NO contracts are bought than the best price alone would
+   need. `planForQuantity` and `contractsForStake` (`src/offer.ts`) take that
+   slip, so the plan on a quote is the bet that is placed and a bet never costs
+   more than the stake asked for; the refund is then the stake and a few cents
+   more, never less. (Before 2026-11-19 the quote counted the refund order at the
+   best price and a "$10.00" bet came to $10.04.)
 6. If the hedge can't be completed within the price limit, the position is sold
    back (default) or left flagged `unhedged` (`--leave`).
 
@@ -163,7 +171,7 @@ A bet refused before trading throws `BetRefused` with a `code`:
 `offer_refused`, `market_closed`, `no_depth`, `insufficient_depth`,
 `price_above_limit` or `stake_too_small`. Nothing is written to the ledger.
 
-## The other bets (`src/mirror.ts`, `src/range.ts`, `src/range-bet.ts`, `src/basket.ts`)
+## The other bets (`src/mirror.ts`, `src/range.ts`, `src/range-bet.ts`, `src/breakout.ts`, `src/breakout-bet.ts`, `src/basket.ts`)
 
 **Falling parlay.** "Given it stays below H, will it fall below L?" is the rising parlay on the *mirror* of the ladder: every
 strike negated, every YES book flipped into the NO book (`bid' = 1 - ask`, `ask' = 1 - bid`), every result swapped. On the
@@ -188,12 +196,34 @@ cannot be matched within the price cap the position is sold back. `payoffs` carr
 same numbers as `ifBothHit` and `ifConditionOnly`; there is no refund line). Settlement: `conditionResolved` is always
 `yes` (a range is never refunded) and `targetResolved` is `yes` when L resolved yes and H no.
 
+**Breakout.** The range's opposite: buy YES on the higher strike H and NO on the lower strike L, the same number of
+contracts of each:
+
+| Price finishes | Pays |
+|---|---|
+| below L | the NO on L: $1 per contract |
+| between L and H | nothing |
+| at or above H | the YES on H: $1 per contract |
+
+Exactly one order can pay, so the pair costs less than a dollar and that cost is the price per $1 of finishing outside:
+`(1 - bidL) + askH` plus fees. The fair price is the chance of finishing outside, `1 - (mid(L) - mid(H))`, and
+`assessBreakout` applies the same refusal and warning limits; two strikes the market prices the same leave nothing to bet
+against and are refused as `no_price`. A stake buys `stake / ((1 - bidL) + askH + fees)` contracts of each leg, capped by
+the smaller of the offers on H and the YES bids on L. Orders: YES on H, then NO on L for the contracts that filled, retried
+up to three times; if the legs cannot be matched within the price cap the position is sold back. Its two orders are the
+ones a rising parlay sends (YES on its "target", NO on its "condition") at equal size instead of refund size, so cash-out,
+the unwind, recovery after a crash and the reconcile read it through the same leg map with no case of their own.
+`payoffs` carries `ifOutside` (the win) and `ifInRange` (the loss: everything spent), and the same numbers as `ifBothHit`
+and `ifConditionOnly`. Settlement: `conditionResolved` is always `yes` (never refunded) and `targetResolved` is `yes` when
+L resolved no or H resolved yes. Worked example, L at 0.80 / 0.82 and H at 0.40 / 0.42: 62 cents per $1 against a fair 60;
+at production fees 64.8 cents, 4.8 over, so it is offered; $10 buys 16.12 contracts of each for $9.99, +$6.13 outside.
+
 **Basket.** `placeBasket` takes 2 to 6 legs. Every leg goes through its `plan…` step first (the same reads and checks as
 placing, no order sent), so one that is not on offer refuses the whole basket before anything is bought. Then the legs are
 placed in order with a shared `basket` tag on each bet; a leg that cannot be completed stops the rest and is returned as
 `failed`, with the earlier legs left in place. It is not atomic: nothing on the exchange links the legs.
 
-**Ids.** A bet's id carries its product: `dn-` falling parlay, `rg-` range, nothing for a rising parlay. The id is committed
+**Ids.** A bet's id carries its product: `dn-` falling parlay, `rg-` range, `bo-` breakout, nothing for a rising parlay. The id is committed
 on Solana with the call (see `docs/CONTRACTS.md`).
 
 ## Cashing out (`src/cashout.ts`)
@@ -244,6 +274,11 @@ stake there. On a production-width book the same sale costs a few cents per doll
 answer never arrives is looked up by its tag before it is treated as unsold, and after a crash `recover` fills in any
 sell left as "sent" and brings the bet's status and proceeds in line with what really sold. No sell is ever sent twice:
 each attempt numbers its tags from every cash-out order the bet has had.
+
+**The call outlives the sale.** A bet sold in full holds nothing, so `settle` never pays it and it stays `cashed_out`.
+But once its market has a clean result, `settle` records how the call turned out in `called` (the same two fields as
+`settlement`, plus `finishedAt` when Gemini reports it) and the bet becomes `scorable`, so the chain service can reveal
+and score the call. Selling early does not change whether the call was right.
 
 Not handled: selling a bet whose position Gemini has netted against another bet (it is refused), and selling part of
 a bet on purpose.
@@ -373,6 +408,13 @@ A range's quote: `quote` (the offer rule's verdict and numbers: `chanceInRange`,
 `ifOutside`) and `depth`. `GET /quote` for a parlay takes `&direction=down` for a falling one, and `GET /markets` lists the
 falling pairs under each event's `down`.
 
+### `GET /quote?product=breakout&event=&low=&high=&stake=`
+
+A breakout's quote, in the range's shape: `quote` (`chanceOutside`, `fairPrice`, `pricePaid`, `allInPrice`, `markup`,
+`cashOutPer100`), and with `stake` the plan (`contracts`, `cost`, `ifOutside`, `ifInRange`, `feesAtProductionRates`,
+`cashOutNow`) and `depth` (`outcomeAvailable` on H's offers, `conditionAvailable` on L's YES bids). `POST /bets` takes
+`{ "product": "breakout", user, event, low, high, stake }`, and a basket leg the same without `user`.
+
 ### `POST /baskets`
 
 ```json
@@ -424,7 +466,9 @@ answers `503 paused` while the kill switch is on.
 
 ### `POST /settle`
 
-Runs settlement. Answers `{ "settled": [...], "needsReview": [...], "stillOpen": n }`.
+Runs settlement. Answers `{ "settled": [...], "needsReview": [...], "stillOpen": n }`. A settled bet's `settlement` has
+`finishedAt` when Gemini reported the ladder's reference price on the settled contract (`settlementValue`, for example
+`63696.058`): where the price ended, for showing a person. The payout never depends on it.
 
 ### `GET /flow`
 
@@ -536,8 +580,9 @@ Until then the wire-level test only shows the pieces fit Gemini's documented pro
   given and is meant for a local frontend with pre-connected demo accounts.
 - Cut from the project: conditional orders across markets, combos, and "given
   the favourite doesn't win" bets.
-- Not seen on the real Gemini sandbox yet: a falling parlay or a range that wins, and a refunded falling parlay. All
-  three products were placed there on 2026-11-20, a falling parlay and a range were cashed out and settled, and a
-  two-leg basket was placed whole (`bk-a1e4e8d3`); see "Cashing out" and `docs/PLAN.md`. The results not yet seen are
+- Not seen on the real Gemini sandbox yet: a falling parlay or a range that wins, a refunded falling parlay, and a
+  breakout held to its result. All four products were placed there on 2026-11-20 (two breakouts, one of them sold
+  back), a falling parlay and a range were cashed out and settled, and a two-leg basket was placed whole
+  (`bk-a1e4e8d3`); see "Cashing out" and `docs/PLAN.md`. The results not yet seen are
   covered by the unit tests on the in-memory exchange, by the real client against the wire stand-in, and by
   `npm run rehearse`.

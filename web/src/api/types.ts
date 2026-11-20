@@ -8,8 +8,11 @@
  * and checked without either service running.
  */
 
-/** The kinds of bet. A parlay refunds the stake if its first condition fails; a range wins if the price finishes between two levels. */
-export type Product = 'parlay' | 'range';
+/**
+ * The kinds of bet. A parlay refunds the stake if its first condition fails; a range wins if the price finishes between two
+ * levels; a breakout is the range's opposite and wins if it finishes outside them, either way.
+ */
+export type Product = 'parlay' | 'range' | 'breakout';
 
 /** Which way a parlay looks: "up" bets that a price reaches a higher level, "down" that it falls to a lower one. */
 export type Direction = 'up' | 'down';
@@ -157,6 +160,59 @@ export interface RangeQuoteResponse {
   depth: { outcomeAvailable: number; conditionAvailable: number; maxStake: number } | { unavailable: string } | null;
 }
 
+/**
+ * The offer rule's verdict and numbers for a breakout: YES on the higher strike and NO on the lower, the same number of
+ * contracts of each. Exactly one of the two pays $1 when the price finishes outside the two levels and neither pays inside,
+ * so the pair's cost is the price of $1 of "outside" payout.
+ */
+export interface BreakoutQuote {
+  verdict: 'ok' | 'warn' | 'refuse';
+  reasons: { code: RefusalCode; message: string }[];
+  warnings: string[];
+  offerable: boolean;
+  overridden: boolean;
+  /** Chance the price finishes below the lower strike, or at or above the higher one. */
+  chanceOutside: number | null;
+  /** What a $1 "outside" payout is worth with no spread and no fees. The same as the chance. */
+  fairPrice: number | null;
+  /** Price per $1 of "outside" payout on this venue. */
+  pricePaid: number | null;
+  /** The same at Gemini's production fee rate. */
+  allInPrice: number | null;
+  markup: number | null;
+  markupPct: number | null;
+  cashOutPer100: number | null;
+  cashOutPer100AtProductionFees: number | null;
+  feeCoefCharged: number;
+}
+
+export interface BreakoutStakePlan {
+  requested: number;
+  reduced: boolean;
+  /** Contracts of each leg. */
+  contracts: number;
+  cost: number;
+  /** Net result if the price finishes outside the two levels (the win). */
+  ifOutside: number;
+  /** Net result if it finishes between them (the loss: everything spent). */
+  ifInRange: number;
+  feesAtProductionRates: number;
+  cashOutNow: number | null;
+}
+
+export interface BreakoutQuoteResponse {
+  venue: string;
+  asOf: string;
+  product: 'breakout';
+  event: { ticker: string; title: string; expiry: string | null };
+  low: PairLeg;
+  high: PairLeg;
+  quote: BreakoutQuote;
+  stake: BreakoutStakePlan | null;
+  /** `outcomeAvailable` is what is on offer on the higher strike's YES, `conditionAvailable` on the lower strike's NO. */
+  depth: { outcomeAvailable: number; conditionAvailable: number; maxStake: number } | { unavailable: string } | null;
+}
+
 export interface QuoteResponse {
   venue: string;
   asOf: string;
@@ -225,7 +281,8 @@ export interface Bet {
   basket?: BasketTag;
   /**
    * A parlay's condition is the strike that has to hold first (the HIGHER one for a falling parlay) and its target the strike
-   * it is really about. A range has no condition: here its lower strike is the "condition" and its higher the "target".
+   * it is really about. A range has no condition: here its lower strike is the "condition" and its higher the "target". A
+   * breakout names its two strikes the same way as a range.
    */
   condition: { symbol: string; label: string; strike: number };
   target: { symbol: string; label: string; strike: number };
@@ -236,7 +293,8 @@ export interface Bet {
   cost: number;
   /**
    * For a parlay: ifBothHit is the win, ifConditionOnly the loss and ifConditionFails the refund. For a range: ifInRange and
-   * ifOutside, and ifBothHit / ifConditionOnly carry the same two numbers; there is no refund line.
+   * ifOutside, and ifBothHit / ifConditionOnly carry the same two numbers; there is no refund line. For a breakout the same
+   * four fields, the other way round: ifOutside (and ifBothHit) is the win, ifInRange (and ifConditionOnly) the loss.
    */
   payoffs?: {
     stake: number;
@@ -248,7 +306,7 @@ export interface Bet {
     conditionalPrice: number | null;
     hedged: boolean;
   };
-  offer?: OfferQuote | RangeQuote;
+  offer?: OfferQuote | RangeQuote | BreakoutQuote;
   stakeReduced?: { requested: number; reducedTo: number; outcomeAvailable: number; conditionAvailable: number; reason: string };
   settlement?: {
     conditionResolved: 'yes' | 'no';
@@ -257,6 +315,8 @@ export interface Bet {
     /** Payout minus cost, in dollars (the executor calls it `pnl`). */
     pnl: number;
     settledAt: string;
+    /** The price the ladder finished at, when the exchange reported it. For showing where it ended; the payout never depends on it. */
+    finishedAt?: number;
   };
   /**
    * Present when Gemini settled the market without a plain yes or no (`needs_review`). `resolved` is what it actually
@@ -269,6 +329,11 @@ export interface Bet {
    * of the bet is still held and it settles as usual; when true the status is `cashed_out`.
    */
   cashOut?: { at: string; stake: number; proceeds: number; pnl: number; complete: boolean };
+  /**
+   * For a bet sold back before its market settled: how its call turned out, once the market has a clean result. The bet is
+   * never paid or `settled`, but its call can then be revealed and scored like any other (`scorable` becomes true).
+   */
+  called?: { conditionResolved: 'yes' | 'no'; targetResolved: 'yes' | 'no'; at: string; finishedAt?: number };
   scorable: boolean;
   flow: BetFlow;
 }
@@ -328,7 +393,21 @@ export interface PlaceRangeRequest {
   slippageTicks?: number;
 }
 
-export type PlaceBetRequest = PlaceParlayRequest | PlaceRangeRequest;
+export interface PlaceBreakoutRequest {
+  product: 'breakout';
+  user: string;
+  event: string;
+  /** Symbol of the lower strike (the NO order). */
+  low: string;
+  /** Symbol of the higher strike (the YES order). */
+  high: string;
+  /** Dollars to spend on the two orders together. */
+  stake: number;
+  maxPrice?: number;
+  slippageTicks?: number;
+}
+
+export type PlaceBetRequest = PlaceParlayRequest | PlaceRangeRequest | PlaceBreakoutRequest;
 
 export interface PlaceBetResponse {
   bet: Bet;
@@ -338,7 +417,8 @@ export interface PlaceBetResponse {
 /** One leg of a basket request: a parlay (either way) or a range, with its own stake. */
 export type BasketLegRequest =
   | { product?: 'parlay'; event: string; condition: string; target: string; direction?: Direction; stake: number }
-  | { product: 'range'; event: string; low: string; high: string; stake: number };
+  | { product: 'range'; event: string; low: string; high: string; stake: number }
+  | { product: 'breakout'; event: string; low: string; high: string; stake: number };
 
 export interface PlaceBasketRequest {
   user: string;
@@ -381,6 +461,8 @@ export interface HealthResponse {
   readOnly?: boolean;
   /** True when our own liquidity seeder is quoting on the sandbox, so some of the prices shown are ours. */
   seeded?: boolean;
+  /** The most one bet may stake on this server, when it sets a limit (the hosted demo does). */
+  maxStake?: number | null;
   /** Present when the server is playing back a recorded session with nothing live behind it, and when it was recorded. */
   replay?: { recordedAt: string };
   users: { user: string; connected: boolean | null }[];
@@ -392,7 +474,7 @@ export interface ApiErrorBody {
   error: string;
   code: string;
   refused?: boolean;
-  quote?: OfferQuote | RangeQuote | null;
+  quote?: OfferQuote | RangeQuote | BreakoutQuote | null;
   /** On a basket that was refused: the leg that did not pass, from 0. */
   leg?: number;
 }
@@ -482,8 +564,18 @@ export interface LeaderboardRow {
   edge: number;
   hitRate: number;
   lastRevealedAt: string;
-  /** Up to five of this player's newest verified calls, each openable on /verify/:signature. */
-  recent?: { signature: string; betId: string; revealedAt: string; outcome: 0 | 1; edge: number }[];
+  /**
+   * Every call this player has sealed on Solana, revealed or not. A commit carries the handle, so the count is public; set
+   * beside `calls` (the revealed ones) it shows whether a record was built by revealing only the calls that came off.
+   */
+  sealed?: number;
+  /** Sealed calls the service knows could never be revealed: the first half failed and the stake came back. */
+  refunded?: number;
+  /**
+   * Up to five of this player's newest verified calls, each openable on /verify/:signature. `event`, `condition` and
+   * `target` are the ticker and the two contract symbols the reveal published (absent from an older service).
+   */
+  recent?: { signature: string; betId: string; event?: string; condition?: string; target?: string; revealedAt: string; outcome: 0 | 1; edge: number }[];
 }
 
 export interface LeaderboardResponse {

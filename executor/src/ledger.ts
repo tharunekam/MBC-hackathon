@@ -2,10 +2,11 @@ import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, re
 import { dirname } from 'node:path';
 import type { Direction } from './mirror.ts';
 import type { OfferQuote } from './offer.ts';
+import type { BreakoutQuote } from './breakout.ts';
 import type { RangeQuote } from './range.ts';
 
-/** The kinds of bet the service places. A bet recorded before there were two is a parlay. */
-export type Product = 'parlay' | 'range';
+/** The kinds of bet the service places. A bet recorded before there was more than one is a parlay. */
+export type Product = 'parlay' | 'range' | 'breakout';
 
 /** One order sent to Gemini, identified by the tag we attach (`clientOrderId`). */
 export interface LegRecord {
@@ -43,7 +44,8 @@ export interface BetRecord {
   /**
    * A parlay's condition is the strike that has to hold first and its target the strike it is really about; for a falling
    * parlay the condition is the HIGHER strike. A range has no condition: its "condition" is the lower strike (the YES leg)
-   * and its "target" the higher (the NO leg).
+   * and its "target" the higher (the NO leg). A breakout names its strikes the same way and buys the other side of each:
+   * NO on the "condition" (lower) and YES on the "target" (higher).
    */
   condition: { symbol: string; label: string; strike: number };
   target: { symbol: string; label: string; strike: number };
@@ -66,8 +68,9 @@ export interface BetRecord {
   cost: number;
   /**
    * What the bet pays. For a parlay: ifBothHit is the win, ifConditionOnly the loss, ifConditionFails the refund. For a
-   * range: ifBothHit and ifInRange are the win, ifConditionOnly and ifOutside the loss, and there is no refund line.
-   * `hedged` means both legs are in place (a range's two legs are matched).
+   * range: ifBothHit and ifInRange are the win, ifConditionOnly and ifOutside the loss, and there is no refund line. For a
+   * breakout the same four fields the other way round: ifBothHit and ifOutside are the win, ifConditionOnly and ifInRange
+   * the loss. `hedged` means both legs are in place (a range's or a breakout's two legs are matched).
    */
   payoffs?: {
     stake: number;
@@ -80,7 +83,7 @@ export interface BetRecord {
     hedged: boolean;
   };
   /** The offer rule's numbers and verdict at the moment the bet was placed. */
-  offer?: OfferQuote | RangeQuote;
+  offer?: OfferQuote | RangeQuote | BreakoutQuote;
   /** Present when the depth guard shrank the bet so both orders fit at the best price. */
   stakeReduced?: {
     requested: number;
@@ -111,6 +114,12 @@ export interface BetRecord {
     payout: number;
     pnl: number;
     settledAt: string;
+    /**
+     * The price the ladder finished at: the reference level Gemini settled its contracts against, when it reported one.
+     * It is for showing a person where the price ended. The payout never depends on it: that comes from each contract's
+     * own yes or no.
+     */
+    finishedAt?: number;
   };
   /**
    * Present once the user has sold some or all of the bet back (`cashOutBet`). `stake` is what the bet had cost before
@@ -118,6 +127,13 @@ export interface BetRecord {
    * `complete` is false while part of the bet is still held; the bet is then still live and settles as usual.
    */
   cashOut?: { at: string; stake: number; proceeds: number; pnl: number; complete: boolean };
+  /**
+   * How the call turned out, for a bet that was sold back before its market settled. Such a bet holds nothing, so it is
+   * never paid and never `settled`; but the call it stood for was still right or wrong, and selling early does not change
+   * which. Recorded once the market gives a clean result, in the bet's own terms (as `settlement` reads them), so the call
+   * can be revealed and scored like any other. Absent while the market is open, and for good if it settles unclearly.
+   */
+  called?: { conditionResolved: 'yes' | 'no'; targetResolved: 'yes' | 'no'; at: string; finishedAt?: number };
   note?: string;
 }
 

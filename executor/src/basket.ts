@@ -1,7 +1,7 @@
 /**
  * A basket: one view across several assets, placed in a single step.
  *
- * Each leg is an ordinary bet (a parlay, going either way, or a range) on its own ladder, with its own two orders and its own
+ * Each leg is an ordinary bet (a parlay, going either way, a range or a breakout) on its own ladder, with its own two orders and its own
  * result. A basket adds only two things: every leg is checked before the first one is placed, and the bets carry a shared
  * basket id so they are shown together. Nothing links the legs on the exchange, so a basket is NOT all-or-nothing: if an
  * order cannot be filled after earlier legs are in, the earlier legs stay, nothing further is placed, and the result says so.
@@ -10,6 +10,7 @@ import { BetRefused, defaultId, placeConditionalBet, planConditionalBet } from '
 import type { Deps } from './bets.ts';
 import type { BetRecord } from './ledger.ts';
 import type { Direction } from './mirror.ts';
+import { placeBreakoutBet, planBreakoutBet } from './breakout-bet.ts';
 import { placeRangeBet, planRangeBet } from './range-bet.ts';
 
 export const MIN_BASKET_LEGS = 2;
@@ -17,7 +18,8 @@ export const MAX_BASKET_LEGS = 6;
 
 export type BasketLeg =
   | { product: 'parlay'; direction?: Direction; eventTicker: string; conditionSymbol: string; targetSymbol: string; stake: number }
-  | { product: 'range'; eventTicker: string; lowSymbol: string; highSymbol: string; stake: number };
+  | { product: 'range'; eventTicker: string; lowSymbol: string; highSymbol: string; stake: number }
+  | { product: 'breakout'; eventTicker: string; lowSymbol: string; highSymbol: string; stake: number };
 
 export interface BasketRequest {
   user: string;
@@ -56,6 +58,8 @@ async function checkLeg(deps: Deps, user: string, leg: BasketLeg, index: number)
   try {
     if (leg.product === 'range') {
       await planRangeBet(deps, { user, eventTicker: leg.eventTicker, lowSymbol: leg.lowSymbol, highSymbol: leg.highSymbol, stake: leg.stake });
+    } else if (leg.product === 'breakout') {
+      await planBreakoutBet(deps, { user, eventTicker: leg.eventTicker, lowSymbol: leg.lowSymbol, highSymbol: leg.highSymbol, stake: leg.stake });
     } else {
       await planConditionalBet(deps, {
         user,
@@ -91,7 +95,9 @@ export async function placeBasket(deps: Deps, req: BasketRequest): Promise<Baske
       const bet =
         leg.product === 'range'
           ? await placeRangeBet(deps, { user: req.user, eventTicker: leg.eventTicker, lowSymbol: leg.lowSymbol, highSymbol: leg.highSymbol, stake: leg.stake, basket })
-          : await placeConditionalBet(deps, {
+          : leg.product === 'breakout'
+            ? await placeBreakoutBet(deps, { user: req.user, eventTicker: leg.eventTicker, lowSymbol: leg.lowSymbol, highSymbol: leg.highSymbol, stake: leg.stake, basket })
+            : await placeConditionalBet(deps, {
               user: req.user,
               eventTicker: leg.eventTicker,
               conditionSymbol: leg.conditionSymbol,

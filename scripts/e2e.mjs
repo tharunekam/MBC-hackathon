@@ -230,7 +230,7 @@ await check('the call can be saved as a picture to post', async () => {
 
 await check('Proof page reconciles to the cent', async () => {
   await page.goto(`${base}/proof`);
-  await page.getByRole('button', { name: 'Check against Gemini' }).click();
+  await page.getByRole('button', { name: /^Check against / }).click();
   await page.waitForSelector('.recon .is-ok');
   need(/\$0\.00/.test(await page.locator('.recon .is-ok').innerText()), 'difference is not $0.00');
 });
@@ -379,12 +379,12 @@ await check('Return Parlay going down: the switch turns the bet round, and the p
   await page.goto(`${base}/parlay`);
   await placeable();
   await page.getByRole('radio', { name: 'Falls lower' }).click();
-  await until('the question to read as a falling bet', async () => /stays below/.test(await page.locator('.q-sentence').first().innerText()), 8_000);
+  await until('the question to read as a falling bet', async () => /stays under/.test(await page.locator('.q-sentence').first().innerText()), 8_000);
   await placeable();
   await button().click();
   await page.waitForSelector('.receipt');
   const text = await page.locator('.receipt').innerText();
-  need(/Given below .* fall below/.test(text), `the receipt does not describe a falling bet: ${text.slice(0, 120).replace(/\n/g, ' | ')}`);
+  need(/Given it stays under .* fall below/.test(text), `the receipt does not describe a falling bet: ${text.slice(0, 120).replace(/\n/g, ' | ')}`);
   need(/Order 1 filled/.test(text) && /Order 2 filled/.test(text), 'both orders not shown as filled');
   const placed = (await api('/api/bets')).bets[0];
   need(placed.direction === 'down' && /^dn-/.test(placed.id) && placed.status === 'open', `the ledger has ${placed.direction} ${placed.id} ${placed.status}`);
@@ -398,7 +398,7 @@ await check('Range: placed from its page as a YES on the lower strike and a NO o
   await button().click();
   await page.waitForSelector('.receipt');
   const text = await page.locator('.receipt').innerText();
-  need(/Finish between/.test(text) && /comes back whatever happens/.test(text), `the receipt does not describe a range: ${text.slice(0, 120).replace(/\n/g, ' | ')}`);
+  need(/Finish between/.test(text) && /comes back either way/.test(text), `the receipt does not describe a range: ${text.slice(0, 120).replace(/\n/g, ' | ')}`);
   const placed = (await api('/api/bets')).bets[0];
   need(placed.product === 'range' && /^rg-/.test(placed.id) && placed.status === 'open', `the ledger has ${placed.product} ${placed.id} ${placed.status}`);
   need(placed.legs[0].outcome === 'yes' && placed.legs[0].symbol === placed.condition.symbol && placed.legs[1].outcome === 'no' && placed.legs[1].symbol === placed.target.symbol, 'the two orders are on the wrong sides');
@@ -518,6 +518,39 @@ await check('Hunch: an unmoved view lists nothing, a view moved up lists rising 
   await placeable();
   const asked = (await page.locator('.q-sentence').innerText()).replace(/\s+/g, ' ');
   need(prices.length === 2 && prices.every((p) => asked.includes(p)), `the builder opened on "${asked}", not on ${prices.join(' and ')}`);
+});
+
+await check('Breakout: the Range switch turns the bet inside out; placed as a YES on the higher strike and a NO on the lower, and it wins when the price ends outside', async () => {
+  await dev('/dev/reset');
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${base}/range`);
+  await placeable();
+  await page.getByRole('radio', { name: 'Breaks out' }).click();
+  await until('the question to read as a breakout', async () => /outside/i.test(await page.locator('.q-sentence').first().innerText()), 8_000);
+  await placeable();
+  const zones = await page.evaluate(() => [...document.querySelectorAll('.dist-card .dc-slot')].map((g) => g.getAttribute('data-zone')));
+  const runs = zones.filter((z, i) => z !== zones[i - 1]).join(',');
+  need(runs === 'win,lose,win', `a breakout's bars run ${zones.join(',')}`);
+  await button().click();
+  await page.waitForSelector('.receipt');
+  const placed = (await api('/api/bets')).bets[0];
+  need(placed.product === 'breakout' && /^bo-/.test(placed.id) && placed.status === 'open', `the ledger has ${placed.product} ${placed.id} ${placed.status}`);
+  need(placed.legs[0].outcome === 'yes' && placed.legs[0].symbol === placed.target.symbol && placed.legs[1].outcome === 'no' && placed.legs[1].symbol === placed.condition.symbol, 'the two orders are on the wrong sides');
+  need(placed.legs[0].quantityFilled === placed.legs[1].quantityFilled, 'the two legs are not the same size');
+  need(placed.payoffs.ifOutside > 0 && Math.abs(placed.payoffs.ifInRange + placed.cost) < 0.011, `pays ${placed.payoffs.ifOutside} outside and ${placed.payoffs.ifInRange} inside on a cost of ${placed.cost}`);
+  const call = (await api('/chain/calls')).calls.find((c) => c.betId === placed.id);
+  need(call?.state === 'committed', `its call is ${call?.state ?? 'missing'}`);
+
+  // The price ends above the higher level: outside, so the YES pays a dollar a contract.
+  const finish = placed.target.strike + 1;
+  await dev(`/dev/resolve?spot=${finish}`);
+  await page.goto(`${base}/bets`);
+  const row = page.locator(`[data-bet="${placed.id}"]`);
+  await until('the breakout to read "Finished outside"', async () => /finished outside/i.test(await row.locator('.bl-chip').innerText()), 15_000);
+  const done = (await api('/api/bets')).bets.find((b) => b.id === placed.id);
+  need(done.settlement.targetResolved === 'yes' && Math.abs(done.settlement.payout - placed.legs[0].quantityFilled) < 0.011, `settled ${done.settlement.targetResolved}, paid ${done.settlement.payout}`);
+  need(done.settlement.finishedAt === finish, `where it finished is recorded as ${done.settlement.finishedAt}`);
+  return `won $${done.settlement.pnl.toFixed(2)} on $${placed.cost.toFixed(2)}`;
 });
 
 // ---- 7. nothing broke quietly

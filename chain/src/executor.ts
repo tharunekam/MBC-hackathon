@@ -27,6 +27,8 @@ export interface ExecutorBet {
   payoffs?: { hedged: boolean; conditionalPrice: number | null };
   offer?: { fairPrice: number | null };
   settlement?: { conditionResolved: 'yes' | 'no'; targetResolved: 'yes' | 'no'; payout: number };
+  /** For a bet sold back before its market settled: how the call turned out, once the market has a clean result. */
+  called?: { conditionResolved: 'yes' | 'no'; targetResolved: 'yes' | 'no' };
 }
 
 export interface BetSource {

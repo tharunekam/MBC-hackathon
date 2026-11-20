@@ -10,7 +10,7 @@
  * same /api and /chain paths the web app uses: place a win, a refund and a loss, settle, commit, reveal.
  * Then the checks that decide whether a first run with real keys is smooth: signatures on the wire, only the authority's
  * memos on chain, a leaderboard rebuilt from Solana, no secret in any response, and both services surviving a restart.
- * Last, the other products on a second ladder through the same paths: a falling parlay, a range and a three-bet basket are
+ * Last, the other products on a second ladder through the same paths: a falling parlay, a range, a breakout and a three-bet basket are
  * placed, their calls committed, settled, revealed and verified from Solana, and the revealed bet ids say what each was.
  *
  * `--chaos` injects failures while the flow runs (a rate-limited Solana node, a dropped transaction whose blockhash expires,
@@ -254,12 +254,32 @@ try {
     if (q.quote.offerable && q.stake?.cost >= 1) box = { low: e2.rungs[i], high: e2.rungs[j], quote: q };
   }
   check('some range on the second ladder is on offer, quoted with what always comes back', !!box && box.quote.stake.backAlways > 0 && box.quote.stake.ifInRange > 0 && box.quote.stake.ifOutside < 0);
+  // A breakout is the range's opposite. One whose two levels the price will finish OUTSIDE of, so it is the win of the pair.
+  let wide = null;
+  const landing = (box.low.strike + box.high.strike) / 2;
+  for (let i = 0; i < e2.rungs.length && !wide; i++) for (let j = i + 1; j < e2.rungs.length && !wide; j++) {
+    if (!(landing < e2.rungs[i].strike || landing >= e2.rungs[j].strike)) continue;
+    const q = await get(`/api/quote?product=breakout&event=${ticker2}&low=${e2.rungs[i].symbol}&high=${e2.rungs[j].symbol}&stake=10`);
+    if (q.quote.offerable && q.stake?.cost >= 1) wide = { low: e2.rungs[i], high: e2.rungs[j], quote: q };
+  }
+  check('some breakout on the second ladder is on offer: a dollar if it ends outside the two levels, nothing between', !!wide && wide.quote.stake.ifOutside > 0 && Math.abs(wide.quote.stake.ifInRange + wide.quote.stake.cost) < 0.011 && wide.quote.quote.chanceOutside > 0 && wide.quote.quote.chanceOutside < 1);
+
+  // A bet that is sold back before the market settles: the sale is two sell orders, and the call it stood for is still
+  // scored once the market has a result. Sold before the other bets go on, so nothing else holds its contracts.
+  const early = await post('/api/bets', { user: 'primary', event: ticker2, condition: rising.condition.symbol, target: rising.target.symbol, stake: 10 });
+  const earlyCall = (await post('/chain/calls', { betId: early.json.bet.id })).json;
+  const sale = await post('/api/cashout', { bet: early.json.bet.id });
+  check('an open bet is sold back as two sell orders and reads "cashed_out"', early.status === 201 && sale.status === 200 && sale.json.bet.status === 'cashed_out' && sale.json.cashOut.complete === true && sale.json.bet.legs.filter((l) => l.role === 'cashout' && l.side === 'sell').length === 2, sale.json.error ?? `sold for ${sale.json.cashOut?.proceeds}`);
+  const tooSoon = await post(`/chain/calls/${earlyCall.id}/reveal`, {});
+  check('its call stays sealed while the market is open', tooSoon.status === 409 && tooSoon.json.code === 'cashed_out', tooSoon.json.code ?? '');
 
   const ordersBefore = gem.orders.length;
   const fall = await post('/api/bets', { user: 'primary', event: ticker2, condition: falling.condition.symbol, target: falling.target.symbol, direction: 'down', stake: 10 });
   check('a falling parlay is placed: a NO on the lower strike and a YES on the higher', fall.status === 201 && fall.json.bet.status === 'open' && /^dn-/.test(fall.json.bet.id) && fall.json.bet.legs[0].outcome === 'no' && fall.json.bet.legs[0].symbol === falling.target.symbol && fall.json.bet.legs[1].outcome === 'yes' && fall.json.bet.legs[1].symbol === falling.condition.symbol, fall.json.error ?? '');
   const ranged = await post('/api/bets', { product: 'range', user: 'primary', event: ticker2, low: box.low.symbol, high: box.high.symbol, stake: 14 });
   check('a range is placed: a YES on the lower strike and a NO on the higher, the same size', ranged.status === 201 && ranged.json.bet.status === 'open' && /^rg-/.test(ranged.json.bet.id) && ranged.json.bet.legs[0].outcome === 'yes' && ranged.json.bet.legs[1].outcome === 'no' && ranged.json.bet.legs[0].quantityFilled === ranged.json.bet.legs[1].quantityFilled, ranged.json.error ?? '');
+  const broke = await post('/api/bets', { product: 'breakout', user: 'primary', event: ticker2, low: wide.low.symbol, high: wide.high.symbol, stake: 10 });
+  check('a breakout is placed: a YES on the higher strike and a NO on the lower, the same size', broke.status === 201 && broke.json.bet.status === 'open' && /^bo-/.test(broke.json.bet.id) && broke.json.bet.legs[0].outcome === 'yes' && broke.json.bet.legs[0].symbol === wide.high.symbol && broke.json.bet.legs[1].outcome === 'no' && broke.json.bet.legs[1].symbol === wide.low.symbol && broke.json.bet.legs[0].quantityFilled === broke.json.bet.legs[1].quantityFilled, broke.json.error ?? '');
   const basket = await post('/api/baskets', {
     user: 'primary',
     name: 'Rehearsal basket',
@@ -270,11 +290,11 @@ try {
     ],
   });
   check('a three-leg basket is placed in one request, every leg open and tagged with the basket', basket.status === 201 && basket.json.basket.failed === null && basket.json.bets.length === 3 && basket.json.bets.every((b) => b.status === 'open' && b.basket?.id === basket.json.basket.id), basket.json.error ?? '');
-  check('Gemini received two signed orders for each of the five new bets', gem.orders.length - ordersBefore === 10, `${gem.orders.length - ordersBefore} orders`);
+  check('Gemini received two signed orders for each of the six new bets', gem.orders.length - ordersBefore === 12, `${gem.orders.length - ordersBefore} orders`);
   const refusedBasket = await post('/api/baskets', { user: 'primary', legs: [{ event: ticker2, condition: rising.target.symbol, target: rising.condition.symbol, stake: 10 }, { event: ticker2, condition: rising.condition.symbol, target: rising.target.symbol, stake: 10 }] });
-  check('a basket with a leg that is not a real pair is refused before anything is bought, naming the leg', refusedBasket.status === 422 && refusedBasket.json.leg === 0 && gem.orders.length - ordersBefore === 10, refusedBasket.json.error ?? '');
+  check('a basket with a leg that is not a real pair is refused before anything is bought, naming the leg', refusedBasket.status === 422 && refusedBasket.json.leg === 0 && gem.orders.length - ordersBefore === 12, refusedBasket.json.error ?? '');
 
-  const placed = [fall.json.bet, ranged.json.bet, ...basket.json.bets];
+  const placed = [fall.json.bet, ranged.json.bet, broke.json.bet, ...basket.json.bets];
   const committed = [];
   for (const b of placed) committed.push((await post('/chain/calls', { betId: b.id })).json);
   check('every new bet has its call committed on Solana', committed.every((c) => c.state === 'committed' && c.commitSignature), committed.map((c) => c.state).join(','));
@@ -283,7 +303,15 @@ try {
   for (const strike of ETH) exchange2.resolve(strike, insideSpot >= strike ? 'yes' : 'no');
   const settled = (await post('/api/settle', {})).json;
   const mine = (await get('/api/bets')).bets.filter((b) => placed.some((x) => x.id === b.id));
-  check('all five settle, and the range that the price landed inside is a win', mine.length === 5 && mine.every((b) => b.status === 'settled') && mine.filter((b) => b.product === 'range').every((b) => b.settlement.targetResolved === 'yes'), `${settled.settled.length} settled`);
+  check('all six settle, and the range that the price landed inside is a win', mine.length === 6 && mine.every((b) => b.status === 'settled') && mine.filter((b) => b.product === 'range').every((b) => b.settlement.targetResolved === 'yes'), `${settled.settled.length} settled`);
+  const soldNow = (await get('/api/bets')).bets.find((b) => b.id === early.json.bet.id);
+  const heldUp = landing >= rising.condition.strike;
+  const cameOff = landing >= rising.target.strike;
+  check('the sold bet is not settled or paid, but how its call turned out is recorded', soldNow.status === 'cashed_out' && !soldNow.settlement && soldNow.scorable === true && soldNow.called?.conditionResolved === (heldUp ? 'yes' : 'no') && soldNow.called?.targetResolved === (cameOff ? 'yes' : 'no') && settled.called.some((b) => b.id === soldNow.id), JSON.stringify(soldNow.called ?? null));
+  const lateReveal = await post(`/chain/calls/${earlyCall.id}/reveal`, {});
+  check('and its call is then revealed and scored on the market\'s result, as if it had been held', heldUp ? lateReveal.status === 200 && lateReveal.json.state === 'revealed' && lateReveal.json.reveal.outcome === (cameOff ? 1 : 0) : lateReveal.status === 409 && lateReveal.json.code === 'void_call', lateReveal.json.code ?? `outcome ${lateReveal.json.reveal?.outcome}`);
+  const brokeNow = mine.find((b) => b.id === broke.json.bet.id);
+  check('the breakout whose two levels the price finished outside is a win, paid a dollar a contract by one of its two orders', brokeNow.settlement.targetResolved === 'yes' && brokeNow.settlement.conditionResolved === 'yes' && Math.abs(brokeNow.settlement.payout - brokeNow.legs[0].quantityFilled) < 0.011, `paid ${brokeNow.settlement.payout}`);
 
   const reveals = [];
   for (const c of committed) {
@@ -293,7 +321,7 @@ try {
   }
   check('the calls that count are revealed on Solana', reveals.length >= 2 && reveals.every((r) => r.state === 'revealed' && r.reveal.signature), `${reveals.length} of ${committed.length}`);
   const publics = await Promise.all(reveals.map((r) => get(`/chain/reveals/${r.reveal.signature}`)));
-  const kindOf = (id) => (id.startsWith('rg-') ? 'range' : id.startsWith('dn-') ? 'falling' : 'rising');
+  const kindOf = (id) => (id.startsWith('rg-') ? 'range' : id.startsWith('bo-') ? 'breakout' : id.startsWith('dn-') ? 'falling' : 'rising');
   check('every public reveal carries the committed bet id, so the proof page can say what kind of bet it was', publics.every((x) => typeof x.betId === 'string' && placed.some((b) => b.id === x.betId)), publics.map((x) => kindOf(x.betId)).join(','));
   const verifies2 = await Promise.all(reveals.map((r) => get(`/chain/calls/${r.id}/verify`)));
   check('each new revealed call re-reads from Solana and its hash recomputes', verifies2.every((v) => v.matches === true));
