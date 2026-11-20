@@ -529,14 +529,15 @@
   margin-top: 16px;
 }
 
-/* The four pictures, each on a small panel. Every panel keeps one proportion, so the names under them line up across a row. */
+/* The four pictures, each on a small panel. Every drawing has the same box (240 by 96 units), so the panels are one height and
+   the names under them line up across a row. Lines are drawn; the words are type, so they stay one size as the card grows. */
 .fig-box {
   display: grid;
   align-content: center;
-  gap: 8px;
+  gap: 12px;
   width: 100%;
   height: auto;
-  padding: 16px 12px 8px;
+  padding: 20px 12px 14px;
   border-radius: var(--r-md);
   background: var(--panel);
 }
@@ -546,19 +547,21 @@
   height: auto;
   overflow: visible;
 }
+/* The line between ahead and behind: round dots, so it reads as a guide and not as part of the bet. */
 .fig-zero {
   stroke: var(--line-strong);
-  stroke-width: 1;
-  stroke-dasharray: 2 4;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-dasharray: 0.1 5;
 }
 .fig path {
   fill: none;
-  stroke-width: 2;
+  stroke-width: 2.5;
   stroke-linecap: round;
 }
 .fig-join {
   stroke: var(--line-strong);
-  stroke-width: 1;
+  stroke-width: 1.25;
 }
 .fig-back {
   stroke: var(--accent);
@@ -569,45 +572,79 @@
 .fig-win {
   stroke: var(--good);
 }
-/* The words under each stretch of the line. They are type, not part of the drawing, so they stay one size as the card grows. */
+/* The words under each stretch of the line: one small dot in the result's colour, then the word in plain text. The dot carries the
+   colour so the word stays legible on the panel, and the word means the colour is never the only clue. */
 .fig-labels {
   display: grid;
   padding: 0 3.33%; /* the drawing starts and ends 8 units in from a 240-unit box */
-  font-family: var(--font-mono);
   font-size: 12px;
-  line-height: 1.4;
-  text-align: center;
-  white-space: nowrap;
+  font-weight: 500;
+  line-height: 1.3;
   color: var(--muted);
 }
-.fig-labels [data-kind='back'] {
-  color: var(--accent-text);
+.fig-labels span,
+.fig-key span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
 }
-.fig-labels [data-kind='lose'] {
-  color: var(--bad);
+.fig-labels span::before,
+.fig-key span::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dot, currentColor);
 }
-.fig-labels [data-kind='win'] {
-  color: var(--good);
+.fig-labels [data-kind='back'],
+.fig-key [data-kind='back'] {
+  --dot: var(--accent);
 }
-/* Under the Basket's three drawings: the same three words, spread evenly, since every row uses all three. */
+.fig-labels [data-kind='lose'],
+.fig-key [data-kind='lose'] {
+  --dot: var(--bad);
+}
+.fig-labels [data-kind='win'],
+.fig-key [data-kind='win'] {
+  --dot: var(--good);
+}
+/* Under the Basket's three drawings: all three results, side by side. Every row uses all three, in its own order. */
 .fig-key {
   grid-column: 1 / -1;
-  grid-template-columns: repeat(3, auto);
-  justify-content: space-between;
-  padding: 0 4px;
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--muted);
 }
-.fig-basket {
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: stretch;
-  gap: 12px;
+.fig-plot {
+  position: relative;
 }
+/* The asset names stand over the left of the drawing, level with each row's own line. */
 .fig-names {
-  display: grid;
-  grid-template-rows: repeat(3, 1fr);
-  align-items: center;
+  position: absolute;
+  inset: 0 auto 0 3.33%;
   font-family: var(--font-mono);
   font-size: 12px;
+  line-height: 1;
   color: var(--muted);
+}
+.fig-names span {
+  position: absolute;
+  left: 0;
+  transform: translateY(-50%);
+}
+/* Four cards across a narrow screen leave a card too little room for a dot and a word: the word alone is enough. */
+@media (min-width: 961px) and (max-width: 1180px) {
+  .fig-labels span::before {
+    display: none;
+  }
 }
 /* The lines draw themselves in once, left to right, when the section comes into view. */
 .js [data-reveal] .fig path,

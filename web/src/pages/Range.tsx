@@ -4,6 +4,7 @@ import { api } from '../api';
 import { ApiError } from '../api/client';
 import type { Bet, BreakoutQuoteResponse, CallRecord, MarketEvent, PlaceBreakoutRequest, PlaceRangeRequest, RangeQuoteResponse, Rung } from '../api/types';
 import DistCard from '../components/DistCard';
+import HowItWorks from '../components/HowItWorks';
 import LadderChart, { ChartKey } from '../components/LadderChart';
 import LadderTable from '../components/LadderTable';
 import MarketPicker from '../components/MarketPicker';
@@ -451,9 +452,7 @@ export default function Range() {
           <h1 className="h-page">{words.title}</h1>
           <p className="lede">{words.lede}</p>
         </div>
-        <Link to={keepMode('/#how')} className="head-link">
-          How it works
-        </Link>
+        <HowItWorks kind='range' />
       </header>
 
       {markets.error && !markets.data && (

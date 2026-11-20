@@ -1084,6 +1084,41 @@ button.chip:active {
   transition: none;
 }
 
+/* Scroll fades: where the browser can tie an animation to scroll position, each block of the landing page fades up as it enters
+   and fades away as it leaves, following the scrollbar either way. Fade-in holds its first frame until its range starts and
+   fade-out holds its last after it ends (never both), so the resting state is always the plain, fully visible block, and a
+   block at the foot of the page, which cannot scroll out, is never left faint. Browsers without scroll timelines keep the
+   one-time fade-up above; reduced motion and ?still keep neither. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    :root:not([data-still]) .js [data-reveal] {
+      opacity: 1;
+      transform: none;
+      transition: none;
+      animation: fade-in linear backwards, fade-out linear forwards;
+      animation-timeline: view(), view();
+      animation-range: entry 0% entry 45%, exit 40% exit 100%;
+    }
+    :root:not([data-still]) .hero > .wrap {
+      animation: fade-out linear forwards;
+      animation-timeline: view();
+      animation-range: exit 15% exit 80%;
+    }
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(36px);
+  }
+}
+@keyframes fade-out {
+  to {
+    opacity: 0;
+    transform: translateY(-24px);
+  }
+}
+
 /* ------------------------------------------------------------ responsive */
 @media (max-width: 960px) {
   .foot-top {

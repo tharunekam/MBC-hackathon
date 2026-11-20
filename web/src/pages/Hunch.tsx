@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import type { MarketEvent } from '../api/types';
 import DistChart from '../components/DistChart';
+import HowItWorks from '../components/HowItWorks';
 import MarketPicker from '../components/MarketPicker';
 import { distributionOf, marketView, viewBuckets, viewOf, type View } from '../lib/distribution';
 import { cents, money, usd } from '../lib/format';
@@ -110,9 +111,7 @@ export default function Hunch() {
           <h1 className="h-page">Hunch</h1>
           <p className="lede">Say where you think the price finishes and how sure you are. We list the bets your view favors.</p>
         </div>
-        <Link to={keepMode('/#how')} className="head-link">
-          How it works
-        </Link>
+        <HowItWorks kind='hunch' />
       </header>
 
       {askedGone && (

@@ -46,8 +46,8 @@ function Steps({ pieces, left, right, zero, swing, nth = 0 }: { pieces: Pieces; 
 function Shape({ pieces, label }: { pieces: Pieces; label: string }) {
   return (
     <div className="fig-box" role="img" aria-label={label}>
-      <svg className="fig" viewBox="0 0 240 76" aria-hidden="true" focusable="false">
-        <Steps pieces={pieces} left={8} right={232} zero={38} swing={27} />
+      <svg className="fig" viewBox="0 0 240 96" aria-hidden="true" focusable="false">
+        <Steps pieces={pieces} left={8} right={232} zero={48} swing={30} />
       </svg>
       <div className="fig-labels" style={{ gridTemplateColumns: pieces.map(([, share]) => `${share}fr`).join(' ') }}>
         {pieces.map(([kind], i) => (
@@ -69,19 +69,24 @@ function BasketFigure() {
   ];
   return (
     <div className="fig-box fig-basket" role="img" aria-label="Basket: three bets on three assets, each with its own results, placed together.">
-      <div className="fig-names">
-        {rows.map((r) => (
-          <span key={r.name}>{r.name}</span>
-        ))}
+      {/* The names sit over the left of the drawing, so it has the same box, and the same scale, as the other three. */}
+      <div className="fig-plot">
+        <div className="fig-names" aria-hidden="true">
+          {rows.map((r, i) => (
+            <span key={r.name} style={{ top: `${((16 + i * 32) / 96) * 100}%` }}>
+              {r.name}
+            </span>
+          ))}
+        </div>
+        <svg className="fig" viewBox="0 0 240 96" aria-hidden="true" focusable="false">
+          {rows.map((r, i) => (
+            <Steps key={r.name} pieces={r.pieces} left={44} right={232} zero={16 + i * 32} swing={9} nth={i} />
+          ))}
+        </svg>
       </div>
-      <svg className="fig" viewBox="0 0 200 96" aria-hidden="true" focusable="false">
-        {rows.map((r, i) => (
-          <Steps key={r.name} pieces={r.pieces} left={4} right={196} zero={16 + i * 32} swing={8} nth={i} />
-        ))}
-      </svg>
-      {/* The same three words as under the single bets, so colour is never the only clue to a win or a loss. */}
-      <div className="fig-labels fig-key" aria-hidden="true">
-        {(['back', 'lose', 'win'] as const).map((kind) => (
+      {/* A key, not column headings: each row has its own order of results, so the words are not set under the rows. */}
+      <div className="fig-key" aria-hidden="true">
+        {(['win', 'lose', 'back'] as const).map((kind) => (
           <span key={kind} data-kind={kind}>
             {WORD[kind]}
           </span>

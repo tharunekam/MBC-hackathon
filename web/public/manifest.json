@@ -1,7 +1,7 @@
 {
   "name": "Given",
   "short_name": "Given",
-  "description": "Bets on where a price finishes, with every result on screen before you bet.",
+  "description": "Defined-outcome bets on Gemini prediction markets: every result is shown before you bet. Not affiliated with Gemini.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

@@ -315,8 +315,8 @@ export default function Shell() {
     // `key` is new for every navigation, including a click on the address already shown, which is how that click is told apart.
   }, [pathname, search, hash, key]);
   useEffect(() => {
-    document.title = titleFor(pathname, search);
-  }, [pathname, search]);
+    document.title = titleFor(pathname);
+  }, [pathname]);
   return (
     <>
       {/* The first thing a keyboard reaches: past the bar, straight to the page. */}

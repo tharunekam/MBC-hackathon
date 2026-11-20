@@ -3,12 +3,12 @@
  * list and a row of open tabs unreadable ("Given", "Given", "Given"), and a screen reader announces the title on arrival.
  */
 const SITE = 'Given';
-const HOME = 'Given · Bet the second half';
+const HOME = "Given – money back if it doesn't happen";
 
 /** Every page the router knows by an exact address (it matches without regard to case, and has nothing below these). */
 const PAGES: Record<string, string> = {
   '/parlay': 'Stake Back',
-  '/range': 'Range',
+  '/range': 'Range and Breakout',
   '/basket': 'Basket',
   '/hunch': 'Hunch',
   '/markets': 'Markets',
@@ -25,13 +25,12 @@ const PROOF = /^\/verify\/[^/]+$/;
 
 /**
  * The title for an address. The landing page carries the site's own line; an address the app does not know says so. The Range
- * page holds two bets and its heading follows the switch (?side=out is the Breakout), so its title does too.
+ * page holds both the Range and the Breakout (one switch apart), so its title names both.
  */
-export function titleFor(pathname: string, search = ''): string {
+export function titleFor(pathname: string): string {
   const path = (pathname.replace(/\/+$/, '') || '/').toLowerCase();
   if (path === '/') return HOME;
   if (PROOF.test(path)) return `Proof of a call · ${SITE}`;
-  if (path === '/range' && new URLSearchParams(search).get('side') === 'out') return `Breakout · ${SITE}`;
   const page = PAGES[path];
   return page ? `${page} · ${SITE}` : `Page not found · ${SITE}`;
 }

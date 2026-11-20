@@ -4,6 +4,7 @@ import { api } from '../api';
 import { ApiError } from '../api/client';
 import type { Bet, CallRecord, Direction, MarketEvent, PlaceParlayRequest, QuoteResponse, Rung } from '../api/types';
 import DistCard from '../components/DistCard';
+import HowItWorks from '../components/HowItWorks';
 import LadderChart, { ChartKey } from '../components/LadderChart';
 import LadderTable from '../components/LadderTable';
 import MarketPicker from '../components/MarketPicker';
@@ -415,9 +416,7 @@ export default function Parlay() {
           <h1 className="h-page">Stake Back</h1>
           <p className="lede">{words.lede}</p>
         </div>
-        <Link to={keepMode('/#how')} className="head-link">
-          How it works
-        </Link>
+        <HowItWorks kind='parlay' />
       </header>
 
       {markets.error && !markets.data && (
