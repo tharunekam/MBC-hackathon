@@ -7,6 +7,7 @@
  * Prices are generated from a drifting spot with a normal-distribution ladder;
  * quotes use the same maths as the executor (`lib/pricing.ts`).
  */
+import { dateTime } from '../lib/format';
 import { breakoutEstimate, breakoutOutcomesFor, estimate, feeRate, mirrorBook, PRODUCTION_FEE_COEF, rangeEstimate, rangeOutcomesFor } from '../lib/pricing';
 import { ApiError, type Api } from './client';
 import type {
@@ -74,9 +75,9 @@ interface Asset {
 
 const dollars = (k: number) => `$${k.toLocaleString('en-US')}`;
 const ASSETS: Asset[] = [
-  { key: 'BTC', name: 'BTC', spot: 63240, step: 500, lowest: 61500, rungs: 8, sigma: 0.012, money: dollars },
-  { key: 'ETH', name: 'ETH', spot: 1806, step: 20, lowest: 1740, rungs: 8, sigma: 0.012, money: dollars },
-  { key: 'SOL', name: 'SOL', spot: 142, step: 2, lowest: 132, rungs: 8, sigma: 0.016, money: dollars },
+  { key: 'BTC', name: 'Bitcoin', spot: 63240, step: 500, lowest: 61500, rungs: 8, sigma: 0.012, money: dollars },
+  { key: 'ETH', name: 'Ethereum', spot: 1806, step: 20, lowest: 1740, rungs: 8, sigma: 0.012, money: dollars },
+  { key: 'SOL', name: 'Solana', spot: 142, step: 2, lowest: 132, rungs: 8, sigma: 0.016, money: dollars },
 ];
 
 // Abramowitz-Stegun approximation of the normal CDF.
@@ -92,10 +93,6 @@ function nextHour(now: Date): Date {
   d.setMinutes(0, 0, 0);
   d.setHours(d.getHours() + 1);
   return d;
-}
-
-function hourLabel(d: Date): string {
-  return new Intl.DateTimeFormat('en-US', { hour: 'numeric', timeZone: 'America/New_York' }).format(d).replace(' ', '').toLowerCase();
 }
 
 /** The spot drifts a little so the ladder moves while you watch. */
@@ -281,7 +278,9 @@ function buildEvent(a: Asset, t: number): MarketEvent {
   for (const p of pairs) for (const r of p.quote.reasons) refusedByReason[r.code] = (refusedByReason[r.code] ?? 0) + 1;
   return {
     ticker,
-    title: `${a.name} price today at ${hourLabel(expiry)} EST`,
+    // Built from the event's own fields, in the viewer's own clock and the app's one date format, so it never goes stale
+    // overnight or disagrees with the picker: "Bitcoin · Nov 20, 6 AM".
+    title: `${a.name} · ${dateTime(expiry)}`,
     category: 'Crypto',
     expiry: expiry.toISOString(),
     rungs,

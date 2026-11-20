@@ -22,7 +22,8 @@ export default function PayoffBars({ curve, asset }: Props) {
   const n = bars.length;
   // Room under the plot for two lines: the figure a bar below the line carries, then the prices along the bottom.
   const height = 188;
-  const pad = { left: 46, right: 10, top: 16, bottom: 46 };
+  // The left margin holds the largest gain and loss as 12px figures ("+$22.89", "−$10.00").
+  const pad = { left: 58, right: 10, top: 16, bottom: 46 };
   const plotW = Math.max(10, width - pad.left - pad.right);
   const plotH = height - pad.top - pad.bottom;
   const slot = plotW / n;
@@ -39,11 +40,12 @@ export default function PayoffBars({ curve, asset }: Props) {
   const xOf = (i: number) => pad.left + i * slot;
 
   const edges = bars.slice(0, -1).map((_, i) => xOf(i + 1));
-  const labelled = spacedLabels(edges, 64, 52);
-  const showValues = slot >= 44;
+  const labelled = spacedLabels(edges, 72, 60);
+  // A figure on a bar is about 50px wide at 12px: a slot narrower than that would put two figures on top of each other.
+  const showValues = slot >= 56;
 
   const spoken =
-    `What these bets on ${asset} net at each finishing price. ` +
+    `What these bets on ${asset} pay at each finishing price. ` +
     bars.map((b) => `${bucketLabel(b.bucket)}: ${usdSigned(b.net)}, ${pct(b.bucket.chance)} chance`).join('. ') +
     '.';
 

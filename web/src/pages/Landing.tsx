@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, type PointerEvent } from 'react';
-import { Link, useOutletContext } from 'react-router-dom';
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { Link } from 'react-router-dom';
 import ProbBar from '../components/ProbBar';
 import ProductShowcase from '../components/ProductShowcase';
 import Reveal from '../components/Reveal';
 import { MY_BETS, PRODUCTS } from '../lib/nav';
-import { keepMode, type VenueNote } from '../lib/venue';
+import { keepMode } from '../lib/venue';
 import '../styles/landing.css';
 
 /** The product the page explains in detail; all four shapes are introduced once the idea has been. */
@@ -32,6 +32,8 @@ interface Zone {
 interface Example {
   id: 'parlay' | 'range';
   name: string;
+  /** The line under the headline; it says what the chosen bet does, so the page never promises a stake back the picture does not show. */
+  sub: string;
   zones: readonly Zone[];
 }
 
@@ -40,15 +42,17 @@ const EXAMPLES: readonly Example[] = [
   {
     id: 'parlay',
     name: 'Stake Back',
+    sub: 'If the first half doesn’t happen, you get your stake back',
     zones: [
-      { kind: 'back', from: LOW, to: FIRST, amount: 'Stake back', when: `Below ${dollars(FIRST)}`, say: 'you get your $10 back', why: 'The first half failed, so your stake comes back.' },
-      { kind: 'lose', from: FIRST, to: SECOND, amount: '−$10.00', when: `${dollars(FIRST)} to ${dollars(SECOND)}`, say: 'you lose $10.00', why: 'The first half held and the second didn’t. This is the only way you lose.' },
-      { kind: 'win', from: SECOND, to: HIGH, amount: '+$9.61', when: `${dollars(SECOND)} and up`, say: 'you win $9.61', why: 'Both halves happened, so the bet pays.' },
+      { kind: 'back', from: LOW, to: FIRST, amount: 'Stake back', when: `Below ${dollars(FIRST)}`, say: 'you get your $10 back', why: 'The first level failed, so your stake comes back.' },
+      { kind: 'lose', from: FIRST, to: SECOND, amount: '−$10.00', when: `${dollars(FIRST)} to ${dollars(SECOND)}`, say: 'you lose $10.00', why: 'The first level held and the target was missed. This is the only way you lose.' },
+      { kind: 'win', from: SECOND, to: HIGH, amount: '+$9.61', when: `${dollars(SECOND)} and up`, say: 'you win $9.61', why: 'The target was reached, so the bet pays.' },
     ],
   },
   {
     id: 'range',
     name: 'Range',
+    sub: 'Win if the price finishes between two levels',
     zones: [
       { kind: 'lose', from: LOW, to: FIRST, amount: '−$3.42', when: `Below ${dollars(FIRST)}`, say: 'you lose $3.42', why: 'It finished under the range. $6.58 of your $10 still comes back.' },
       { kind: 'win', from: FIRST, to: SECOND, amount: '+$3.16', when: `${dollars(FIRST)} to ${dollars(SECOND)}`, say: 'you win $3.16', why: 'It finished inside the range, so the bet pays.' },
@@ -71,8 +75,7 @@ const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 
  * the marker shows which one the finishing price lands in. It follows the pointer, takes a drag on a phone and the arrow keys
  * on a keyboard, and when the page opens it runs through the outcomes once by itself. Example numbers, and labelled so.
  */
-function PriceLine() {
-  const [which, setWhich] = useState<Example['id']>('parlay');
+function PriceLine({ which, setWhich }: { which: Example['id']; setWhich: (id: Example['id']) => void }) {
   const [price, setPrice] = useState(TOUR[0]!);
   const touched = useRef(false);
   const track = useRef<HTMLDivElement>(null);
@@ -110,26 +113,44 @@ function PriceLine() {
     take(LOW + ((e.clientX - box.left) / box.width) * span);
   };
 
+  const choose = (id: Example['id']) => {
+    touched.current = true;
+    setWhich(id);
+  };
+  // A radio group is one Tab stop; the arrow keys move the choice and the focus together, Home and End jump to the ends.
+  const pickKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    const cur = EXAMPLES.findIndex((x) => x.id === which);
+    const to = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? cur + 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? cur - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? EXAMPLES.length - 1 : null;
+    if (to === null) return;
+    e.preventDefault();
+    const next = EXAMPLES[(to + EXAMPLES.length) % EXAMPLES.length]!;
+    choose(next.id);
+    e.currentTarget.querySelectorAll<HTMLButtonElement>('button')[EXAMPLES.indexOf(next)]?.focus();
+  };
+
+  // Near either end the price label leans away from the handle, so it stays on the line instead of running off the screen.
+  const frac = (price - LOW) / span;
+  const lean = frac < 0.12 ? (frac / 0.12) * 50 : frac > 0.88 ? 100 - ((1 - frac) / 0.12) * 50 : 50;
+
   return (
     <div className="line" data-zone={now.kind}>
       <div className="line-head">
-        <div className="line-pick" role="radiogroup" aria-label="Which bet to draw">
+        <div className="line-pick" role="radiogroup" aria-label="Which bet to draw" onKeyDown={pickKey}>
           {EXAMPLES.map((e) => (
             <button
               key={e.id}
               type="button"
               role="radio"
               aria-checked={e.id === which}
+              tabIndex={e.id === which ? 0 : -1}
               className={e.id === which ? 'is-on' : undefined}
-              onClick={() => {
-                touched.current = true;
-                setWhich(e.id);
-              }}
+              onClick={() => choose(e.id)}
             >
               {e.name}
             </button>
           ))}
         </div>
+        <p className="line-eg">Example: $10 on Bitcoin, drag to move where it finishes</p>
       </div>
 
       {/* The line itself: three thin segments and a handle. What each segment pays is written under it. */}
@@ -140,7 +161,7 @@ function PriceLine() {
               <i key={`${ex.id}-${i}`} data-kind={z.kind} data-on={i === index ? '' : undefined} style={{ flexGrow: z.to - z.from }} />
             ))}
           </div>
-          <div className="line-marker" style={{ left: at(price) }} aria-hidden="true">
+          <div className="line-marker" style={{ left: at(price), ['--lean' as string]: `${lean.toFixed(1)}%` }} aria-hidden="true">
             <output>{dollars(price)}</output>
           </div>
           <input
@@ -181,13 +202,13 @@ function Orders() {
       <ol className="order-slips">
         <li>
           <span className="order-n">Order 1</span>
-          <b>Buy YES at {dollars(SECOND)}</b>
-          <p>The bet itself. It pays if BTC finishes at or above {dollars(SECOND)}.</p>
+          <b>Bet that it reaches {dollars(SECOND)}</b>
+          <p>The bet itself. It pays if Bitcoin finishes at or above {dollars(SECOND)}.</p>
         </li>
         <li>
           <span className="order-n">Order 2</span>
-          <b>Buy NO at {dollars(FIRST)}</b>
-          <p>The refund. It’s sized to pay your stake back if BTC finishes below {dollars(FIRST)}.</p>
+          <b>Stake back if it stays below {dollars(FIRST)}</b>
+          <p>Sized to pay your stake back if Bitcoin finishes below {dollars(FIRST)}.</p>
         </li>
       </ol>
       <div className="orders-odds">
@@ -215,7 +236,7 @@ function HunchFigure() {
   return (
     <div className="card hunch-demo" role="group" aria-label="Your view against the market’s">
       <span className="ticket-kicker">Your view against the market’s</span>
-      <div role="img" aria-label="Bars show the market’s chance of finishing in each price band. A line over them shows a view that the price finishes higher than the market thinks, and is surer of it.">
+      <div role="img" aria-label="Bars show the market’s chance of finishing in each price band. A line over them shows a view that the price finishes higher, and with more certainty.">
         <svg className="hunch-fig" viewBox={`0 0 ${W} 132`} aria-hidden="true" focusable="false">
           {MARKET.map((p, i) => (
             <rect key={i} className="hf-bar" x={xOf(i) + 2} y={yOf(p)} width={slot - 4} height={base - yOf(p)} rx={2} />
@@ -248,42 +269,51 @@ const Arrow = () => (
   </span>
 );
 
+/** The first screen: the sentence, a way in, and the bet drawn so you can try it. The sentence follows the bet that is drawn. */
+function Hero() {
+  const [which, setWhich] = useState<Example['id']>('parlay');
+  const ex = EXAMPLES.find((e) => e.id === which)!;
+  return (
+    <section className="hero">
+      <div className="wrap">
+        <h1 className="hero-title" style={{ ['--i' as string]: 0 }}>
+          Bet the second half
+        </h1>
+        <p className="hero-sub" style={{ ['--i' as string]: 0 }}>
+          {ex.sub}
+        </p>
+        <div className="hero-cta" style={{ ['--i' as string]: 1 }}>
+          <Link to={keepMode(PARLAY.to)} className="btn btn-accent btn-lg btn-split">
+            Build a bet
+            <Arrow />
+          </Link>
+        </div>
+        <div className="hero-line" style={{ ['--i' as string]: 2 }}>
+          <PriceLine which={which} setWhich={setWhich} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function Landing() {
-  // What this copy of the app is really talking to, from the shell. The first screen says it in so many words.
-  const venue = useOutletContext<VenueNote | undefined>();
   return (
     <div className="landing">
-      {/* The first screen is the idea itself: the sentence, and the bet drawn so you can try it. The way into the app is in
-          the bar above and at the foot of the page, after the idea has been explained. */}
-      <section className="hero">
-        <div className="wrap">
-          <h1 className="hero-title" style={{ ['--i' as string]: 0 }}>
-            Bet the second half
-          </h1>
-          <p className="hero-sub" style={{ ['--i' as string]: 0 }}>
-            If the first half doesn’t happen, you get your stake back
-          </p>
-          <div className="hero-line" style={{ ['--i' as string]: 1 }}>
-            <PriceLine />
-          </div>
-          <p className="fine hero-note" style={{ ['--i' as string]: 2 }}>
-            {venue?.about} Not affiliated with Gemini.
-          </p>
-        </div>
-      </section>
+      <Hero />
 
       <section className="band" id="how">
         <div className="wrap split">
           <Reveal>
             <span className="step-n">01</span>
-            <h2 className="h-section">
-              Two prices, three outcomes <span className="dim">One order is the bet. The other pays your stake back if the first half fails</span>
-            </h2>
+            <h2 className="h-section">Two levels, three outcomes</h2>
+            <p className="h-sub">One order is the bet. The other pays your stake back if the first level fails</p>
+            {/* The one place the hero's halves are tied to the words the rest of the app uses. */}
+            <p className="lede">The first half is a first level the price must hold. The second half is the target it must reach.</p>
             <ul className="ticks">
-              <li>You only lose when the first half holds and the second half doesn’t</li>
-              <li>It works for a fall as well as a rise</li>
-              <li>Both are ordinary orders, sent through Gemini’s API. We pool nothing and never hold your money</li>
-              <li>If the second order can’t be placed, the first is sold straight back</li>
+              <li>You only lose when the first level holds and the target is missed</li>
+              <li>You can bet on a rise or on a fall</li>
+              <li>Both are ordinary orders placed through Gemini’s API, in your own account</li>
+              <li>If the second order can’t be placed, the first is sold back right away</li>
             </ul>
           </Reveal>
           <Reveal delay={120}>
@@ -296,44 +326,51 @@ export default function Landing() {
         <div className="wrap split flip">
           <Reveal>
             <span className="step-n">02</span>
-            <h2 className="h-section">
-              You see the cost before you bet <span className="dim">Two orders cost a little more than the fair price, and every quote shows the gap</span>
-            </h2>
+            <h2 className="h-section">You see the cost before you bet</h2>
+            <p className="h-sub">Two orders cost a little more than the fair price, and every quote shows the gap</p>
             <ul className="ticks">
-              <li>The market’s chance that both halves happen</li>
-              <li>The fair price, with no spread and no fees</li>
-              <li>What you pay, with spread and fees included</li>
-              <li>What you’d get back if you sold right away</li>
+              <li>
+                <b>Chance of winning</b>: the market’s chance that you win
+              </li>
+              <li>
+                <b>Fair price per $1</b>: the market’s price before any extra cost
+              </li>
+              <li>
+                <b>You pay per $1</b>: that price plus fees and the gap between buy and sell
+              </li>
+              <li>
+                <b>Sell back now per $100</b>: what you’d get if you sold right away
+              </li>
             </ul>
-            <p className="fine band-note">If a pair is poor value, we don’t offer it.</p>
+            <p className="fine band-note">A bet priced far above its fair price is not offered.</p>
             <p className="fine band-note">
-              That last number is a real way out. You can cash out an open bet from <Link to={keepMode(MY_BETS.to)}>{MY_BETS.name}</Link> before the market settles, for what the market pays at that
-              moment. It can be less than you put in.
+              You can cash out an open bet from <Link to={keepMode(MY_BETS.to)}>{MY_BETS.name}</Link> before the market closes, for what the market pays at
+              that moment. It can be less than you put in.
             </p>
           </Reveal>
           <Reveal delay={120}>
             <div className="card quad" role="group" aria-label="The four numbers on every quote">
-                <span className="ticket-kicker">The four numbers on every quote</span>
-                <dl className="nums">
-                  <div>
-                    <dt>Chance both happen</dt>
-                    <dd>40%</dd>
-                  </div>
-                  <div>
-                    <dt>Fair price per $1</dt>
-                    <dd>45¢</dd>
-                  </div>
-                  <div>
-                    <dt>You pay per $1</dt>
-                    <dd>51¢</dd>
-                  </div>
-                  <div>
-                    <dt>Sell back now, per $100</dt>
-                    <dd>$91</dd>
-                  </div>
-                </dl>
-                <p className="fine">Example quote, the same bet as above.</p>
-              </div>
+              <span className="ticket-kicker">The four numbers on every quote</span>
+              <dl className="nums">
+                <div>
+                  <dt>Chance of winning</dt>
+                  <dd>40%</dd>
+                </div>
+                <div>
+                  <dt>Fair price per $1</dt>
+                  <dd>45¢</dd>
+                </div>
+                <div>
+                  <dt>You pay per $1</dt>
+                  <dd>51¢</dd>
+                </div>
+                <div>
+                  <dt>Sell back now per $100</dt>
+                  <dd>$91</dd>
+                </div>
+              </dl>
+              <p className="fine">Example quote, the same bet as above</p>
+            </div>
           </Reveal>
         </div>
       </section>
@@ -342,10 +379,8 @@ export default function Landing() {
         <div className="wrap split">
           <Reveal>
             <span className="step-n">03</span>
-            <h2 className="h-section">
-              Your call is on the record before the result <span className="dim">Sealed on Solana when you bet, revealed when you choose</span>
-            </h2>
-            <p className="lede">It shows nothing about the bet until you reveal it, and nobody can add a call after the fact.</p>
+            <h2 className="h-section">Your call is on the record before the result</h2>
+            <p className="h-sub">Nobody can add a call after the fact</p>
             <div className="row-actions">
               <Link to={keepMode('/leaderboard')} className="btn btn-ghost">
                 See the leaderboard
@@ -359,24 +394,16 @@ export default function Landing() {
           <Reveal delay={120}>
             <ol className="proof-list">
               <li>
-                <b>Sealed when you bet</b>
-                <span>A hash of your call goes on Solana. Nobody can read the bet from it.</span>
+                <b>You seal your call when you bet</b>
+                <span>A sealed code of your call goes on Solana. Nobody can read the bet from it.</span>
               </li>
               <li>
-                <b>Revealed when you choose</b>
-                <span>After the result, show the call. The leaderboard ranks revealed calls by their edge over the market’s own odds.</span>
+                <b>You reveal it after the result</b>
+                <span>Show the call and it joins the leaderboard, ranked by edge. Edge is how far a call beat the market’s own price, per $1.</span>
               </li>
               <li>
-                <b>Counted both ways</b>
-                <span>The board shows how many calls each player sealed beside how many they revealed, so a record can’t be built by revealing only the winners.</span>
-              </li>
-              <li>
-                <b>Read from Solana</b>
-                <span>Your own browser can re-read the board straight from the Solana program, without asking our server.</span>
-              </li>
-              <li>
-                <b>Checked against the exchange</b>
-                <span>Our records are compared with the exchange’s orders and cash, to the cent.</span>
+                <b>Anyone can check it on Solana</b>
+                <span>The leaderboard counts sealed calls beside revealed ones, so nobody can show only their winners. The Proof page also compares our records with the exchange.</span>
               </li>
             </ol>
           </Reveal>
@@ -390,10 +417,9 @@ export default function Landing() {
       <section className="band" id="hunch">
         <div className="wrap split flip">
           <Reveal>
-            <h2 className="h-section">
-              Or start from what you think. <span className="dim">Say where the price finishes and how sure you are.</span>
-            </h2>
-            <p className="lede">Hunch lists the bets on offer that pay best if you’re right, with what each one costs. Agree with the market and it lists nothing.</p>
+            <h2 className="h-section">Start from what you think</h2>
+            <p className="h-sub">Say where the price finishes and how sure you are</p>
+            <p className="lede">Hunch lists the bets on offer that cost less than your view says they are worth, with what each one costs. Agree with the market and it lists nothing.</p>
             <div className="row-actions">
               <Link to={keepMode('/hunch')} className="btn btn-ghost btn-split">
                 Try a hunch
@@ -410,9 +436,10 @@ export default function Landing() {
       <section className="closing">
         <Reveal className="wrap">
           <div className="closing-in">
-            <h2 className="closing-title">
-              Bet on the half you believe in <span className="dim">Pick two prices, see what it costs, and place it</span>
-            </h2>
+            <div className="closing-text">
+              <h2 className="closing-title">Bet on the price you believe in</h2>
+              <p className="closing-sub">Pick two levels, see what it costs, and place it</p>
+            </div>
             <div className="row-actions">
               <Link to={keepMode(PARLAY.to)} className="btn btn-accent btn-lg btn-split">
                 Build a bet

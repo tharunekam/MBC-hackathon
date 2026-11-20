@@ -90,8 +90,12 @@ export function payoffCurves(legs: (LegPay | null)[], ladders: Record<string, Ru
     let behind = 0;
     let average = 0;
     for (const b of bars) {
-      if (b.net > LEVEL) ahead += b.bucket.chance;
-      else if (b.net < -LEVEL) behind += b.bucket.chance;
+      // A stretch where every bet has its stake back is level, however many cents the refund order's slack adds to or takes off
+      // the figure: the executor sizes it a little over the stake (a tick of slip and the fee allowance), $0.21 on a $10 bet, which
+      // is not a win. The cents stay in `best`, `worst` and `average`, which are the bets' real figures.
+      const stakeBack = on.every((i) => zoneOf(legs[i]!.shape, b.bucket) === 'back');
+      if (!stakeBack && b.net > LEVEL) ahead += b.bucket.chance;
+      else if (!stakeBack && b.net < -LEVEL) behind += b.bucket.chance;
       average += b.bucket.chance * b.net;
     }
     return {

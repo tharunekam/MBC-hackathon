@@ -146,12 +146,18 @@ describe('price labels under the chart', () => {
     expect([...spacedLabels(even(8, 640))]).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
   });
 
-  it('on a phone skips rungs so no two labels touch, and always labels the last', () => {
+  it('on a phone labels every second rung at one steady stride, so no two labels touch and the ticks read as a scale', () => {
     const xs = even(8, 290);
     const kept = [...spacedLabels(xs)].sort((a, b) => a - b);
     expect(kept[0]).toBe(0);
-    expect(kept[kept.length - 1]).toBe(7);
+    const strides = new Set(kept.slice(1).map((k, i) => k - kept[i]!));
+    expect(strides.size).toBe(1);
     for (let i = 1; i < kept.length; i++) expect(xs[kept[i]!]! - xs[kept[i - 1]!]!).toBeGreaterThanOrEqual(56);
+  });
+
+  it('labels the last rung when it lands on the stride', () => {
+    const kept = [...spacedLabels(even(9, 290))].sort((a, b) => a - b);
+    expect(kept[kept.length - 1]).toBe(8);
   });
 
   it('measures real positions, so a ladder with uneven steps does not stack labels', () => {

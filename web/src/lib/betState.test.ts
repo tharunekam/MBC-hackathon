@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BreakoutQuote, BreakoutQuoteResponse, BreakoutStakePlan, OfferQuote, QuoteResponse, RangeQuote, RangeQuoteResponse, RangeStakePlan, RefusalCode, Rung, StakePlan } from '../api/types';
-import { breakoutButtonState, buttonState, firstReason, localRefusal, rangeButtonState, type BetInputs, type BreakoutInputs, type RangeInputs } from './betState';
+import { PRICE_ROOM, breakoutButtonState, buttonState, firstReason, isRefusal, localRefusal, maxPriceFor, rangeButtonState, stakeNote, type BetInputs, type BreakoutInputs, type RangeInputs } from './betState';
+import { marketNote } from './marketPhase';
 import { breakoutEstimate, estimate, rangeEstimate } from './pricing';
 
 const rung = (strike: number, bid: number | null, ask: number | null, open = true): Rung => ({
@@ -99,7 +100,7 @@ describe('the place bet button', () => {
       expect(s.canPlace).toBe(false);
       expect(s.blockedBy).toBe('thin');
       expect(s.label).not.toMatch(/\$0\.00/);
-      expect(s.notice?.tone).toBe('bad');
+      expect(s.notice?.tone).toBe('info');
     }
     expect(buttonState(base({ answer: answer({}, plan({ cost: 0.59, outcomeContracts: 1, reduced: true })) })).notice?.text).toMatch(/\$0\.59/);
   });
@@ -167,10 +168,10 @@ describe('a ladder that cannot take a bet says so before anything else', () => {
 
 describe('each refusal says what to do, and only suggests moving the target when that helps', () => {
   const cases: Array<[RefusalCode, RegExp, RegExp]> = [
-    ['no_price', /higher target/i, /further above/],
-    ['price_too_high', /higher target/i, /further above/],
-    ['markup_too_high', /other levels/i, /too far apart/],
-    ['market_closed', /not open/i, /not open for trading/],
+    ['no_price', /payout too small/i, /further above/],
+    ['price_too_high', /payout too small/i, /further above/],
+    ['markup_too_high', /too far apart/i, /other levels/],
+    ['market_closed', /not open/i, /not open/],
     ['ladder_out_of_order', /out of step/i, /out of order/],
     ['one_sided_book', /no market/i, /Nobody is buying or selling/],
   ];
@@ -360,10 +361,10 @@ describe('the place bet button for a range', () => {
   });
 
   const cases: Array<[RefusalCode, RegExp, RegExp]> = [
-    ['no_price', /further apart/i, /no sensible price/],
-    // A range costs more the further apart its levels are, so the way out of a price that is too high is a narrower range.
-    ['price_too_high', /narrower/i, /cost too much/],
-    ['markup_too_high', /other levels/i, /too far apart for a fair deal/],
+    ['no_price', /too close together/i, /further apart/],
+    // A range costs more the further apart its levels are, so the way out of a price that is too high is levels nearer each other.
+    ['price_too_high', /too far apart/i, /costs too much.*nearer/],
+    ['markup_too_high', /too far apart/i, /other levels/],
     ['ladder_out_of_order', /out of step/i, /out of order/],
     ['one_sided_book', /no market/i, /Nobody is buying or selling/],
   ];
@@ -373,9 +374,10 @@ describe('the place bet button for a range', () => {
       expect(s.canPlace).toBe(false);
       expect(s.blockedBy).toBe(code);
       expect(s.label).toMatch(label);
-      expect(s.notice?.tone).toBe('bad');
+      // A refusal is not an error: it is read calmly.
+      expect(s.notice?.tone).toBe('info');
       expect(s.notice?.text).toMatch(text);
-      expect(`${s.label} ${s.notice?.text}`).not.toMatch(/target|condition|closer/i);
+      expect(`${s.label} ${s.notice?.text}`).not.toMatch(/target|condition|closer|floor|ceiling/i);
     });
   }
 
@@ -538,9 +540,9 @@ describe('the place bet button for a breakout', () => {
 
   // A breakout costs more the closer its levels are, so both of its price refusals ask for levels further apart.
   const cases: Array<[RefusalCode, RegExp, RegExp]> = [
-    ['no_price', /further apart/i, /no sensible price for finishing outside/],
-    ['price_too_high', /further apart/i, /close to certain/],
-    ['markup_too_high', /other levels/i, /too far apart for a fair deal/],
+    ['no_price', /too close together/i, /further apart/],
+    ['price_too_high', /payout too small/i, /close to certain.*further apart/],
+    ['markup_too_high', /too far apart/i, /other levels/],
     ['ladder_out_of_order', /out of step/i, /out of order/],
     ['one_sided_book', /no market/i, /Nobody is buying or selling/],
   ];
@@ -550,7 +552,7 @@ describe('the place bet button for a breakout', () => {
       expect(s.canPlace).toBe(false);
       expect(s.blockedBy).toBe(code);
       expect(s.label).toMatch(label);
-      expect(s.notice?.tone).toBe('bad');
+      expect(s.notice?.tone).toBe('info');
       expect(s.notice?.text).toMatch(text);
       expect(`${s.label} ${s.notice?.text}`).not.toMatch(/target|condition|closer|narrower|floor|ceiling/i);
     });
@@ -591,7 +593,7 @@ describe('the place bet button for a breakout', () => {
     const near = rung(62500, 0.7, 0.74);
     const none = breakoutButtonState(bbase({ answer: null, high: near, est: estOf(LO, near) }));
     expect(none.blockedBy).toBe('no_price');
-    expect(none.label).toMatch(/further apart/i);
+    expect(none.notice?.text).toMatch(/further apart/i);
 
     // Both levels far below the price: finishing outside is all but sure.
     const lo = rung(60000, 0.97, 0.99);
@@ -603,5 +605,144 @@ describe('the place bet button for a breakout', () => {
 
   it('an executor refusal overrules a hopeful estimate', () => {
     expect(breakoutButtonState(bbase({ answer: refused('markup_too_high') })).canPlace).toBe(false);
+  });
+});
+
+describe('a disabled button says why, in words a person can read', () => {
+  it('bets switched off: the label says what, the note says why', () => {
+    const s = buttonState(base({ readOnly: true }));
+    expect(s).toMatchObject({ canPlace: false, blockedBy: 'readonly', label: 'Bets are switched off' });
+    expect(s.notice).toEqual({ tone: 'info', text: 'You are looking at live prices. Placing bets is switched off here.' });
+  });
+
+  it('never shows the executor’s own sentence for a reason it does not know', () => {
+    const odd = answer({ offerable: false, verdict: 'refuse', reasons: [{ code: 'nope' as RefusalCode, message: 'Hedge order rejected: InsufficientFunds' }] }, null);
+    const s = buttonState(base({ answer: odd }));
+    expect(s.label).toBe('Not on offer');
+    expect(s.notice?.text).toBe('This bet is not on offer right now. Try other levels.');
+    expect(`${s.label} ${s.notice?.text}`).not.toMatch(/Hedge|InsufficientFunds/);
+  });
+
+  it('says each refusal once: the label names the problem and the note does not repeat it', () => {
+    for (const code of ['no_price', 'price_too_high', 'markup_too_high'] as const) {
+      const s = buttonState(base({ answer: refused(code) }));
+      expect(s.notice?.text.toLowerCase()).not.toContain(s.label.toLowerCase());
+    }
+    expect(buttonState(base({ answer: refused('markup_too_high') })).notice?.text).not.toMatch(/spread/i);
+  });
+
+  it('only a failed connection is drawn as an error', () => {
+    expect(buttonState(base({ answer: null, answerError: true })).notice?.tone).toBe('bad');
+    expect(buttonState(base({ answer: refused('no_price') })).notice?.tone).toBe('info');
+  });
+
+  it('none of the words a person reads is jargon', () => {
+    const all: RefusalCode[] = ['market_closed', 'ladder_out_of_order', 'one_sided_book', 'no_price', 'price_too_high', 'markup_too_high'];
+    for (const code of all) {
+      for (const s of [buttonState(base({ answer: refused(code) })), buttonState(base({ direction: 'down', answer: refused(code) }))]) {
+        expect(`${s.label} ${s.notice?.text}`).not.toMatch(/ladder|rung|strike|contract|settle|resting|depth|spread|floor|ceiling|trading/i);
+      }
+    }
+  });
+});
+
+describe('the most a bet may cost per $1, from the price the quote showed', () => {
+  it('is the shown price plus three cents, to the hundredth of a cent', () => {
+    expect(PRICE_ROOM).toBe(0.03);
+    expect(maxPriceFor(0.462)).toBe(0.492);
+    expect(maxPriceFor(0.6082)).toBe(0.6382);
+    // A price that arrives with floating-point noise is not sent with it.
+    expect(maxPriceFor(0.1 + 0.2)).toBe(0.33);
+  });
+
+  it('is never at or above $1, which the executor refuses, nor at or below nothing', () => {
+    expect(maxPriceFor(0.985)).toBe(0.99);
+    expect(maxPriceFor(0.99)).toBe(0.99);
+    expect(maxPriceFor(0.5)).toBeLessThan(1);
+    expect(maxPriceFor(0)).toBeUndefined();
+    expect(maxPriceFor(-0.1)).toBeUndefined();
+  });
+
+  it('is left out when the quote has no usable price, so the executor’s own limit applies', () => {
+    expect(maxPriceFor(null)).toBeUndefined();
+    expect(maxPriceFor(undefined)).toBeUndefined();
+    expect(maxPriceFor(Number.NaN)).toBeUndefined();
+    expect(maxPriceFor(Number.POSITIVE_INFINITY)).toBeUndefined();
+  });
+});
+
+describe('a market that has closed is said to have closed once', () => {
+  const full = marketNote(
+    { expiry: new Date(2026, 10, 19, 21, 35).toISOString(), rungs: [{ ...A, open: true, state: 'active/open' }] },
+    new Date(2026, 10, 19, 21, 40).getTime(),
+    { another: true },
+  )!;
+
+  it('the button says it, and the note under it only says what to do, not the same thing again', () => {
+    const s = buttonState(base({ market: full }));
+    expect(s.label).toBe('This market has closed');
+    expect(s.notice).toEqual({ tone: 'info', text: 'Pick another market above.' });
+    expect(s.notice?.text).not.toMatch(/closed|no more bets/i);
+  });
+
+  it('the same for a Range and a Breakout', () => {
+    // A closed market is said before anything about the levels is read, so none are needed.
+    const levels = { phase: 'idle' as const, readOnly: false, stake: 10, market: full, low: undefined, high: undefined, answer: null, answerError: false, est: null };
+    const l = rangeButtonState(levels);
+    expect(l.label).toBe('This market has closed');
+    expect(l.notice?.text).toBe('Pick another market above.');
+    expect(breakoutButtonState(levels).notice?.text).toBe('Pick another market above.');
+  });
+
+  it('a market that is not open yet keeps its few minutes, so the person knows it will come', () => {
+    const post = marketNote({ expiry: new Date(2026, 10, 19, 22, 0).toISOString(), rungs: [{ ...A, open: false, state: 'active/post_only' }] }, new Date(2026, 10, 19, 21, 40).getTime(), { another: false })!;
+    expect(buttonState(base({ market: post })).notice?.text).toMatch(/few minutes/);
+  });
+});
+
+describe('a bet that cannot be placed is told apart from one that is only waiting', () => {
+  it('a refusal, a closed market and too little on offer are refusals', () => {
+    for (const code of ['market_closed', 'ladder_out_of_order', 'one_sided_book', 'no_price', 'price_too_high', 'markup_too_high'] as RefusalCode[]) {
+      expect(isRefusal(buttonState(base({ answer: refused(code) }))), code).toBe(true);
+    }
+    expect(isRefusal(buttonState(base({ answer: answer({}, plan({ cost: 0.4, outcomeContracts: 1, reduced: true })) })))).toBe(true);
+  });
+
+  it('a bet on its way, a missing stake, loading, a lost connection, switched off bets and a live bet are not', () => {
+    expect(isRefusal(buttonState(base({ phase: 'placing' })))).toBe(false);
+    expect(isRefusal(buttonState(base({ stake: 0 })))).toBe(false);
+    expect(isRefusal(buttonState(base({ condition: undefined })))).toBe(false);
+    expect(isRefusal(buttonState(base({ answer: null, answerError: true })))).toBe(false);
+    expect(isRefusal(buttonState(base({ readOnly: true })))).toBe(false);
+    expect(isRefusal(buttonState(base()))).toBe(false);
+  });
+});
+
+describe('the line under the stake box never sizes a bet that cannot be placed', () => {
+  const base = { readOnly: false, reducedTo: null, refusing: false, cap: null, fits: null, at: 'this price', fallback: 'The two orders are sized so your stake comes back.' };
+
+  it('says what the market can cover when it can cover less than the stake, for a bet that can be placed', () => {
+    expect(stakeNote({ ...base, reducedTo: 8.17 })).toBe('The market can cover about $8.17 at this price, so the bet will be that size.');
+    expect(stakeNote({ ...base, reducedTo: 8.17, at: 'these prices' })).toBe('The market can cover about $8.17 at these prices, so the bet will be that size.');
+  });
+
+  it('does not, once the bet is refused: there is no bet to be that size', () => {
+    for (const cap of [null, 25]) {
+      const said = stakeNote({ ...base, reducedTo: 8.17, refusing: true, cap, fits: 8 });
+      expect(said ?? '').not.toMatch(/that size|can cover|fits right now|\$8\.17/);
+    }
+    expect(stakeNote({ ...base, reducedTo: 8.17, refusing: true })).toBeNull();
+  });
+
+  it('still names the venue cap for a refused bet, which is a fact about the venue', () => {
+    expect(stakeNote({ ...base, refusing: true, cap: 25, fits: 40 })).toBe('Up to $25 a bet here.');
+  });
+
+  it('keeps its other lines for a bet that can be placed, and says nothing while bets are off', () => {
+    expect(stakeNote({ ...base, cap: 25, fits: 40 })).toBe('Up to $25 a bet here.');
+    expect(stakeNote({ ...base, cap: 50, fits: 40 })).toBe('Up to $40 fits right now.');
+    expect(stakeNote({ ...base, fits: 40 })).toBe('Up to $40 fits right now.');
+    expect(stakeNote(base)).toBe(base.fallback);
+    expect(stakeNote({ ...base, readOnly: true, cap: 25 })).toBeNull();
   });
 });

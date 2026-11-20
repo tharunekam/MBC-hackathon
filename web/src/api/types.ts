@@ -239,7 +239,11 @@ export interface LegRecord {
   quantityFilled: number;
   avgPrice: number | null;
   fee: number;
-  status: 'sent' | 'filled' | 'partial' | 'unfilled' | 'resting' | 'error';
+  /**
+   * `unknown`: the order was sent and nobody knows what became of it (the answer was lost and the exchange could not say). Nothing
+   * more is sent for it; the executor looks it up by its tag again on a timer.
+   */
+  status: 'sent' | 'filled' | 'partial' | 'unfilled' | 'resting' | 'error' | 'unknown';
   orderId?: string;
   sentAt: string;
   note?: string;
@@ -288,7 +292,11 @@ export interface Bet {
   target: { symbol: string; label: string; strike: number };
   requestedStake: number;
   quotedPrice: number;
+  /** The id the page sent with the request that placed this bet (see `requestId` on the place requests). Absent without one. */
+  clientRequestId?: string;
   status: BetStatus;
+  /** The executor's own sentence about the bet's state (for an order with no confirmed result, that it may be in place). Never shown as it is. */
+  note?: string;
   legs: LegRecord[];
   cost: number;
   /**
@@ -339,7 +347,17 @@ export interface Bet {
 }
 
 /** Why a bet cannot be sold back right now (executor `CashOutCode`). */
-export type CashOutCode = 'not_open' | 'market_closed' | 'no_bid' | 'insufficient_depth' | 'position_netted' | 'below_minimum' | 'nothing_sold';
+export type CashOutCode =
+  | 'not_open'
+  | 'market_closed'
+  | 'no_bid'
+  | 'insufficient_depth'
+  | 'position_netted'
+  | 'below_minimum'
+  /** The first sell order definitely sold nothing: the bet is unchanged. */
+  | 'nothing_sold'
+  /** The first sell order has no confirmed result (HTTP 409): the sale may have gone through. */
+  | 'sale_unconfirmed';
 
 /** `GET /cashout?bet=`: what selling an open bet's two orders back would bring in right now. Nothing is sent. */
 export interface CashOutQuote {
@@ -374,9 +392,11 @@ export interface PlaceParlayRequest {
   target: string;
   direction?: Direction;
   stake: number;
+  /** The highest price per $1 the person accepts. The pages send the quote's price plus a little room (see `maxPriceFor`). */
   maxPrice?: number;
   slippageTicks?: number;
   onHedgeFail?: 'unwind' | 'leave';
+  requestId?: string;
 }
 
 export interface PlaceRangeRequest {
@@ -391,6 +411,7 @@ export interface PlaceRangeRequest {
   stake: number;
   maxPrice?: number;
   slippageTicks?: number;
+  requestId?: string;
 }
 
 export interface PlaceBreakoutRequest {
@@ -405,6 +426,7 @@ export interface PlaceBreakoutRequest {
   stake: number;
   maxPrice?: number;
   slippageTicks?: number;
+  requestId?: string;
 }
 
 export type PlaceBetRequest = PlaceParlayRequest | PlaceRangeRequest | PlaceBreakoutRequest;
@@ -412,18 +434,25 @@ export type PlaceBetRequest = PlaceParlayRequest | PlaceRangeRequest | PlaceBrea
 export interface PlaceBetResponse {
   bet: Bet;
   stakeReduced: Bet['stakeReduced'] | null;
+  /** True when the executor had already placed a bet for this `requestId` and sent that one back: nothing new was bought. */
+  repeated?: boolean;
 }
 
-/** One leg of a basket request: a parlay (either way) or a range, with its own stake. */
+/**
+ * One leg of a basket request: a parlay (either way) or a range, with its own stake. `maxPrice` is the highest price per $1 the
+ * person accepts for that leg, with the same meaning and checks as on a single bet.
+ */
 export type BasketLegRequest =
-  | { product?: 'parlay'; event: string; condition: string; target: string; direction?: Direction; stake: number }
-  | { product: 'range'; event: string; low: string; high: string; stake: number }
-  | { product: 'breakout'; event: string; low: string; high: string; stake: number };
+  | { product?: 'parlay'; event: string; condition: string; target: string; direction?: Direction; stake: number; maxPrice?: number }
+  | { product: 'range'; event: string; low: string; high: string; stake: number; maxPrice?: number }
+  | { product: 'breakout'; event: string; low: string; high: string; stake: number; maxPrice?: number };
 
 export interface PlaceBasketRequest {
   user: string;
   name?: string;
   legs: BasketLegRequest[];
+  /** 8 to 64 characters from A-Z, a-z, 0-9, `_` and `-`. A repeat of one the executor has seen returns that basket and places nothing. */
+  requestId?: string;
 }
 
 export interface PlaceBasketResponse {
@@ -434,9 +463,13 @@ export interface PlaceBasketResponse {
     size: number;
     /** Set when a leg could not be completed: which, and why. The legs after it were not attempted. */
     failed: { index: number; code: string; message: string } | null;
+    /** The `requestId` the basket was placed under, when it had one. */
+    clientRequestId?: string;
   };
   /** The bets that were placed, in leg order. */
   bets: Bet[];
+  /** True when this is the basket an earlier request with the same `requestId` placed: nothing new was bought. */
+  repeated?: boolean;
 }
 
 export interface FlowResponse {

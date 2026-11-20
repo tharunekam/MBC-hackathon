@@ -24,7 +24,64 @@ import type { BreakoutEstimate, Estimate, RangeEstimate } from './pricing';
 
 export const MIN_BET = 1;
 
+/**
+ * How far above the price on the quote an order may go, per $1. The executor sizes the stake at the live price when the order
+ * arrives, so a market that moved while the person was deciding would be absorbed silently; with this ceiling it is refused
+ * instead (code `price_above_limit`) and the person is shown the new price. Three cents covers a few ticks of noise, not a move,
+ * and leaves the executor room to size the refund order without trimming its limit on a thin book.
+ */
+export const PRICE_ROOM = 0.03;
+
+/**
+ * The `maxPrice` to send with a bet: the price per $1 the quote showed, plus `PRICE_ROOM`. Nothing (so the executor's own limit
+ * applies) when the quote has no usable price. The executor takes a ceiling strictly between 0 and 1.
+ */
+export function maxPriceFor(shown: number | null | undefined): number | undefined {
+  if (typeof shown !== 'number' || !Number.isFinite(shown) || !(shown > 0)) return undefined;
+  return Math.min(0.99, Math.round((shown + PRICE_ROOM) * 1e4) / 1e4);
+}
+
 export type Phase = 'idle' | 'placing' | 'placed';
+
+export interface StakeNoteInputs {
+  /** Bets are switched off: there is no bet to size. */
+  readOnly: boolean;
+  /** What the market can fill, in dollars, when that is less than the stake asked for; null when it can fill the stake. */
+  reducedTo: number | null;
+  /** The bet cannot be placed (`isRefusal`). */
+  refusing: boolean;
+  /** The most one bet may be here, once known. */
+  cap: number | null;
+  /** The most the market has on offer right now, in whole dollars, or null when that is not known. */
+  fits: number | null;
+  /** "this price" or "these prices": what the bet is priced at. */
+  at: string;
+  /** What to say when there is nothing to say about size: what the two orders are for. */
+  fallback: string;
+}
+
+/**
+ * The line under the stake box. It says how much a bet can be (the venue's cap, or what the market has on offer) or what the
+ * stake buys, and says nothing at all about the size of a bet that cannot be placed: "the bet will be that size" beside a
+ * refusal described a bet that does not exist.
+ */
+export function stakeNote(i: StakeNoteInputs): string | null {
+  if (i.readOnly) return null;
+  if (i.reducedTo !== null && !i.refusing) return `The market can cover about ${usd(i.reducedTo)} at ${i.at}, so the bet will be that size.`;
+  if (i.cap !== null && (i.fits === null || i.cap <= i.fits)) return `Up to ${usd(i.cap, 0)} a bet here.`;
+  if (i.refusing) return null;
+  if (i.fits !== null) return `Up to ${usd(i.fits, 0)} fits right now.`;
+  return i.fallback;
+}
+
+/**
+ * Whether the button is off because THIS bet cannot be placed, as opposed to a bet that is on its way, a stake still to be
+ * typed, prices still loading or switched off. A refused bet (a market that is shut, levels the exchange will not price, too
+ * little on offer to fill it) has no size and no winnings to show: whatever figures the quote still carries are those of a bet
+ * nobody can make, so a page shows none of them as a bet and greys the rest.
+ */
+export const isRefusal = (s: Pick<ButtonState, 'blockedBy'>): boolean =>
+  s.blockedBy !== null && s.blockedBy !== 'placing' && s.blockedBy !== 'readonly' && s.blockedBy !== 'loading' && s.blockedBy !== 'checking' && s.blockedBy !== 'unreachable' && s.blockedBy !== 'stake';
 
 export interface Notice {
   tone: 'warn' | 'bad' | 'info';
@@ -68,11 +125,14 @@ export interface BetInputs extends Common {
   est: Estimate | null;
 }
 
-/** Plain words for each refusal: the label on the button and what to do about it. */
+/** What a payout that is too small for its price says, once: a Stake Back asks for a target further from the first level. */
+const TOO_SMALL = { label: 'Payout too small', text: 'Move the target further above the first level.' };
+
+/** Plain words for each refusal: the label on the button names what is wrong, and the note says what to do about it. */
 const COPY: Record<RefusalCode, { label: string; text: string }> = {
   market_closed: {
     label: 'Not open for bets yet',
-    text: 'One of these levels is not open for trading right now. New markets can take a few minutes to open. Pick other levels, or check back shortly.',
+    text: 'One of these levels is not open yet. New markets can take a few minutes to open, so check back shortly or pick other levels.',
   },
   ladder_out_of_order: {
     label: 'Prices out of step',
@@ -82,19 +142,17 @@ const COPY: Record<RefusalCode, { label: string; text: string }> = {
     label: 'No market at one level',
     text: 'Nobody is buying or selling at one of these levels right now. Pick other levels.',
   },
-  no_price: {
-    label: 'Pick a higher target',
-    text: 'The payout would be too small for the price. Move the target further above the first level.',
-  },
-  price_too_high: {
-    label: 'Pick a higher target',
-    text: 'The payout would be too small for the price. Move the target further above the first level.',
-  },
+  // The executor refuses a target that is too near the first level under either code, and the way out is the same.
+  no_price: TOO_SMALL,
+  price_too_high: TOO_SMALL,
   markup_too_high: {
-    label: 'Pick other levels',
-    text: 'The buy and sell prices at these two levels are too far apart for a fair deal. Try other levels, usually ones with tighter spreads.',
+    label: 'Prices too far apart',
+    text: 'The buy and sell prices at these two levels are too far apart. Try other levels, where the gap between them is smaller.',
   },
 };
+
+/** A code the executor may add one day is not one this page has words for: it is said as "not on offer", never a crash. */
+const known = (code: string | null): code is RefusalCode => code !== null && Object.prototype.hasOwnProperty.call(COPY, code);
 
 /** When several things are wrong at once, the one to say first: what you cannot fix by moving comes before what you can. */
 const PRIORITY: RefusalCode[] = ['market_closed', 'ladder_out_of_order', 'one_sided_book', 'no_price', 'price_too_high', 'markup_too_high'];
@@ -102,7 +160,7 @@ const PRIORITY: RefusalCode[] = ['market_closed', 'ladder_out_of_order', 'one_si
 /** The words for a refusal. A payout that is too small asks for a target further from the first level, which is lower for a falling bet. */
 export function refusalCopy(code: RefusalCode, direction: Direction = 'up'): { label: string; text: string } {
   if (direction === 'down' && (code === 'no_price' || code === 'price_too_high')) {
-    return { label: 'Pick a lower target', text: 'The payout would be too small for the price. Move the target further below the first level.' };
+    return { label: TOO_SMALL.label, text: 'Move the target further below the first level.' };
   }
   return COPY[code];
 }
@@ -116,12 +174,12 @@ export function refusalCopy(code: RefusalCode, direction: Direction = 'up'): { l
 export function closedCopy(first: Rung | undefined, second: Rung | undefined): { label: string; text: string } {
   const states = [first, second].filter((r): r is Rung => !!r && !r.open).map((r) => r.state.toLowerCase());
   if (states.some((s) => /settled|closed|expired|resolved/.test(s))) {
-    return { label: 'This market has closed', text: 'One of these levels has closed and takes no more bets. Pick other levels, or another market.' };
+    return { label: 'This market has closed', text: 'One of these levels has closed and takes no more bets. Pick another market.' };
   }
   if (states.some((s) => /post_only|post-only/.test(s))) return COPY.market_closed;
   return {
     label: 'Not open for bets',
-    text: 'One of these levels is not open for trading right now. Pick other levels, or check back in a minute.',
+    text: 'One of these levels is not open right now. Pick other levels, or check back in a minute.',
   };
 }
 
@@ -139,7 +197,7 @@ export function localRefusal(condition: Rung | undefined, target: Rung | undefin
   return est.code;
 }
 
-const blocked = (code: NonNullable<ButtonState['blockedBy']>, label: string, text: string | null, tone: Notice['tone'] = 'bad'): ButtonState => ({
+const blocked = (code: NonNullable<ButtonState['blockedBy']>, label: string, text: string | null, tone: Notice['tone'] = 'info'): ButtonState => ({
   canPlace: false,
   label,
   notice: text ? { tone, text } : null,
@@ -152,9 +210,10 @@ const blocked = (code: NonNullable<ButtonState['blockedBy']>, label: string, tex
  */
 function gate(i: Common, loaded: boolean): ButtonState | null {
   if (i.phase === 'placing') return { canPlace: false, label: 'Placing both orders', notice: null, blockedBy: 'placing' };
-  if (i.readOnly) return blocked('readonly', 'Bets are switched off', null);
+  if (i.readOnly) return blocked('readonly', 'Bets are switched off', 'You are looking at live prices. Placing bets is switched off here.');
   // Not an error and nothing the person did, so it is said calmly.
-  if (i.market) return blocked('market_closed', i.market.label, i.market.text, 'info');
+  // The button's label says the market is closed (or not open); the note says what to do about it, not the same thing again.
+  if (i.market) return blocked('market_closed', i.market.label, i.market.next ?? i.market.text, 'info');
   if (!loaded) return blocked('loading', 'Loading prices', null);
   if (!(i.stake > 0)) return blocked('stake', 'Enter a stake', null);
   if (i.stake < MIN_BET) return blocked('stake', `Stake at least ${usd(MIN_BET, 0)}`, `The smallest bet is ${usd(MIN_BET, 0)}.`, 'info');
@@ -177,13 +236,14 @@ export function buttonState(i: BetInputs): ButtonState {
         const c = closedCopy(i.condition, i.target);
         return blocked(code, c.label, c.text);
       }
-      if (code) return blocked(code, refusalCopy(code, i.direction).label, refusalCopy(code, i.direction).text);
-      return blocked('markup_too_high', 'Not on offer', a.quote.reasons[0]?.message ?? 'This bet is not on offer right now.');
+      if (known(code)) return blocked(code, refusalCopy(code, i.direction).label, refusalCopy(code, i.direction).text);
+      // The executor's own sentence for a reason this page does not know is never shown: it can name orders and symbols.
+      return blocked('markup_too_high', 'Not on offer', 'This bet is not on offer right now. Try other levels.');
     }
     const plan = a.stake;
     if (plan && (!(plan.cost >= MIN_BET) || !(plan.outcomeContracts > 0))) {
-      const fits = plan.cost > 0 ? ` The market can fill about ${usd(plan.cost)} at this price, below the ${usd(MIN_BET, 0)} minimum.` : '';
-      return blocked('thin', 'Not enough on the market', `There is not enough resting on the market to fill a bet at these prices right now.${fits} Try other levels, or check again in a moment.`);
+      const fits = plan.cost > 0 ? ` The most it can cover is about ${usd(plan.cost)}, below the ${usd(MIN_BET, 0)} minimum.` : '';
+      return blocked('thin', 'Not enough on the market', `Not enough is on offer for a bet at these prices right now.${fits} Try other levels, or check again in a moment.`);
     }
     if (!plan) return blocked('checking', 'Checking the price', null);
     return { canPlace: true, label: `Place bet · ${usd(plan.cost)}`, notice: null, blockedBy: null };
@@ -196,7 +256,7 @@ export function buttonState(i: BetInputs): ButtonState {
     return blocked(early, c.label, c.text);
   }
   if (early) return blocked(early, refusalCopy(early, i.direction).label, refusalCopy(early, i.direction).text);
-  if (i.answerError) return blocked('unreachable', 'Prices unavailable', 'We could not get a price for this bet. Check your connection and try again.');
+  if (i.answerError) return blocked('unreachable', 'Prices unavailable', 'We could not get a price for this bet. Check your connection and try again.', 'bad');
   return blocked('checking', 'Checking the price', null);
 }
 
@@ -222,35 +282,35 @@ export interface BreakoutInputs extends Omit<RangeInputs, 'answer' | 'est'> {
 type Copy = Record<RefusalCode, { label: string; text: string }>;
 
 /**
- * What a refusal means for a range, in plain words. A range costs more the further apart its levels are, so a price that is
- * too high asks for a narrower range, and no price at all (the levels are too close to leave a chance between them) for a
- * wider one.
+ * What a refusal means for a Range, in plain words. A Range costs more the further apart its levels are, so a price that is
+ * too high asks for levels nearer to each other, and no price at all (the levels are too close to leave a chance between
+ * them) for levels further apart.
  */
 const RANGE_COPY: Copy = {
   ...COPY,
   no_price: {
-    label: 'Pick levels further apart',
-    text: 'There is no sensible price for this range. Move the floor and the ceiling further apart.',
+    label: 'Levels too close together',
+    text: 'Move the lower and higher levels further apart.',
   },
   price_too_high: {
-    label: 'Pick a narrower range',
-    text: 'The range would cost too much for what it can win. Move the floor and the ceiling nearer to each other.',
+    label: 'Levels too far apart',
+    text: 'A range this wide costs too much for what it can win. Move the lower and higher levels nearer to each other.',
   },
 };
 
 /**
- * The same for a breakout, which is priced the other way round: it costs more the CLOSER its levels are, because finishing
+ * The same for a Breakout, which is priced the other way round: it costs more the CLOSER its levels are, because finishing
  * outside a narrow band is close to certain. Both of its price refusals ask for levels further apart.
  */
 const BREAKOUT_COPY: Copy = {
   ...COPY,
   no_price: {
-    label: 'Pick levels further apart',
-    text: 'There is no sensible price for finishing outside these two levels. Move them further apart.',
+    label: 'Levels too close together',
+    text: 'Move the lower and higher levels further apart.',
   },
   price_too_high: {
-    label: 'Pick levels further apart',
-    text: 'Finishing outside these two levels is close to certain, so it would cost too much for what it can win. Move them further apart.',
+    label: 'Payout too small',
+    text: 'Finishing outside these levels is close to certain, so it pays little. Move the levels further apart.',
   },
 };
 
@@ -282,13 +342,13 @@ function levelsButtonState(i: LevelsInputs, copy: Copy, noun: 'range' | 'breakou
         const c = closedCopy(i.low, i.high);
         return blocked(code, c.label, c.text);
       }
-      if (code) return blocked(code, copy[code].label, copy[code].text);
-      return blocked('markup_too_high', 'Not on offer', a.quote.reasons[0]?.message ?? `This ${noun} is not on offer right now.`);
+      if (known(code)) return blocked(code, copy[code].label, copy[code].text);
+      return blocked('markup_too_high', 'Not on offer', `This ${noun} is not on offer right now. Try other levels.`);
     }
     const plan = a.stake;
     if (plan && (!(plan.cost >= MIN_BET) || !(plan.contracts > 0))) {
-      const fits = plan.cost > 0 ? ` The market can fill about ${usd(plan.cost)} at these prices, below the ${usd(MIN_BET, 0)} minimum.` : '';
-      return blocked('thin', 'Not enough on the market', `There is not enough resting on the market to fill a bet at these prices right now.${fits} Try other levels, or check again in a moment.`);
+      const fits = plan.cost > 0 ? ` The most it can cover is about ${usd(plan.cost)}, below the ${usd(MIN_BET, 0)} minimum.` : '';
+      return blocked('thin', 'Not enough on the market', `Not enough is on offer for a bet at these prices right now.${fits} Try other levels, or check again in a moment.`);
     }
     if (!plan) return blocked('checking', 'Checking the price', null);
     return { canPlace: true, label: `Place bet · ${usd(plan.cost)}`, notice: null, blockedBy: null };
@@ -300,12 +360,12 @@ function levelsButtonState(i: LevelsInputs, copy: Copy, noun: 'range' | 'breakou
     return blocked(early, c.label, c.text);
   }
   if (early) return blocked(early, copy[early].label, copy[early].text);
-  if (i.answerError) return blocked('unreachable', 'Prices unavailable', `We could not get a price for this ${noun}. Check your connection and try again.`);
+  if (i.answerError) return blocked('unreachable', 'Prices unavailable', `We could not get a price for this ${noun}. Check your connection and try again.`, 'bad');
   return blocked('checking', 'Checking the price', null);
 }
 
-/** What the Place bet button says for a range. The same rules as for a parlay, with the range's own figures and words. */
+/** What the Place bet button says for a Range. The same rules as for a Stake Back, with the Range's own figures and words. */
 export const rangeButtonState = (i: RangeInputs): ButtonState => levelsButtonState(i, RANGE_COPY, 'range');
 
-/** And for a breakout: the same rules again, with the advice a breakout needs (see `BREAKOUT_COPY`). */
+/** And for a Breakout: the same rules again, with the advice a Breakout needs (see `BREAKOUT_COPY`). */
 export const breakoutButtonState = (i: BreakoutInputs): ButtonState => levelsButtonState(i, BREAKOUT_COPY, 'breakout');

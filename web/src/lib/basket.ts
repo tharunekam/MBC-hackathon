@@ -8,10 +8,12 @@
 import { ApiError } from '../api/client';
 import type {
   BasketLegRequest,
+  Bet,
   BreakoutQuoteResponse,
   Direction,
   MarketEvent,
   PlaceBasketRequest,
+  PlaceBasketResponse,
   Product,
   QuoteResponse,
   RangeQuoteResponse,
@@ -21,6 +23,7 @@ import {
   MIN_BET,
   breakoutButtonState,
   buttonState,
+  maxPriceFor,
   rangeButtonState,
   type ButtonState,
   type Phase,
@@ -41,8 +44,11 @@ import {
 
 export const MIN_LEGS = 2;
 export const MAX_LEGS = 6;
-/** The most a single leg may stake. The demo caps every bet at this, and the executor refuses more. */
-export const LEG_MAX_STAKE = 100;
+/**
+ * The most a single leg may stake until the venue says what its cap is. The hosted demo caps a bet at $25 and says so (the
+ * stake cap the pages learn from /health or from a refusal, which `legStatus` takes as `maxStake` and prefers to this).
+ */
+export const LEG_MAX_STAKE = 25;
 export const NAME_MAX = 40;
 
 /** The four kinds of leg: a Stake Back going up, one going down, a Range, and a Breakout (the range's other side). */
@@ -175,7 +181,10 @@ export function levelsValid(
   return !!ra && !!rb && inOrder(kind, ra, rb);
 }
 
-/** A market for a new leg: one on an asset no leg uses yet, else one no leg uses, else the first. */
+/**
+ * A market for a new leg: one on an asset no leg uses yet, else one no leg uses. Undefined when every market already has a
+ * leg: the first market would be a copy of that leg, so there is nothing to pick, and the page turns Add a leg off.
+ */
 export function pickMarket(
   events: MarketEvent[],
   used: (string | null)[],
@@ -185,8 +194,7 @@ export function pickMarket(
   );
   return (
     events.find((e) => !usedAssets.has(assetKey(e))) ??
-    events.find((e) => !used.includes(e.ticker)) ??
-    events[0]
+    events.find((e) => !used.includes(e.ticker))
   );
 }
 
@@ -272,19 +280,26 @@ export function seedLegs(
   ];
 }
 
-/** The request that places the basket. */
+/**
+ * The request that places the basket. `prices` are the prices per $1 the legs' quotes showed, in leg order: each leg may cost up
+ * to that price plus a little room (`maxPriceFor`, the same as a single bet's), and no more. A leg whose price is not known
+ * carries no limit of its own, so the executor's applies.
+ */
 export function buildRequest(
   name: string,
   legs: LegDraft[],
   user = 'primary',
+  prices: readonly (number | null | undefined)[] = [],
 ): PlaceBasketRequest {
   const trimmed = name.trim().slice(0, NAME_MAX);
   return {
     user,
     ...(trimmed ? { name: trimmed } : {}),
-    legs: legs.map((l): BasketLegRequest => {
+    legs: legs.map((l, i): BasketLegRequest => {
       if (!l.event || !l.a || !l.b)
         throw new Error('Every leg needs a market and two levels.');
+      const maxPrice = maxPriceFor(prices[i]);
+      const room = maxPrice !== undefined ? { maxPrice } : {};
       if (l.kind === 'range' || l.kind === 'breakout')
         return {
           product: l.kind,
@@ -292,6 +307,7 @@ export function buildRequest(
           low: l.a,
           high: l.b,
           stake: l.stake,
+          ...room,
         };
       return {
         product: 'parlay',
@@ -300,9 +316,55 @@ export function buildRequest(
         target: l.b,
         direction: l.kind,
         stake: l.stake,
+        ...room,
       };
     }),
   };
+}
+
+/**
+ * What makes two requests the same attempt: the bets chosen, and nothing else. The executor takes a request id seen before for
+ * the same bets as a repeat, whatever the price limits or the name; so a price that ticks, or a name that is edited, between
+ * an answer that was lost and the retry must not give the retry a new id, which would place the basket twice.
+ */
+export const basketAttemptKey = (req: Pick<PlaceBasketRequest, 'legs'>): string =>
+  JSON.stringify(req.legs.map(({ maxPrice: _limit, ...chosen }) => chosen));
+
+/** The statuses a bet ends in when its orders could not be completed. A bet that is open, settled or sold back is not one of them. */
+const NOT_COMPLETED = new Set<Bet['status']>(['failed', 'unwound', 'unhedged']);
+
+/**
+ * The baskets a list of bets makes up, each as the executor answers for it when it is placed. Only a basket whose every bet is
+ * in the list and none still being placed is described: with legs missing, a list cannot say whether the rest are on their way
+ * or were never placed, and only the executor's own answer to a repeat of the request knows.
+ */
+export function basketsFromBets(bets: readonly Bet[]): PlaceBasketResponse[] {
+  const groups = new Map<string, Bet[]>();
+  for (const b of bets) {
+    if (!b.basket) continue;
+    const group = groups.get(b.basket.id);
+    if (group) group.push(b);
+    else groups.set(b.basket.id, [b]);
+  }
+  const out: PlaceBasketResponse[] = [];
+  for (const [id, legs] of groups) {
+    legs.sort((a, b) => (a.basket?.index ?? 0) - (b.basket?.index ?? 0));
+    const tag = legs[0]!.basket!;
+    if (legs.length < tag.size || legs.some((b) => b.status === 'placing')) continue;
+    const bad = legs.find((b) => NOT_COMPLETED.has(b.status));
+    const clientRequestId = legs.find((b) => b.clientRequestId !== undefined)?.clientRequestId;
+    out.push({
+      basket: {
+        id,
+        name: tag.name ?? null,
+        size: tag.size,
+        failed: bad ? { index: bad.basket?.index ?? 0, code: bad.status, message: bad.note ?? 'The orders for this leg could not be completed.' } : null,
+        ...(clientRequestId !== undefined ? { clientRequestId } : {}),
+      },
+      bets: legs,
+    });
+  }
+  return out;
 }
 
 // ------------------------------------------------------------------ one leg's quote, in figures
@@ -622,9 +684,12 @@ export function costNote(
   reduced: number[] = [],
 ): string | null {
   if (t.cost > t.stake + 0.005) return null;
+  // One sentence for the ticket, joined with the rule that nothing is placed unless every leg passes (the two used to be two
+  // grey paragraphs that said much the same thing).
+  const checked = 'and every leg is checked before any is placed.';
   if (reduced.length > 0 && t.stake - t.cost >= 0.005)
-    return `The market can only fill part of ${reduced.length === 1 ? 'leg' : 'legs'} ${listed(reduced.map((i) => i + 1))} right now.`;
-  return 'Each bet is sized to cost no more than its stake.';
+    return `The market can only cover part of ${reduced.length === 1 ? 'leg' : 'legs'} ${listed(reduced.map((i) => i + 1))} right now, ${checked}`;
+  return `Each bet is sized to cost no more than its stake, ${checked}`;
 }
 
 /**
@@ -723,6 +788,28 @@ export function cryptoLegs(events: (MarketEvent | undefined)[]): number {
       ((e.category ?? '').toLowerCase() === 'crypto' ||
         CRYPTO.has(assetKey(e))),
   ).length;
+}
+
+/**
+ * Whether it makes sense to say that crypto legs "that point the same way" win together more often. Only a Stake Back points a
+ * way, up or down. A Range or a Breakout on a crypto market points nowhere, and its joint chance with another market can sit
+ * below the figure for unrelated markets even though the prices move together, so one of them in the basket silences the
+ * sentence. Legs on other assets are not part of what it says. `crypto` is whether the leg's market is a crypto one.
+ */
+export function legsPointAWay(legs: { kind: LegKind; crypto: boolean }[]): boolean {
+  return legs.every((l) => !l.crypto || l.kind === 'up' || l.kind === 'down');
+}
+
+/**
+ * Where "Place the rest again" starts, as a leg number from 0: at the leg that could not be completed, or just after it when
+ * that leg is on the books with only its first order filled (status `unhedged`), because placing it again would buy it twice.
+ * A leg that bought nothing, or was sold straight back, is placed again like the ones after it.
+ */
+export function restFrom(res: Pick<PlaceBasketResponse, 'basket' | 'bets'>): number {
+  const failed = res.basket.failed;
+  if (!failed) return 0;
+  const held = res.bets.some((b) => b.basket?.index === failed.index && b.status === 'unhedged');
+  return failed.index + (held ? 1 : 0);
 }
 
 /** A refused basket: which leg, from 0, and the message without its "Leg N: " prefix. Null for any other error. */

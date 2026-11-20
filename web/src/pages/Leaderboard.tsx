@@ -5,8 +5,9 @@ import { api } from '../api';
 import type { LeaderboardResponse, LeaderboardRow } from '../api/types';
 import { kindOfBetId } from '../lib/betKind';
 import { kindLabel } from '../lib/betsView';
-import { resultWord } from '../lib/callWords';
-import { ago, pct, trunc } from '../lib/format';
+import { countText, edgeTone as tone, resultWord } from '../lib/callWords';
+import { ago, edgeText, pct, trunc } from '../lib/format';
+import { friendly } from '../lib/friendly';
 import { useNow, useResource } from '../lib/hooks';
 import { chainLive } from '../lib/liveClients';
 import { MY_BETS, PRODUCTS } from '../lib/nav';
@@ -22,26 +23,35 @@ import '../styles/bets.css';
 /** The same node the proof page reads from. */
 const RPC: string = import.meta.env.VITE_SOLANA_RPC ?? 'https://api.devnet.solana.com';
 
-const edgeText = (e: number) => `${e > 0 ? '+' : e < 0 ? '−' : ''}${Math.abs(e).toFixed(2)}`;
-const tone = (e: number) => (e > 0 ? 'good' : e < 0 ? 'bad' : '');
-
-/** What the Edge column counts, said once where the column is named and once under the board. */
-const EDGE_UNIT = 'Per $1 of payout, summed over a player’s revealed calls';
+/**
+ * The place shown for a row. Players with exactly the same score share a place, shown "=2" for each, instead of the second
+ * looking one behind the first.
+ */
+function placeOf(rows: LeaderboardRow[], i: number): string {
+  const key = (r: LeaderboardRow) => `${r.edge}|${r.hitRate}|${r.calls}`;
+  const group = rows.filter((r) => key(r) === key(rows[i]!));
+  return group.length > 1 ? `=${group[0]!.rank}` : String(rows[i]!.rank);
+}
 
 /**
  * The quiet line under a player's number of revealed calls: how many calls they sealed. It is a row of its own, not a
  * second line in the cell above, so that cell stays a plain number (the browser checks read it as one) and the words can
  * run wider than their column. It spans the columns up to and including that number, and ends under it; `rest` are the
  * columns to its right, each optional or not as in the rows above, so every row of the table has the same columns.
+ *
+ * Assistive technology skips it as a row (it would read as an empty row between every two players): its sentence is the
+ * description of the number above it instead, and that cell points at `id`.
  */
-function SealedRow({ counts, span, rest, you }: { counts: SealedCounts; span: number; rest: boolean[]; you?: boolean }) {
+function SealedRow({ counts, span, rest, you, id }: { counts: SealedCounts; span: number; rest: boolean[]; you?: boolean; id: string }) {
   const words = sealedWords(counts);
   if (!words) return null;
   return (
-    <tr className={`lb-sub${you ? ' is-you' : ''}`}>
+    <tr className={`lb-sub${you ? ' is-you' : ''}`} aria-hidden="true">
       <td colSpan={span} className="lb-sealed">
-        <span aria-hidden="true">{words}</span>
-        <span className="sr-only">{sealedSpoken(counts)}</span>
+        <span>{words}</span>
+        <span id={id} className="sr-only">
+          {sealedSpoken(counts)}
+        </span>
       </td>
       {rest.map((optional, i) => (
         <td key={i} className={optional ? 'lb-opt' : undefined} />
@@ -58,23 +68,29 @@ function Summary({ rows }: { rows: LeaderboardRow[] }) {
   const sealed = rows.reduce((n, r) => n + Math.max(r.sealed ?? 0, r.calls), 0);
   const refunded = rows.reduce((n, r) => n + (r.refunded ?? 0), 0);
   return (
-    <dl className="lb-sum" data-n={counted ? 4 : 3} aria-label="Summary">
+    <dl className="lb-sum" data-n={counted ? 4 : 3} role="group" aria-label="Summary">
       <div>
         <dt>Players</dt>
-        <dd>{rows.length.toLocaleString('en-US')}</dd>
+        <dd>{countText(rows.length)}</dd>
       </div>
       {counted && (
         <div>
           <dt>Sealed calls</dt>
           <dd>
-            {sealed.toLocaleString('en-US')}
-            {refunded > 0 && <small>{refunded.toLocaleString('en-US')} refunded</small>}
+            {countText(sealed)}
+            {/* Text between the two numbers, so a screen reader does not hear them as one: "54" and "2" are not "542". */}
+            {refunded > 0 && (
+              <>
+                <span className="sr-only">, </span>
+                <small>{countText(refunded)} stake back</small>
+              </>
+            )}
           </dd>
         </div>
       )}
       <div>
         <dt>Revealed calls</dt>
-        <dd>{rows.reduce((n, r) => n + r.calls, 0).toLocaleString('en-US')}</dd>
+        <dd>{countText(rows.reduce((n, r) => n + r.calls, 0))}</dd>
       </div>
       <div>
         <dt>Best edge</dt>
@@ -98,13 +114,8 @@ function ProgramBoard({ board }: { board: LeaderboardResponse }) {
   const program = board.program ?? null;
   const authorities = board.authorities ?? [];
   const demo = api.mode === 'mock';
-  // Demo rows and the in-memory test chain have no accounts anywhere, and without a program there are only Memos.
-  const nothingToRead =
-    demo || board.network === 'fake'
-      ? `${demo ? 'This is demo data' : 'This board is on a test chain'}, so there are no accounts on Solana to read. On devnet, your browser reads each player’s totals from the program itself.`
-      : !program || authorities.length === 0
-        ? 'No program is set up on this server, so calls are recorded as Memos only and there are no accounts to read.'
-        : null;
+  // Demo rows and the in-memory chain have no accounts anywhere, and without a program there are only Memos.
+  const nothingToRead = demo || board.network === 'fake' || !program || authorities.length === 0;
 
   async function read() {
     if (!program) return;
@@ -119,13 +130,12 @@ function ProgramBoard({ board }: { board: LeaderboardResponse }) {
     }
   }
 
-  /** The section's title and its one paragraph, with the button beside them when there is something to read. */
+  /** The section's title and its one paragraph, with the button beside them. */
   const head = (lead: string, action?: ReactNode) => (
     <div className="lb-chain-head">
       <div>
-        <span className="eyebrow">Independent check</span>
         <h2 id="lb-chain-h" className="h-card">
-          Read from the program
+          Read it from Solana
         </h2>
         <p>{lead}</p>
       </div>
@@ -133,13 +143,8 @@ function ProgramBoard({ board }: { board: LeaderboardResponse }) {
     </div>
   );
 
-  if (nothingToRead || !program) {
-    return (
-      <section className="lb-chain" aria-labelledby="lb-chain-h">
-        {head(nothingToRead ?? '')}
-      </section>
-    );
-  }
+  // With no program on Solana there is nothing to read, so the section is left out rather than explaining its absence.
+  if (nothingToRead || !program) return null;
 
   // Against the rows on screen now, so the line stays true when the table above updates itself.
   const match = rows && (rows.length > 0 || board.rows.length > 0) ? comparisonLine(compareBoards(rows, board.rows)) : null;
@@ -149,7 +154,7 @@ function ProgramBoard({ board }: { board: LeaderboardResponse }) {
   return (
     <section className="lb-chain" aria-labelledby="lb-chain-h">
       {head(
-        'These rows are read by your browser from the program’s own accounts on Solana. Our server is not asked.',
+        'Your browser reads each player’s totals from the program on Solana, without asking our server. The program and keys are listed on the Proof page.',
         <button type="button" className="btn btn-ghost" onClick={read} disabled={reading}>
           {reading ? (
             <>
@@ -171,7 +176,7 @@ function ProgramBoard({ board }: { board: LeaderboardResponse }) {
             {problem}
           </p>
         )}
-        {rows && rows.length === 0 && <p className="note note-info">The program has no player totals to show yet. A player appears here once a reveal of theirs has gone through the program.</p>}
+        {rows && rows.length === 0 && <p className="note note-info">The program has no player totals yet. A player appears once one of their reveals goes through it.</p>}
         {rows && rows.length > 0 && (
           // This table comes after the server's board in the page, so "the first table" is still that board.
           <div className="lb-wrap">
@@ -184,10 +189,10 @@ function ProgramBoard({ board }: { board: LeaderboardResponse }) {
                     Revealed
                   </th>
                   <th scope="col" className="n">
-                    Hit rate
+                    Win rate
                   </th>
-                  <th scope="col" className="n" title={EDGE_UNIT}>
-                    Edge
+                  <th scope="col" className="n">
+                    Edge per $1
                   </th>
                   <th scope="col" className="n lb-opt">
                     Last call
@@ -196,18 +201,20 @@ function ProgramBoard({ board }: { board: LeaderboardResponse }) {
               </thead>
               <tbody>
                 {rows.map((r) => {
-                  // The chain cannot tell a refunded call from one kept sealed, so there is no refunded count here.
+                  // The chain cannot tell a call whose stake came back from one kept sealed, so there is no such count here.
                   const counts = { calls: r.calls, sealed: r.sealed };
                   return (
                     <Fragment key={r.handle}>
                       <tr className={sealedWords(counts) ? 'has-sub' : undefined}>
                         <td className="lb-who">{r.handle}</td>
-                        <td className="n">{r.calls}</td>
+                        <td className="n" aria-describedby={sealedWords(counts) ? `lb-p-${r.handle}` : undefined}>
+                          {countText(r.calls)}
+                        </td>
                         <td className="n">{pct(r.hitRate)}</td>
                         <td className={`n lb-edge ${tone(r.edge)}`}>{edgeText(r.edge)}</td>
                         <td className="n lb-opt lb-when">{ago(r.lastRevealedAt)}</td>
                       </tr>
-                      <SealedRow counts={counts} span={2} rest={[false, false, true]} />
+                      <SealedRow counts={counts} span={2} rest={[false, false, true]} id={`lb-p-${r.handle}`} />
                     </Fragment>
                   );
                 })}
@@ -229,8 +236,8 @@ function ProgramBoard({ board }: { board: LeaderboardResponse }) {
         ))}
       </div>
       <p className="fine">
-        This counts only reveals that went through the program, and shows each player’s totals, not their individual calls.
-        {sealedRead && ' The program holds every call from the moment it is sealed, so the sealed count does not depend on our server either. It cannot tell a refunded call from one kept sealed, so refunds are not counted apart here.'}
+        It counts only reveals that went through the program, as totals per player.
+        {sealedRead && ' The sealed count is read from the program too, which cannot tell a stake back from a call kept sealed.'}
       </p>
     </section>
   );
@@ -249,16 +256,19 @@ export default function Leaderboard() {
   const mine = useMemo(() => new Set((calls.data?.calls ?? []).map((c) => c.handle)), [calls.data]);
   const myHandle = calls.data?.calls[0]?.handle ?? null;
   const onBoard = rows.some((r) => mine.has(r.handle));
-  const reportsSealed = rows.some((r) => r.sealed !== undefined);
 
   return (
     <div className="page">
       <header className="page-head">
         <div>
-          <h1 className="h-page">Leaderboard</h1>
-          <p className="lede">Ranked by how much better your calls did than the market’s own odds, not by profit or by how much you bet.</p>
+          <div className="lb-title">
+            <h1 className="h-page">Leaderboard</h1>
+            {/* Said only when the board really was read from Solana, and beside the title at every width. */}
+            {lb.data && api.mode !== 'mock' && lb.data.network !== 'fake' && <span className="chip chip-quiet">{lb.data.source === 'quicknode-stream' ? 'Live from Solana' : 'Read from Solana'}</span>}
+          </div>
+          {/* The one place the score is defined: the column below carries its unit, and the section at the foot shows the arithmetic. */}
+          <p className="lede">Edge is how far a call beat the market’s own price, per $1. Players are ranked by it, not by profit or by the size of their bets.</p>
         </div>
-        {lb.data && <span className="chip chip-quiet">{api.mode === 'mock' ? 'Demo data' : lb.data.network === 'fake' ? 'Test chain' : lb.data.source === 'quicknode-stream' ? 'Live from Solana' : 'Read from Solana'}</span>}
       </header>
 
       {lb.loading && !lb.data ? (
@@ -270,25 +280,27 @@ export default function Leaderboard() {
         // No answer at all is not an empty board, and must not read as one.
         <div className="lb-empty" role="alert">
           <h2 className="h-card">We could not load the leaderboard</h2>
-          <p>{lb.error?.message ?? 'The service did not answer.'} Calls that were already revealed are not affected.</p>
+          <p>{lb.error ? friendly(lb.error) : 'The service did not answer.'} Calls that were already revealed are not affected.</p>
           <button type="button" className="btn btn-ghost" onClick={() => lb.reload()}>
             Try again
           </button>
         </div>
       ) : (
         <>
-          <Summary rows={rows} />
+          {/* The strip restates the table: with one or two players it is the table again, so it waits for a third. */}
+          {rows.length >= 3 && <Summary rows={rows} />}
           {rows.length === 0 ? (
             <div className="lb-empty">
               <h2 className="h-card">No revealed calls yet</h2>
-              <p>The board is built from calls revealed on Solana. Three steps put you on it:</p>
+              <p>The board is built from revealed calls. Three steps put you on it:</p>
               <ol>
                 <li>
-                  <Link to={keepMode(PRODUCTS[0]!.to)}>Place a bet</Link>. Your call is sealed on Solana the moment you do.
+                  <Link to={keepMode(PRODUCTS[0]!.to)}>Place a bet</Link> and its call is sealed
                 </li>
-                <li>Wait for the market to settle.</li>
+                <li>Wait for the result</li>
                 <li>
-                  Reveal the call from <Link to={keepMode(MY_BETS.to)}>{MY_BETS.name}</Link>. {minCalls > 1 ? `A player is ranked from ${minCalls} revealed calls.` : 'It counts here at once.'}
+                  Reveal the call from <Link to={keepMode(MY_BETS.to)}>{MY_BETS.name}</Link>
+                  {minCalls > 1 ? ` and it counts once you have ${minCalls} revealed` : ' and it counts here'}
                 </li>
               </ol>
             </div>
@@ -306,10 +318,10 @@ export default function Leaderboard() {
                       Revealed
                     </th>
                     <th scope="col" className="n lb-opt">
-                      Hit rate
+                      Win rate
                     </th>
-                    <th scope="col" className="n" title={EDGE_UNIT}>
-                      Edge
+                    <th scope="col" className="n">
+                      Edge per $1
                     </th>
                     <th scope="col" className="n lb-opt">
                       Last call
@@ -317,7 +329,7 @@ export default function Leaderboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r) => {
+                  {rows.map((r, i) => {
                     // Demo data's own row is the handle "you", which already reads as the visitor.
                     const name = r.handle === 'you' ? 'You' : r.handle;
                     const isYou = mine.has(r.handle) || r.handle === 'you';
@@ -328,7 +340,7 @@ export default function Leaderboard() {
                     return (
                       <Fragment key={r.handle}>
                         <tr className={[isYou ? 'is-you' : '', hasSub ? 'has-sub' : ''].filter(Boolean).join(' ') || undefined}>
-                          <td className="lb-rank">{r.rank}</td>
+                          <td className="lb-rank">{placeOf(rows, i)}</td>
                           {/* "You" is drawn from the attribute by the stylesheet, so the cell's own text is the handle and nothing else. */}
                           <td className={opens ? 'lb-who lb-who-opens' : 'lb-who'} data-tag={isYou && r.handle !== 'you' ? 'You' : undefined}>
                             {opens ? (
@@ -340,12 +352,14 @@ export default function Leaderboard() {
                               name
                             )}
                           </td>
-                          <td className="n">{r.calls}</td>
+                          <td className="n" aria-describedby={hasSub ? `lb-s-${r.handle}` : undefined}>
+                            {countText(r.calls)}
+                          </td>
                           <td className="n lb-opt">{pct(r.hitRate)}</td>
                           <td className={`n lb-edge ${tone(r.edge)}`}>{edgeText(r.edge)}</td>
                           <td className="n lb-opt lb-when">{ago(r.lastRevealedAt)}</td>
                         </tr>
-                        <SealedRow counts={r} span={3} rest={[true, false, true]} you={isYou} />
+                        <SealedRow counts={r} span={3} rest={[true, false, true]} you={isYou} id={`lb-s-${r.handle}`} />
                         {isOpen && r.recent && (
                           <tr className="lb-calls" id={callsId}>
                             <td colSpan={6}>
@@ -366,7 +380,7 @@ export default function Leaderboard() {
                                       <span className="lb-when">{ago(c.revealedAt)}</span>
                                       {/* The proof page says what can be checked on which chain, so the link does not promise Solana. */}
                                       <Link to={keepMode(`/verify/${c.signature}`)}>
-                                        Open proof<span className="sr-only">{asked ? `: ${asked}` : ` of the call revealed ${ago(c.revealedAt)}`}</span>
+                                        Proof page<span className="sr-only">{asked ? ` for ${asked}` : ` of the call revealed ${ago(c.revealedAt)}`}</span>
                                       </Link>
                                     </li>
                                   );
@@ -374,7 +388,7 @@ export default function Leaderboard() {
                               </ul>
                               {r.calls > r.recent.length && (
                                 <p className="fine">
-                                  The newest {r.recent.length} of {r.calls} revealed calls.
+                                  The newest {r.recent.length} of {countText(r.calls)} revealed calls.
                                 </p>
                               )}
                             </td>
@@ -389,10 +403,9 @@ export default function Leaderboard() {
           )}
           {rows.length > 0 && (
             <div className="lb-notes">
-              <p className="fine">Edge is counted per $1 of payout and summed over a player’s revealed calls: one call that comes off at a fair price of 41¢ adds +0.59.</p>
               {myHandle && myHandle !== 'you' && !onBoard && (
                 <p className="fine">
-                  Your handle is <b>{myHandle}</b>. It appears here once you have revealed {minCalls > 1 ? `${minCalls} settled calls` : 'a settled call'} from <Link to={keepMode(MY_BETS.to)}>{MY_BETS.name}</Link>.
+                  Your handle is <b>{myHandle}</b>. It appears here once you have revealed {minCalls > 1 ? `${minCalls} closed calls` : 'a closed call'} from <Link to={keepMode(MY_BETS.to)}>{MY_BETS.name}</Link>.
                 </p>
               )}
             </div>
@@ -407,35 +420,26 @@ export default function Leaderboard() {
           <h2 id="lb-how" className="h-card">
             How edge works
           </h2>
-          <p>Every call has a fair price when you make it: the market’s own chance that it comes off. A hit scores one minus that price, a miss scores minus that price, and a player’s edge is the sum, counted per $1 of payout.</p>
-          <p>Beating the odds again and again moves you up; a lucky call or two washes out. A refunded call, where the first half failed, is not scored.</p>
-          {reportsSealed ? (
-            <p>
-              Players are anonymous handles. Revealing a call is the player’s choice, but making one is not hidden: each call is sealed on Solana under the handle before the result. So the board shows how many calls each player sealed beside how many
-              they revealed. Refunded calls are counted apart, because they can never be revealed.
-            </p>
-          ) : (
-            <p>Players are anonymous handles. Revealing a call is the player’s choice, so only revealed calls appear here.</p>
-          )}
+          <p>A win adds 1 minus the call’s fair price, and a loss subtracts it. Edge adds up across your revealed calls.</p>
         </div>
         {/* A list rather than a table, so the only tables on the page are boards. */}
         <figure className="lb-example">
           <figcaption>One call made at a fair price of 41¢</figcaption>
           <dl>
             <div>
-              <dt>The second half happens</dt>
+              <dt>The target is reached</dt>
               <dd className="good">+0.59</dd>
             </div>
             <div>
-              <dt>The first half holds, the second does not</dt>
+              <dt>The first level holds, the target is not reached</dt>
               <dd className="bad">−0.41</dd>
             </div>
             <div>
-              <dt>The first half fails, stake refunded</dt>
+              <dt>The first level fails, stake back</dt>
               <dd className="lb-none">Not scored</dd>
             </div>
           </dl>
-          <p className="fine">A range or a breakout call has no refund. A range scores a hit for finishing inside its two levels, a breakout for finishing outside them.</p>
+          <p className="fine">A Range wins between its two levels, a Breakout outside them. Neither has a stake back.</p>
         </figure>
       </section>
     </div>

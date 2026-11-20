@@ -67,7 +67,7 @@ describe('the demo data: a bet that was sold back', () => {
     expect(canRevealCall(sold)).toBe(true);
     // Where it says the price ended agrees with the call having come off: at or above the target.
     expect(sold.called!.finishedAt).toBeGreaterThanOrEqual(sold.target.strike);
-    expect(soldCallWords(sold)).toMatch(/^The market has since settled: it reached \$[\d,]+, so the call came off\.$/);
+    expect(soldCallWords(sold)).toMatch(/^The market has closed: it reached \$[\d,]+, so your call won\.$/);
 
     const call = (await api.calls()).calls.find((c) => c.betId === sold.id)!;
     expect(call.state).toBe('committed');
@@ -98,7 +98,7 @@ describe('the demo data: a bet that was sold back', () => {
 
     // Sold, and the market has not settled: there is nothing to score yet.
     expect((await find()).called).toBeUndefined();
-    expect(soldCallWords(await find())).toBe('Its call can be revealed once the market settles.');
+    expect(soldCallWords(await find())).toBe('Waiting for the market to close. After that its call can be revealed.');
     await expect(api.revealCall(call.id)).rejects.toMatchObject({ status: 409, code: 'cashed_out' });
     const early = (await api.settle()) as Awaited<ReturnType<typeof api.settle>> & { called: Bet[] };
     expect(early.called.map((b) => b.id)).not.toContain(bet.id);

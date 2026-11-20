@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { MarketEvent } from '../api/types';
+import { timeLeft } from './format';
 
 /**
  * Whether a ladder as a whole can take a bet right now.
@@ -32,8 +33,14 @@ export interface MarketNote {
   phase: Exclude<MarketPhase, 'open'>;
   /** What the Place bet button says instead. */
   label: string;
-  /** The one sentence the page says about it. */
+  /** The whole of what is said about it, where nothing else on the screen says the first part (Hunch's empty list). */
   text: string;
+  /**
+   * What to do about it, without saying again what the button's label already says. A builder shows the label on the button and
+   * this under the stake, so a market that has closed is said to have closed once, not on the button, in a note and again in a
+   * caption. Left out, `text` is the note.
+   */
+  next?: string;
 }
 
 /** "at 9:35 PM", or "on Nov 19 at 9:35 PM" when that was another day, in the viewer's own time. Empty when the close time is not known or has not passed. */
@@ -55,13 +62,24 @@ export function marketNote(ladder: Ladder, now: number, opts: { another: boolean
   if (phase === 'closed') {
     const when = closedWhen(ladder.expiry, now);
     const next = opts.another ? 'Pick another market above.' : 'The next one appears here by itself when it opens.';
-    return { phase, label: 'This market has closed', text: `This market ${when ? `closed${when}` : 'has closed'} and takes no more bets. ${next}` };
+    return { phase, label: 'This market has closed', text: `This market ${when ? `closed${when}` : 'has closed'} and takes no more bets. ${next}`, next };
   }
   // Listed but not trading yet. Gemini lists new contracts post-only for their first minutes; any other state makes no promise.
   if (ladder.rungs.some((r) => /post[_-]only/.test(r.state.toLowerCase()))) {
-    return { phase, label: 'Not open for bets yet', text: 'This market is not open for trading yet. New markets can take a few minutes to open, and this page picks it up when it does.' };
+    const next = 'It usually opens within a few minutes, and this page updates by itself.';
+    return { phase, label: 'Not open for bets yet', text: `This market is not open yet. ${next}`, next };
   }
-  return { phase, label: 'Not open for bets', text: `This market is not open for trading right now. ${opts.another ? 'Pick another market above, or check back in a minute.' : 'Check back in a minute.'}` };
+  const next = opts.another ? 'Pick another market above, or check back in a minute.' : 'Check back in a minute.';
+  return { phase, label: 'Not open for bets', text: `This market is not open for bets right now. ${next}`, next };
+}
+
+/**
+ * "Closes in 55 min" for a market that is still counting down, and nothing for one that has closed: by its time, or because every
+ * contract on it has finished while its listed close time is still ahead. The page says once that it has closed, and a countdown
+ * beside that would say the opposite.
+ */
+export function closesIn(ladder: Ladder, now: number): string | null {
+  return phaseOf(ladder, now) === 'closed' ? null : timeLeft(ladder.expiry, now);
 }
 
 /** Whether any other ladder in the list can take a bet right now. */

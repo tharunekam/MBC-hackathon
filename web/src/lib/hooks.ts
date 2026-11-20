@@ -17,11 +17,17 @@ export function useAsync<T>(load: () => Promise<T>, deps: unknown[], everyMs?: n
   loadRef.current = load;
   useEffect(() => {
     let alive = true;
-    const run = () =>
-      loadRef.current().then(
-        (data) => alive && setState({ data, error: null, loading: false }),
-        (error: Error) => alive && setState((s) => ({ data: s.data, error, loading: false })),
+    // A slow answer to an earlier request must not overwrite the newer one that has already arrived.
+    let issued = 0;
+    let applied = 0;
+    const run = () => {
+      const mine = ++issued;
+      const current = () => alive && mine > applied && ((applied = mine), true);
+      return loadRef.current().then(
+        (data) => current() && setState({ data, error: null, loading: false }),
+        (error: Error) => current() && setState((s) => ({ data: s.data, error, loading: false })),
       );
+    };
     run();
     const id = everyMs ? window.setInterval(run, everyMs) : undefined;
     return () => {

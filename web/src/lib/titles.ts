@@ -3,28 +3,35 @@
  * list and a row of open tabs unreadable ("Given", "Given", "Given"), and a screen reader announces the title on arrival.
  */
 const SITE = 'Given';
-const HOME = "Given – money back if it doesn't happen";
+const HOME = 'Given · Bet the second half';
 
-const PAGES: [prefix: string, title: string][] = [
-  ['/parlay', 'Stake Back'],
-  ['/range', 'Range and Breakout'],
-  ['/basket', 'Basket'],
-  ['/hunch', 'Hunch'],
-  ['/markets', 'Markets'],
-  ['/bets', 'My bets'],
-  ['/leaderboard', 'Leaderboard'],
-  ['/proof', 'Proof'],
-  ['/verify', 'Proof of a call'],
+/** Every page the router knows by an exact address (it matches without regard to case, and has nothing below these). */
+const PAGES: Record<string, string> = {
+  '/parlay': 'Stake Back',
+  '/range': 'Range',
+  '/basket': 'Basket',
+  '/hunch': 'Hunch',
+  '/markets': 'Markets',
+  '/bets': 'My bets',
+  '/leaderboard': 'Leaderboard',
+  '/proof': 'Proof',
   // Old addresses that are sent on to the builder.
-  ['/app/bets', 'My bets'],
-  ['/app', 'Stake Back'],
-];
+  '/app/bets': 'My bets',
+  '/app': 'Stake Back',
+};
 
-/** The title for an address. The landing page carries the site's own line; an address the app does not know says so. */
-export function titleFor(pathname: string): string {
-  const path = pathname.replace(/\/+$/, '') || '/';
+/** A proof is a signature after /verify/. Without one the router shows the not-found page, and so does the title. */
+const PROOF = /^\/verify\/[^/]+$/;
+
+/**
+ * The title for an address. The landing page carries the site's own line; an address the app does not know says so. The Range
+ * page holds two bets and its heading follows the switch (?side=out is the Breakout), so its title does too.
+ */
+export function titleFor(pathname: string, search = ''): string {
+  const path = (pathname.replace(/\/+$/, '') || '/').toLowerCase();
   if (path === '/') return HOME;
-  // The longest prefix wins, so /app/bets is not read as /app.
-  const hit = PAGES.filter(([prefix]) => path === prefix || path.startsWith(`${prefix}/`)).sort((a, b) => b[0].length - a[0].length)[0];
-  return hit ? `${hit[1]} · ${SITE}` : `Page not found · ${SITE}`;
+  if (PROOF.test(path)) return `Proof of a call · ${SITE}`;
+  if (path === '/range' && new URLSearchParams(search).get('side') === 'out') return `Breakout · ${SITE}`;
+  const page = PAGES[path];
+  return page ? `${page} · ${SITE}` : `Page not found · ${SITE}`;
 }

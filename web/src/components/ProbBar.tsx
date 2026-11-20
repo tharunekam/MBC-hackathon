@@ -13,13 +13,15 @@ interface Props {
 
 /**
  * The whole bet on one line: three results sized by the market's own odds. The three figures are rounded together, so they
- * add to exactly 100% and match every other place the page shows them.
+ * add to exactly 100% and match every other place the page shows them. The bar is not the price line: its order is the
+ * order the results are named in everywhere else.
  */
 export default function ProbBar({ chanceCondition, chanceBoth, direction = 'up', className }: Props) {
   const shown = parlayPercents(direction, chanceCondition, chanceBoth);
+  // One order wherever the three results are listed: Win, Stake back, Lose.
   const parts = [
-    { key: 'refund', label: 'Stake back', p: Math.max(0, 1 - chanceCondition), percent: shown.back },
     { key: 'win', label: 'Win', p: Math.max(0, chanceBoth), percent: shown.win },
+    { key: 'refund', label: 'Stake back', p: Math.max(0, 1 - chanceCondition), percent: shown.back },
     { key: 'lose', label: 'Lose', p: Math.max(0, chanceCondition - chanceBoth), percent: shown.lose },
   ];
   return (

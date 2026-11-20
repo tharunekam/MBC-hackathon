@@ -1,7 +1,7 @@
 /* The basket builder: a list of flat leg panels and the ticket. Scoped under .basket so it only touches this screen. */
 
 .basket .card {
-  border-radius: var(--r-md);
+  border-radius: var(--r-lg);
 }
 
 /* ------------------------------------------------------------ amount */
@@ -24,7 +24,8 @@
 }
 
 /* ------------------------------------------------------------ legs */
-.basket .legs {
+.basket .legs,
+.basket .legs-skel {
   display: grid;
   gap: 12px;
   margin: 0;
@@ -56,7 +57,7 @@
   letter-spacing: -0.01em;
 }
 .leg-num {
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--muted);
 }
@@ -79,11 +80,11 @@
   text-decoration: underline;
   text-decoration-color: var(--line-strong);
   text-decoration-thickness: 1px;
-  text-underline-offset: 5px;
+  text-underline-offset: 4px;
   cursor: pointer;
   transition:
-    color 160ms var(--ease),
-    text-decoration-color 160ms var(--ease);
+    color var(--t-fast) var(--ease-ui),
+    text-decoration-color var(--t-fast) var(--ease-ui);
 }
 .leg-remove:hover:not(:disabled) {
   color: var(--ink);
@@ -94,44 +95,50 @@
   text-decoration: none;
   cursor: not-allowed;
 }
+/* The kind switch: four names, the same four words the ticket, the result and My bets use. */
 .basket .leg-kind {
   justify-self: start;
 }
-/* The switch names a parlay in full where there is room ("Parlay up") and by its direction alone on a phone ("Up"). */
-.leg-kind .kind-short {
-  display: none;
+.basket .leg-kind button {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  font-size: 14px;
+  white-space: nowrap;
 }
 
 .leg-fields {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 112px;
+  align-items: end;
   gap: 12px;
 }
 .leg-field {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
 }
 .leg-field.leg-market {
   grid-column: 1 / -1;
 }
 .leg-label {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--soft);
 }
 
-/* A native select, drawn flat. The chevron is two borders, so it takes the text colour in both themes. */
+/* A native select, drawn flat. The chevron is two borders, so it takes the text colour in both themes. The focus ring is the
+   one the whole app uses. */
 .select {
   position: relative;
   display: block;
   min-width: 0;
 }
 .select::after {
-  content: "";
+  content: '';
   position: absolute;
   top: 50%;
-  right: 14px;
+  right: 16px;
   width: 6px;
   height: 6px;
   margin-top: -5px;
@@ -145,67 +152,76 @@
   height: 44px;
   padding: 0 36px 0 12px;
   border: 1px solid var(--line-strong);
-  border-radius: var(--r-md);
+  border-radius: var(--r-ctl);
   background: var(--surface);
   font: inherit;
-  font-size: 15px;
+  font-size: 16px;
   color: var(--ink);
   text-overflow: ellipsis;
   appearance: none;
   cursor: pointer;
-  transition: border-color 160ms var(--ease);
+  transition: border-color var(--t-fast) var(--ease-ui);
 }
 .select select:hover:not(:disabled) {
   border-color: var(--ink);
-}
-.select select:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: var(--r-md);
 }
 .select select:disabled {
   color: var(--muted);
   cursor: not-allowed;
 }
-.leg-stake .field {
+/* The frame is as tall as the selects beside it (44px), so the fields of a leg share one top and one bottom; the box inside it is
+   the frame less its border, so a tap anywhere in the frame lands in the box. */
+.basket .leg-stake .field {
   height: 44px;
   padding: 0 12px;
+  border-radius: var(--r-ctl);
 }
-.leg-stake .field input {
+.basket .leg-stake .field input {
   min-width: 0;
+  min-height: 42px;
+  font-size: 16px;
   color: var(--ink);
 }
-.leg-stake .field input:disabled {
+.basket .leg-stake .field input:disabled {
   color: var(--muted);
 }
 
-/* The leg's quote in one line. */
+/* The leg's quote: the same four numbers the single-bet pages show, and for a Stake Back the chance the stake comes back. Each
+   figure sits under its name, and the rows line up whatever length a name runs to. */
 .leg-quote {
-  min-height: 40px;
-  padding-top: 14px;
+  min-height: 56px;
+  padding-top: 16px;
   border-top: 1px solid var(--line);
 }
 .leg-nums {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 28px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 12px 16px;
   margin: 0;
 }
 .leg-nums > div {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 4px;
 }
 .leg-nums dt {
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1.3;
   color: var(--muted);
 }
 .leg-nums dd {
   margin: 0;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
   color: var(--ink);
-  transition: opacity 200ms var(--ease);
+  transition: opacity var(--t-med) var(--ease-ui);
+}
+.leg-nums dd.is-none {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--muted);
 }
 .leg-nums.is-est dd {
   opacity: 0.6;
@@ -222,8 +238,12 @@
 .basket .leg-error {
   margin: 0;
 }
+/* Standing in for the legs while the markets load, the height of two of them so nothing jumps when they arrive. */
 .leg-skel {
-  height: 280px;
+  height: 344px;
+}
+.ticket-skel {
+  height: 240px;
 }
 
 .add-leg {
@@ -231,38 +251,40 @@
   align-items: center;
   gap: 16px;
 }
+.add-leg .btn {
+  min-height: 44px;
+}
 .add-leg .fine {
   margin: 0;
 }
 
 /* ------------------------------------------------------------ ticket */
 .basket .basket-ticket {
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
+  min-width: 0;
 }
 .basket .basket-ticket .card-head {
   margin: 0;
 }
 .basket-name {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 .basket-name input {
-  height: 44px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
   padding: 0 12px;
   border: 1px solid var(--line-strong);
-  border-radius: var(--r-md);
+  border-radius: var(--r-ctl);
   background: var(--surface);
   font: inherit;
-  font-size: 15px;
+  font-size: 16px;
   color: var(--ink);
 }
 .basket-name input::placeholder {
   color: var(--muted);
-}
-.basket-name input:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: var(--r-md);
 }
 
 .ticket-legs {
@@ -286,64 +308,80 @@
   min-width: 0;
 }
 .ticket-meta {
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--muted);
 }
 .ticket-bet {
-  font-size: 14.5px;
+  font-size: 14px;
   color: var(--ink);
 }
 .ticket-legs b {
   flex: none;
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 .ticket-legs li.is-blocking .ticket-meta {
   color: var(--accent-text);
 }
 
+/* The totals are a section of the ticket, set off by hairlines, not a box inside the box. What the orders cost is the one figure
+   the person pays, so it is the largest thing in the section; the stake is a quiet line (it is what the bets were sized from, and
+   a cent or two away from the cost), and the best and worst case are plain rows with a colour only on the sign of the result. */
 .basket-totals {
   display: grid;
   margin: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
 }
 .basket-totals > div {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 16px;
-  padding: 12px 16px;
+  gap: 4px 16px;
+  padding: 12px 0;
 }
 .basket-totals > div + div {
   border-top: 1px solid var(--line);
 }
 .basket-totals dt {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--muted);
 }
 .basket-totals dd {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 500;
-  letter-spacing: -0.02em;
-  font-variant-numeric: lining-nums;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.basket-totals [data-kind="win"] dd {
+.basket-totals [data-kind='cost'] dt {
+  color: var(--ink);
+}
+.basket-totals [data-kind='cost'] dd:not(.basket-cost) {
+  font-size: 24px;
+  letter-spacing: -0.02em;
+}
+.basket-totals [data-kind='stake'] {
+  padding-block: 8px;
+}
+.basket-totals [data-kind='stake'] dd {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+.basket-totals [data-kind='win'] dd {
   color: var(--good);
 }
-.basket-totals [data-kind="lose"] dd {
+.basket-totals [data-kind='lose'] dd {
   color: var(--bad);
 }
-/* Under what the orders cost, why that can sit a cent or two below the stakes: a sentence, not a figure. */
-.basket-totals > div {
-  flex-wrap: wrap;
-}
+/* A sentence in place of a figure: why the orders can cost a cent or two under the stakes, or why a figure is not there yet. */
 .basket-totals dd.basket-cost {
   flex-basis: 100%;
-  margin-top: -2px;
   font-family: var(--font-ui);
   font-size: 13px;
   font-weight: 400;
@@ -355,26 +393,26 @@
 /* How the legs come out together: two figures, a thin bar for the range that is certain, and the small print. */
 .together {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
-  padding: 14px 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
 }
 .together-head {
-  margin: 0;
-  font-size: 12.5px;
+  margin: 0 0 4px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--muted);
 }
 .together-line {
   margin: 0;
-  font-size: 14.5px;
+  font-size: 14px;
   line-height: 1.4;
   color: var(--soft);
 }
 .together-line b {
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   color: var(--ink);
 }
@@ -383,14 +421,14 @@
 }
 .together-meter {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
-/* The whole width is 0% to 100%. The shaded part is the range; the mark is the figure for unrelated markets. */
+/* The whole width is 0% to 100%. The shaded part is the range; the marker is the figure for unrelated markets. */
 .together-bar {
   position: relative;
-  height: 6px;
+  height: 8px;
   margin-top: 4px;
-  border-radius: 3px;
+  border-radius: var(--r-pill);
   background: var(--line);
 }
 .together-range {
@@ -398,11 +436,11 @@
   top: 0;
   bottom: 0;
   min-width: 2px;
-  border-radius: 3px;
+  border-radius: var(--r-pill);
   background: var(--accent);
   transition:
-    left 200ms var(--ease),
-    width 200ms var(--ease);
+    left var(--t-med) var(--ease-ui),
+    width var(--t-med) var(--ease-ui);
 }
 /* Taller than the bar, so it reads against the card in both themes and not only against the shading. */
 .together-tick {
@@ -411,19 +449,24 @@
   bottom: -4px;
   width: 2px;
   margin-left: -1px;
-  border-radius: 1px;
   background: var(--ink);
-  transition: left 200ms var(--ease);
+  transition: left var(--t-med) var(--ease-ui);
 }
 .together-scale {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.together-key {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
   color: var(--muted);
 }
 
 /* ------------------------------------------------------------ what the basket pays */
-/* One chart for each ladder the basket uses, in a card of its own under the legs: the charts need the width, and the ticket
+/* One chart for each market the basket uses, in a card of its own under the legs: the charts need the width, and the ticket
    has to stay short enough to act on. The heading is a disclosure, open on a wide window and folded away on a phone. */
 /* Three classes, so it wins over the builders' own card padding whichever of the two stylesheets loads first. */
 .basket .card.pays {
@@ -437,16 +480,12 @@
   gap: 12px;
   min-height: 60px;
   padding: 0 24px;
-  border-radius: var(--r-md);
+  border-radius: var(--r-lg);
   list-style: none;
   cursor: pointer;
 }
 .pays > summary::-webkit-details-marker {
   display: none;
-}
-.pays > summary:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 .pays > summary .h-card {
   margin: 0;
@@ -471,7 +510,7 @@
   border-right: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor;
   transform: translateY(-2px) rotate(45deg);
-  transition: transform 160ms var(--ease);
+  transition: transform var(--t-fast) var(--ease-ui);
 }
 .pays[open] .pays-caret {
   transform: translateY(1px) rotate(225deg);
@@ -497,7 +536,7 @@
   grid-template-columns: minmax(0, 1fr);
   gap: 0 32px;
 }
-/* Three ladders or more go two to a row, so the card does not run to several screens. */
+/* Three markets or more go two to a row, so the card does not run to several screens. */
 .pays-grid[data-many] {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -521,7 +560,7 @@
   justify-content: space-between;
   gap: 12px;
   margin: 0;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--muted);
 }
@@ -531,13 +570,14 @@
 .pays-line {
   max-width: 68ch;
   margin: 0;
-  font-size: 14.5px;
-  line-height: 1.45;
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--soft);
 }
 /* The figures in a sentence: kept whole on one line, and given weight in the line that is about them. */
 .pays-line b {
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   color: var(--ink);
 }
@@ -546,21 +586,74 @@
   white-space: nowrap;
 }
 
-.basket .basket-terms {
+.basket .basket-off {
   margin: 0;
 }
 .basket .basket-ticket .note {
   margin: 0;
 }
+.basket .basket-ticket .note a,
+.basket .place-bar .note a {
+  color: inherit;
+  text-underline-offset: 3px;
+}
 
 /* ------------------------------------------------------------ placed */
 .basket-result {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
+  min-width: 0;
+}
+/* The title says what happened, in the strongest type on the card. The name, when there is one, sits under it and wraps
+   wherever it has to, so forty characters without a space cannot push the card wider than the screen. */
+.basket .basket-result .q-title {
+  gap: 4px;
+  min-width: 0;
+}
+.basket .basket-result .q-sentence {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  scroll-margin-top: 96px;
+}
+.done-mark {
+  position: relative;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-pill);
+  background: var(--good-soft);
+}
+.done-mark::after {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 4px;
+  width: 5px;
+  height: 9px;
+  border-right: 2px solid var(--good);
+  border-bottom: 2px solid var(--good);
+  transform: rotate(45deg);
+}
+.result-name {
+  min-width: 0;
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--soft);
+  overflow-wrap: anywhere;
 }
 .basket-result .note {
   display: grid;
-  gap: 6px;
+  gap: 8px;
   margin: 0;
 }
 .basket-result .note b {
@@ -569,44 +662,105 @@
 .basket-rows td {
   vertical-align: baseline;
 }
+/* Money in this table is set like the rest of the card's money, in the sans face with tabular figures. */
+.basket .basket-rows .n {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
 .row-meta {
   display: block;
   margin-bottom: 4px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
-.basket-rows [data-state="placed"] .row-state {
+.basket-rows [data-state='placed'] .row-state {
   color: var(--good);
 }
-.basket-rows [data-state="failed"] .row-state {
+.basket-rows [data-state='failed'] .row-state {
   color: var(--bad);
 }
 .row-bet {
   display: block;
-  font-size: 14.5px;
+  font-size: 14px;
 }
 /* What the leg nets each way, under the bet. */
 .row-pays {
   display: block;
   margin-top: 4px;
   font-size: 13px;
-  line-height: 1.45;
+  line-height: 1.5;
   color: var(--muted);
 }
 .basket .basket-next {
   margin: 0;
 }
-.basket-rows [data-state="skipped"] .row-bet {
+.basket-rows [data-state='skipped'] .row-bet {
   color: var(--muted);
 }
 .basket-calls {
   margin: 0;
 }
+/* A text button inside a sentence. */
+.link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.link-btn:hover {
+  text-decoration-color: var(--ink);
+}
 .basket-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px;
+}
+.basket-actions .btn {
+  min-height: 44px;
+}
+
+/* ------------------------------------------------------------ the place bar (phones and tablets) */
+/* One column: the Place button rides at the bottom of the window above the tab bar, with what the basket costs on it, so it is in reach
+   while the legs are being edited. It sits last in the grid, so at the end of the page it is simply the last thing. */
+.basket .place-bar {
+  /* The builders order the ticket after the legs on a phone; the bar goes after the ticket. */
+  order: 5;
+  position: sticky;
+  z-index: 25;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+.place-bar-notes {
+  display: grid;
+  gap: 8px;
+}
+.place-bar-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.basket .place-bar .btn-wide {
+  height: auto;
+  min-height: 48px;
+  padding: 8px 12px;
+  font-size: 16px;
+  line-height: 1.2;
+  text-align: center;
+}
+/* A focused field is scrolled clear of the bar. */
+html:has(.place-bar) {
+  scroll-padding-bottom: 160px;
 }
 
 /* ------------------------------------------------------------ narrow */
@@ -615,12 +769,19 @@
   .basket .basket-ticket {
     position: static;
   }
+  /* The legs are on screen just above, so the ticket does not list them a second time. */
+  .basket .ticket-legs {
+    display: none;
+  }
+  /* Once the basket is placed the form is done with: the result takes its place, and nothing sits between it and the top. */
+  .basket[data-phase='placed'] .basket-amount,
+  .basket[data-phase='placed'] .legs,
+  .basket[data-phase='placed'] .add-leg,
+  .basket[data-phase='placed'] .pays {
+    display: none;
+  }
 }
 @media (max-width: 720px) {
-  /* The builders hide the ticket's eyebrow on a phone; here it carries the result, so it stays. */
-  .basket .basket-result .q-title .eyebrow {
-    display: block;
-  }
   .basket .basket-amount {
     grid-template-columns: minmax(0, 1fr);
     padding: 16px;
@@ -633,26 +794,20 @@
     margin-bottom: 0;
   }
   .basket .leg {
-    gap: 14px;
+    gap: 16px;
     padding: 16px;
   }
+  /* Four kinds in two rows by their full names; every control here is at least 44px tall, the size a finger needs. */
   .basket .leg-kind {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     justify-self: stretch;
-    display: flex;
   }
-  /* Four kinds on one line, by their short names: each button is as wide as its own name and they share what is left. Every
-     control here is at least 44px tall, the size a finger needs. */
   .basket .leg-kind button {
-    flex: 1 1 auto;
+    min-width: 44px;
     height: 44px;
-    padding: 0 6px;
-    white-space: nowrap;
-  }
-  .leg-kind .kind-long {
-    display: none;
-  }
-  .leg-kind .kind-short {
-    display: inline;
+    padding: 0 4px;
+    font-size: 13px;
   }
   .leg-head {
     align-items: center;
@@ -687,7 +842,11 @@
     grid-column: 1 / -1;
   }
   .leg-nums {
-    gap: 6px 20px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 16px;
+  }
+  .leg-skel {
+    height: 420px;
   }
   .add-leg {
     flex-wrap: wrap;

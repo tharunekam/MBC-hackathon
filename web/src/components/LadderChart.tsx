@@ -1,16 +1,16 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, PointerEvent } from 'react';
 import type { Rung } from '../api/types';
-import { levelsPercents, parlayPercents } from '../lib/chances';
+import { AXIS_TITLE, AXIS_TITLE_SHORT, chartZones, levelLabel, levelSpoken } from '../lib/chartWords';
 import { money } from '../lib/format';
 import { across, spacedLabels } from '../lib/ladders';
 import { useWidth } from '../lib/hooks';
 
 /**
  * What the two handles stand for.
- *   up      a rising parlay: the first handle is the first level, which has to hold, the second the target to reach (higher)
- *   down    a falling parlay: the first handle is the first level to stay under, the second the target to fall below (lower)
- *   range   the first handle is the floor and the second the ceiling
+ *   up      a rising Stake Back: the first handle is the first level, which has to hold, the second the target to reach (higher)
+ *   down    a falling Stake Back: the first handle is the first level to stay under, the second the target to fall below (lower)
+ *   range   the first handle is the lower level and the second the higher level
  *   breakout  the same two handles, for a bet that the price finishes outside them: below the first, or at or above the second
  */
 export type ChartMode = 'up' | 'down' | 'range' | 'breakout';
@@ -22,88 +22,43 @@ interface Props {
   /** The second handle's rung. */
   target: string;
   mode?: ChartMode;
-  /**
-   * The chance of what each handle's label says, as whole percents, when the page has already worked the bet's figures out
-   * (lib/chances.ts) and the chart should print the very same ones. Without it they are read from the two rungs here.
-   */
-  chances?: [first: number, second: number] | null;
+  /** The chart is a record (a bet placed, a market closed): the handles are not reachable and do nothing. */
+  locked?: boolean;
   onChange: (condition: string, target: string) => void;
 }
 
-/** A handle's label on the chart, the same thing said for a screen reader, and the handle's name. */
+/** The words a handle goes by for a screen reader, and the chart's own name. */
 interface Words {
-  first: (price: string) => string;
-  second: (price: string) => string;
-  firstSpoken: (price: string) => string;
-  secondSpoken: (price: string) => string;
   firstName: string;
   secondName: string;
   group: string;
 }
 
-const atOrAbove = (p: string) => `at or above ${p}`;
-const below = (p: string) => `below ${p}`;
-
 const WORDS: Record<ChartMode, Words> = {
   up: {
-    first: (p) => `Holds ${p}`,
-    second: (p) => `Reaches ${p}`,
-    firstSpoken: atOrAbove,
-    secondSpoken: atOrAbove,
     firstName: 'First level',
     secondName: 'Target',
-    group: 'Chance of finishing at or above each price, with two handles to choose your bet',
+    group: 'Chance of finishing at or above each price. Two handles set your first level and your target.',
   },
   down: {
-    first: (p) => `Stays under ${p}`,
-    second: (p) => `Falls below ${p}`,
-    firstSpoken: (p) => `under ${p}`,
-    secondSpoken: below,
     firstName: 'First level',
     secondName: 'Target',
-    group: 'Chance of finishing at or above each price, with two handles to choose a bet that it falls',
+    group: 'Chance of finishing at or above each price. Two handles set your first level and your target for a fall.',
   },
   range: {
-    first: (p) => `At or above ${p}`,
-    second: (p) => `Below ${p}`,
-    firstSpoken: atOrAbove,
-    secondSpoken: below,
-    firstName: 'Floor',
-    secondName: 'Ceiling',
-    group: 'Chance of finishing at or above each price, with two handles to choose a range',
+    firstName: 'Lower level',
+    secondName: 'Higher level',
+    group: 'Chance of finishing at or above each price. Two handles set the lower and higher levels of a range.',
   },
   breakout: {
-    first: (p) => `Below ${p}`,
-    second: (p) => `At or above ${p}`,
-    firstSpoken: below,
-    secondSpoken: atOrAbove,
     firstName: 'Lower level',
-    secondName: 'Upper level',
-    group: 'Chance of finishing at or above each price, with two handles to choose the two levels a breakout has to finish outside',
+    secondName: 'Higher level',
+    group: 'Chance of finishing at or above each price. Two handles set the levels a breakout must finish outside.',
   },
 };
 
 const strikeText = (r: Rung) => money(r.strike);
 const mid = (r: Rung) => (r.bid !== null && r.ask !== null ? (r.bid + r.ask) / 2 : null);
-
-/**
- * The chance of what each handle's label says, as whole percents, from the chance of finishing at or above each handle's
- * price. The curve is always "at or above", so a label that says below or under is the rest of it: "Falls below $63,000"
- * beside the 62% the curve shows there read as a 62% chance of falling.
- */
-function labelChances(mode: ChartMode, first: number | null, second: number | null): [number, number] | null {
-  if (first === null || second === null) return null;
-  if (mode === 'up') {
-    const p = parlayPercents('up', first, second);
-    return [p.holds, p.win];
-  }
-  if (mode === 'down') {
-    const p = parlayPercents('down', 1 - first, 1 - second);
-    return [p.holds, p.win];
-  }
-  const p = levelsPercents(mode === 'breakout' ? 'out' : 'in', first, second);
-  return mode === 'breakout' ? [p.below, p.above] : [p.between + p.above, p.below + p.between];
-}
 
 /** Monotone cubic path (Fritsch–Carlson) so the curve never overshoots the data. */
 function smoothPath(pts: [number, number][]): string {
@@ -141,7 +96,7 @@ function smoothPath(pts: [number, number][]): string {
   return d;
 }
 
-export default function LadderChart({ rungs, condition, target, mode = 'up', chances, onChange }: Props) {
+export default function LadderChart({ rungs, condition, target, mode = 'up', locked = false, onChange }: Props) {
   const words = WORDS[mode];
   const [wrapRef, width] = useWidth<HTMLDivElement>();
   const svgRef = useRef<SVGSVGElement>(null);
@@ -154,7 +109,8 @@ export default function LadderChart({ rungs, condition, target, mode = 'up', cha
 
   const compact = width < 520;
   const height = compact ? 260 : 304;
-  const pad = { left: 38, right: 22, top: 70, bottom: 34 };
+  // The left margin holds the axis title (turned on its side) as well as the percent marks.
+  const pad = { left: 52, right: 22, top: 70, bottom: 34 };
   const plotW = Math.max(10, width - pad.left - pad.right);
   const plotH = height - pad.top - pad.bottom;
   const minK = sorted[0]?.strike ?? 0;
@@ -192,6 +148,7 @@ export default function LadderChart({ rungs, condition, target, mode = 'up', cha
   };
 
   const move = (which: 'condition' | 'target', index: number) => {
+    if (locked) return;
     const last = sorted.length - 1;
     let c = ci;
     let t = ti;
@@ -240,17 +197,15 @@ export default function LadderChart({ rungs, condition, target, mode = 'up', cha
   const tr = sorted[ti];
   const xC = cr ? xOf(cr.strike) : 0;
   const xT = tr ? xOf(tr.strike) : 0;
-  const shown = chances ?? labelChances(mode, cr ? mid(cr) : null, tr ? mid(tr) : null);
-  const chanceOf = (which: 'condition' | 'target') => (shown ? shown[which === 'condition' ? 0 : 1] : null);
 
   /**
-   * Where a handle's label is drawn: centred on its handle, pushed inwards when that would run off the chart. The chance is
-   * part of the label, so it is plainly the chance of what the label says and not a reading of the dot's height.
+   * Where a handle's label is drawn: centred on its handle, pushed inwards when that would run off the chart. It names the
+   * handle (the same name a screen reader hears) and gives its level. What the curve is, and so what height the dot is at, is
+   * the axis title's to say; what the bet itself wins on is in the ticket and the shaded stretches.
    */
   const pillBox = (which: 'condition' | 'target', r: Rung | undefined, x: number) => {
     if (!r) return null;
-    const chance = chanceOf(which);
-    const text = `${(which === 'condition' ? words.first : words.second)(strikeText(r))}${chance === null ? '' : ` · ${chance}%`}`;
+    const text = levelLabel(which === 'condition' ? words.firstName : words.secondName, strikeText(r));
     const w = text.length * 6.9 + 22;
     return { which, text, w, px: Math.min(Math.max(x - w / 2, 2), width - w - 2) };
   };
@@ -268,6 +223,8 @@ export default function LadderChart({ rungs, condition, target, mode = 'up', cha
 
   const apart = Math.abs(xT - xC);
   const left = Math.min(xC, xT);
+  const zones = chartZones(mode);
+  const reach = { left: pad.left - 6, right: pad.left + plotW + 6 };
   const firstPill = pillBox('condition', cr, xC);
   const secondPill = pillBox('target', tr, xT);
   // The second label takes a row of its own when the two would touch. Measured where each is actually drawn: a label near the
@@ -291,6 +248,9 @@ export default function LadderChart({ rungs, condition, target, mode = 'up', cha
               </text>
             </g>
           ))}
+          <text className="lc-axis" transform={`translate(8 ${pad.top + plotH / 2}) rotate(-90)`} textAnchor="middle">
+            {plotH >= 190 ? AXIS_TITLE : AXIS_TITLE_SHORT}
+          </text>
           {sorted.map((r, i) =>
             labelled.has(i) ? (
               <text key={r.symbol} className="lc-xtick" x={xOf(r.strike)} y={height - 10} textAnchor="middle">
@@ -299,15 +259,16 @@ export default function LadderChart({ rungs, condition, target, mode = 'up', cha
             ) : null,
           )}
 
-          {/* The window between the two handles. A breakout wins on either side of it, so there the two sides are lit (a
-              little past the last rung each way, because it wins beyond the ladder too) and the band between reads as the loss. */}
-          {cr && tr && mode === 'breakout' && (
+          {/* The three stretches the two handles cut the chart into, each lit as what the bet does there: green where it wins, red
+              where it loses, nothing where a Stake Back gets its stake back (amber is the handles' colour alone). The outer two run a
+              little past the last price, because a bet that wins or loses beyond a level does so beyond the ladder too. */}
+          {cr && tr && (
             <>
-              <rect className="lc-window" x={pad.left - 6} y={pad.top} width={left - pad.left + 6} height={plotH} />
-              <rect className="lc-window" x={left + apart} y={pad.top} width={pad.left + plotW + 6 - (left + apart)} height={plotH} />
+              {zones.below && <rect className="lc-window" data-zone={zones.below} x={reach.left} y={pad.top} width={Math.max(0, left - reach.left)} height={plotH} />}
+              {zones.between && <rect className="lc-window" data-zone={zones.between} x={left} y={pad.top} width={apart} height={plotH} />}
+              {zones.above && <rect className="lc-window" data-zone={zones.above} x={left + apart} y={pad.top} width={Math.max(0, reach.right - (left + apart))} height={plotH} />}
             </>
           )}
-          {cr && tr && <rect className="lc-window" data-zone={mode === 'breakout' ? 'lose' : undefined} x={left} y={pad.top} width={apart} height={plotH} />}
 
           {/* the market: spread band, mid curve, and every real rung */}
           <path className="lc-band" d={band} />
@@ -327,21 +288,22 @@ export default function LadderChart({ rungs, condition, target, mode = 'up', cha
             if (!r) return null;
             const y = yOf(mid(r) ?? 0);
             const idx = which === 'condition' ? ci : ti;
-            const chance = chanceOf(which);
-            const spoken = (which === 'condition' ? words.firstSpoken : words.secondSpoken)(strikeText(r));
+            const spoken = levelSpoken(strikeText(r), mid(r));
             return (
               <g
                 key={which}
                 className={`lc-handle ${dragging === which ? 'is-dragging' : ''} ${focused === which ? 'is-focused' : ''}`}
                 data-kind={which}
-                style={{ transform: `translate(${x}px, 0)` }}
-                tabIndex={0}
+                // The whole handle, not only its grab area, is a drag: a thumb that lands on the dot must not scroll the page.
+                style={{ transform: `translate(${x}px, 0)`, touchAction: 'none' }}
+                tabIndex={locked ? -1 : 0}
                 role="slider"
                 aria-label={which === 'condition' ? words.firstName : words.secondName}
                 aria-valuemin={0}
                 aria-valuemax={sorted.length - 1}
                 aria-valuenow={idx}
-                aria-valuetext={chance === null ? spoken : `${spoken}, ${chance} percent chance`}
+                aria-valuetext={spoken}
+                aria-disabled={locked || undefined}
                 onPointerDown={onDown(which)}
                 onPointerMove={onMove(which)}
                 onPointerUp={onUp}
@@ -351,9 +313,9 @@ export default function LadderChart({ rungs, condition, target, mode = 'up', cha
                 onBlur={() => setFocused(null)}
               >
                 <line className="lc-stem" x1={0} x2={0} y1={pad.top - 6} y2={pad.top + plotH} />
-                <rect className="lc-grab" x={-18} y={pad.top - 10} width={36} height={plotH + 20} />
-                <circle className="lc-dot-ring" cx={0} cy={y} r={11} />
-                <circle className="lc-dot" cx={0} cy={y} r={6} />
+                <rect className="lc-grab" x={-22} y={pad.top - 10} width={44} height={plotH + 20} />
+                <circle className="lc-dot-ring" cx={0} cy={y} r={11} style={{ pointerEvents: 'none' }} />
+                <circle className="lc-dot" cx={0} cy={y} r={6} style={{ pointerEvents: 'none' }} />
               </g>
             );
           })}
@@ -363,6 +325,27 @@ export default function LadderChart({ rungs, condition, target, mode = 'up', cha
           {pill(secondPill, overlap ? 1 : 0)}
         </svg>
       )}
+    </div>
+  );
+}
+
+/**
+ * The key under the chart. The two colours are the ones a bet's result has everywhere else: green where it wins, red where it
+ * loses. Which price each marker is on is on the marker's own pill, and what the curve plots is the axis title, so neither is
+ * said again here. The band of buy and sell prices is left out on a phone (builder.css).
+ */
+export function ChartKey() {
+  return (
+    <div className="chart-foot">
+      <span className="foot-band">
+        <i className="lg lg-band" /> Buy and sell prices
+      </span>
+      <span>
+        <i className="lg lg-win" /> Where you win
+      </span>
+      <span>
+        <i className="lg lg-lose" /> Where you lose
+      </span>
     </div>
   );
 }

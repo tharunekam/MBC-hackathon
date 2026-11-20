@@ -6,7 +6,7 @@ import Reveal from './Reveal';
 
 /** What a bet does over one stretch of finishing prices. The same colours mean the same thing everywhere in the app. */
 type Kind = 'back' | 'lose' | 'win';
-const WORD: Record<Kind, string> = { back: 'Stake back', lose: 'Loses', win: 'Wins' };
+const WORD: Record<Kind, string> = { back: 'Stake back', lose: 'Lose', win: 'Win' };
 
 /** A bet, read left to right along where the price finishes: each piece is a result and the share of the width it takes. */
 type Pieces = readonly (readonly [Kind, number])[];
@@ -79,6 +79,14 @@ function BasketFigure() {
           <Steps key={r.name} pieces={r.pieces} left={4} right={196} zero={16 + i * 32} swing={8} nth={i} />
         ))}
       </svg>
+      {/* The same three words as under the single bets, so colour is never the only clue to a win or a loss. */}
+      <div className="fig-labels fig-key" aria-hidden="true">
+        {(['back', 'lose', 'win'] as const).map((kind) => (
+          <span key={kind} data-kind={kind}>
+            {WORD[kind]}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -86,8 +94,8 @@ function BasketFigure() {
 function Figure({ id }: { id: string }) {
   if (id === 'basket') return <BasketFigure />;
   if (id === 'range') return <Shape pieces={RANGE} label="Range: wins if the price finishes between the two levels, loses the stake if it finishes below or above them." />;
-  if (id === 'breakout') return <Shape pieces={BREAKOUT} label="Breakout: wins if the price finishes below the lower level or above the higher one, loses the stake if it finishes between them." />;
-  return <Shape pieces={PARLAY} label="Stake Back: the stake comes back if the first level fails, it loses if only the first level holds, and it wins if the target is reached." />;
+  if (id === 'breakout') return <Shape pieces={BREAKOUT} label="Breakout: wins below the lower level or above the higher one, loses between them." />;
+  return <Shape pieces={PARLAY} label="Stake Back: stake back if the first level fails, lose if only it holds, win if the target is reached." />;
 }
 
 const product = (id: string) => PRODUCTS.find((p) => p.id === id)!;
@@ -97,10 +105,10 @@ const product = (id: string) => PRODUCTS.find((p) => p.id === id)!;
  * same two levels, the opposite result), so it is a shape here without being a tab in the nav.
  */
 const SHAPES = [
-  { id: 'parlay', name: product('parlay').name, to: product('parlay').to, line: 'Win if the price reaches your target, up or down. Stake back if the first level fails, lose in between.' },
+  { id: 'parlay', name: product('parlay').name, to: product('parlay').to, line: 'Win if the price reaches your target, up or down. If the first level fails, you get your stake back.' },
   { id: 'range', name: product('range').name, to: product('range').to, line: 'Win if the price stays put and finishes between two levels.' },
   { id: 'breakout', name: 'Breakout', to: `${product('range').to}?side=out`, line: 'Win on a big move, finishing outside two levels. No need to pick a direction.' },
-  { id: 'basket', name: product('basket').name, to: product('basket').to, line: 'Several of these on different assets, placed in one step. The page shows how they move together.' },
+  { id: 'basket', name: product('basket').name, to: product('basket').to, line: 'Bets on several assets, placed in one step. The page shows how they move together.' },
 ];
 
 /** The four shapes side by side: what each pays, in one line and one picture, and a way in. */
@@ -108,9 +116,8 @@ export default function ProductShowcase() {
   return (
     <div className="wrap">
       <Reveal className="showcase-head">
-        <h2 className="h-section">
-          Four ways to bet on a price <span className="dim">Up, down, stays put or a big move. Every result is on screen before you bet</span>
-        </h2>
+        <h2 className="h-section">Four ways to bet on a price</h2>
+        <p className="h-sub">Up, down, stays put or a big move</p>
       </Reveal>
       <Reveal delay={100}>
         <ul className="showcase">
@@ -129,7 +136,7 @@ export default function ProductShowcase() {
             </li>
           ))}
         </ul>
-        <p className="fine showcase-note">Each picture shows what the bet pays against where the price finishes. Above the dotted line you are ahead, below it you are behind. Not to scale.</p>
+        <p className="fine showcase-note">Each picture shows what the bet pays against where the price finishes. Above the dotted line you are ahead, below it you are behind.</p>
       </Reveal>
     </div>
   );

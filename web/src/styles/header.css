@@ -34,21 +34,21 @@
   top: 0;
   z-index: 40;
   border-bottom: 1px solid var(--line);
-  transition: border-color 240ms var(--ease);
+  transition: border-color var(--t-med) var(--ease);
 }
-/* The blur lives on a layer behind the bar, not on the bar: a filter on the bar would trap the phone menu's fixed panel inside it. */
+/* The bar's own layer, behind its contents. Solid: a translucent one let a chart or a red bar scrolling under it show through as a
+   muddy blur behind the name and the buttons. */
 .nav::before {
   content: '';
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  transition: opacity 240ms var(--ease);
+  background: var(--bg);
+  transition: opacity var(--t-med) var(--ease);
 }
+/* The same width as the page under it (.wrap), so the name and the last control sit on the content's own edges. */
 .nav-in {
-  width: min(1200px, 100% - 48px);
+  width: min(1120px, 100% - 48px);
   height: 60px;
   margin: 0 auto;
   display: grid;
@@ -82,7 +82,7 @@
   padding: 0 12px;
   white-space: nowrap;
   font-size: 14px;
-  font-weight: 450;
+  font-weight: 500;
   color: var(--muted);
   text-decoration: none;
   transition: color var(--t-fast) var(--ease-ui);
@@ -140,18 +140,34 @@
 .bets-link.is-on {
   border-color: var(--ink);
 }
-/* What the app is talking to: "Sandbox · practice money" on one line while there is room for it. */
-.venue {
-  gap: 6px;
-}
-/* Beside the live badge it is set off by a rule, or the two read as one phrase ("Live test exchange"). */
+/* Beside the live badge the label is set off by a rule, or the two read as one phrase. */
 @media (min-width: 721px) {
-  .nav-right .live + .venue {
+  .nav-right .live + .venue-wrap {
     margin-left: 4px;
     padding-left: 12px;
     border-left: 1px solid var(--line-strong);
-    border-radius: 0;
   }
+}
+
+/* The label in the bar is a button: what it means is one tap away, where a hover tooltip is out of reach on a phone. */
+.venue {
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 4px;
+  cursor: pointer;
+}
+.venue-hint {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: max(24px, calc((100% - 1120px) / 2));
+  width: min(320px, 100% - 32px);
+  padding: 12px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--soft);
 }
 
 /* At the very top of a page the bar is part of the page: no rule and no blur until something scrolls under it. */
@@ -162,14 +178,14 @@
   opacity: 0;
 }
 
-/* A small word label, such as the Given and Reach marks on the builder's ladder. */
+/* A small word label, such as the marks beside a level in the table of prices. */
 .tag {
-  padding: 2px 6px;
+  padding: 2px 8px;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
-  line-height: 1.4;
+  line-height: 1.5;
   color: var(--muted);
 }
 
@@ -199,7 +215,7 @@
   padding: 8px 0 96px;
   background: var(--bg);
   color: var(--ink);
-  animation: sheet-in 200ms var(--ease) both;
+  animation: sheet-in var(--t-med) var(--ease) both;
 }
 @keyframes sheet-in {
   from {
@@ -212,7 +228,7 @@
 }
 .sheet-label {
   padding: 24px 0 8px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--muted);
 }
@@ -230,7 +246,6 @@
 .sheet-list b {
   font-size: 16px;
   font-weight: 500;
-  letter-spacing: -0.01em;
 }
 .sheet-list span {
   font-size: 14px;
@@ -246,17 +261,18 @@
   color: var(--accent-text);
 }
 
-/* ------------------------------------------------------------ page not found */
-/* It borrows the menu's list, so a lost visitor is offered the same places in the same words. */
+/* ------------------------------------------------------------ page not found, and a page that failed to draw */
+/* The first borrows the menu's list, so a lost visitor is offered the same places in the same words. */
 .lost code {
   overflow-wrap: anywhere;
-  font-size: 0.92em;
+  font-size: 14px;
   color: var(--soft);
 }
 .lost .sheet-list a:hover b {
   color: var(--accent-text);
 }
-.lost .row-actions {
+.lost .row-actions,
+.problem .row-actions {
   margin-top: 32px;
 }
 
@@ -269,7 +285,7 @@
     padding: 0 10px;
   }
 }
-/* The tabs fold into the menu at 1080px, not later: with the live badge and the venue label beside them, seven tabs do not
+/* The tabs fold into the menu at 1080px, not later: with the live badge and a label beside them, seven tabs do not
    fit a narrower bar without touching. (Shell.tsx closes an open menu at the same width.) */
 @media (min-width: 1081px) {
   .sheet {
@@ -289,22 +305,6 @@
     align-items: center;
   }
 }
-/* Where the bar is short of room (the last 100px before the tabs fold away, and on a phone) the venue label's two halves
-   stack, so it keeps "practice money" and costs the bar about 100px. */
-@media (min-width: 1081px) and (max-width: 1180px), (max-width: 720px) {
-  .nav-right .venue {
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 0;
-    min-width: 0;
-    font-size: 10px;
-    line-height: 1.35;
-    text-align: right;
-  }
-  .nav-right .venue-dot {
-    display: none;
-  }
-}
 @media (max-width: 720px) {
   .nav-in {
     width: calc(100% - 32px);
@@ -313,42 +313,22 @@
   .nav-right {
     min-width: 0;
   }
-  .nav-right .live {
-    display: none;
-  }
-  /* The landing page's bar already holds "Open the app" and the menu, and the page says the same thing under its first screen. */
-  .nav[data-home] .venue {
-    display: none;
-  }
 
   /* A finger needs 44px. The bar stays 60px; the controls in it grow to fill more of it. */
-  .nav .brand {
-    min-height: 44px;
+  .nav .brand,
+  .venue {
+    min-height: var(--tap);
+  }
+  .venue-hint {
+    right: 16px;
   }
   .icon-btn {
-    width: 44px;
-    height: 44px;
+    width: var(--tap);
+    height: var(--tap);
   }
   .nav .btn.btn-sm,
   .menu-btn {
     height: 44px;
-  }
-  .foot .foot-cols > div {
-    gap: 0;
-  }
-  .foot .foot-cols h2 {
-    margin-bottom: 4px;
-  }
-  .foot .foot-cols a {
-    display: inline-flex;
-    align-items: center;
-    min-height: 44px;
-  }
-}
-/* The narrowest phones have room for the label's first half only. The footer still carries the whole sentence. */
-@media (max-width: 350px) {
-  .nav-right .venue span + span {
-    display: none;
   }
 }
 @media (prefers-reduced-motion: reduce) {

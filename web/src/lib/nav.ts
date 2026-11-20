@@ -6,7 +6,7 @@ export interface Destination {
 }
 
 export interface Product extends Destination {
-  /** The name on the phone's tab bar, where a full name does not fit. */
+  /** The name for a place with little room, such as the links in a row of a table. It is the name itself until a name proves too long. */
   short: string;
   tagline: string;
 }

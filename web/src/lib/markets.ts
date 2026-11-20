@@ -9,9 +9,9 @@ import { hasPrices } from './ladders';
 /** "BTC2611200100" becomes "BTC", "NGAS2611302200" becomes "NGAS". */
 export const assetKey = (e: Pick<MarketEvent, 'ticker'>): string => e.ticker.replace(/\d.*$/, '') || e.ticker;
 
-/** What the price is of, in the exchange's own words: "Oil (Brent) price on November 20?" becomes "Oil (Brent)". */
+/** What the price is of, in the exchange's own words: "Oil (Brent) price on November 20?" becomes "Oil (Brent)". A title written as "Bitcoin · Nov 20, 6 AM" gives "Bitcoin". */
 export const assetName = (e: Pick<MarketEvent, 'title' | 'ticker'>): string => {
-  const m = /^(.*?)\s+price\b/i.exec(e.title);
+  const m = /^(.*?)(?:\s+price\b|\s+·\s)/i.exec(e.title);
   return (m?.[1] ?? e.title).trim() || assetKey(e);
 };
 

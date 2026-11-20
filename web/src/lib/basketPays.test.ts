@@ -114,14 +114,14 @@ describe('one ladder’s chart, in words', () => {
     // The same pair bought a little dearer, as a spread makes it: the parlay wins 9, not 10.
     // 8% × −4 + 10% × −4 + 20% × −14 + 21% × −4 + 21% × 15 + 20% × 5 = −0.21
     const dearer = [{ ...parlay, win: 9 }, range];
-    expect(curveWords(payoffCurves(dearer, ladders).curves[0]!, dearer, 'Bitcoin').average).toBe('At the market’s own odds this averages −$0.21: that is what the two cost over fair value.');
+    expect(curveWords(payoffCurves(dearer, ladders).curves[0]!, dearer, 'Bitcoin').average).toBe('At the market’s prices this averages −$0.21, the cost of the two bets over their fair price.');
   });
 
   it('names the legs when the ladder holds only some of the basket', () => {
     const pays = [ethRange, parlay, range, breakout];
     const { curves } = payoffCurves(pays, ladders);
     expect(curveWords(curves[1]!, pays, 'Bitcoin').line).toMatch(/^On Bitcoin, legs 2, 3 and 4 together: /);
-    expect(curveWords(curves[1]!, pays, 'Bitcoin').average).toMatch(/the three cost over fair value\.$/);
+    expect(curveWords(curves[1]!, pays, 'Bitcoin').average).toMatch(/the cost of the three bets over their fair price\.$/);
     expect(curveWords(payoffCurves([parlay, range, breakout], ladders).curves[0]!, [parlay, range, breakout], 'Bitcoin').line).toMatch(/^On Bitcoin, all 3 legs together: /);
   });
 
@@ -131,11 +131,32 @@ describe('one ladder’s chart, in words', () => {
     const btc = curveWords(curves[1]!, pays, 'Bitcoin');
     expect(btc.line).toBe('On Bitcoin, leg 2: ahead 41% of the time, stake back 18%, behind 41%. Best +$10.00, worst −$10.00.');
     // Fairly priced, this parlay averages nothing: 41% × 10 − 41% × 10. Winning 9 instead, it costs 41 cents.
-    expect(btc.average).toBe('At the market’s own odds this averages $0.00.');
+    expect(btc.average).toBe('At the market’s prices this averages $0.00.');
     const dearer = [ethRange, { ...parlay, win: 9 }];
-    expect(curveWords(payoffCurves(dearer, ladders).curves[1]!, dearer, 'Bitcoin').average).toBe('At the market’s own odds this averages −$0.41: that is what this leg costs over fair value.');
+    expect(curveWords(payoffCurves(dearer, ladders).curves[1]!, dearer, 'Bitcoin').average).toBe('At the market’s prices this averages −$0.41, the cost of this bet over its fair price.');
     const eth = curveWords(curves[0]!, pays, 'Ethereum');
     expect(eth.line).toBe('On Ethereum, leg 1: ahead 40% of the time, behind 60%. Best +$7.50, worst −$2.50.');
+  });
+
+  it('says "stake back" for the executor’s own numbers, where the refund order returns a few cents over the stake', () => {
+    // A $10 bet from the executor's plan at a 7% fee rate: the refund comes back +$0.213, not exactly zero. The caption used to
+    // count that stretch as "ahead", so the chance of making money read 59% where the market's own odds make it 41%.
+    const real: LegPay = { ...parlay, win: 9.06, lose: -10, back: 0.213 };
+    const pays = [ethRange, real];
+    const { curves } = payoffCurves(pays, ladders);
+    expect(curveWords(curves[1]!, pays, 'Bitcoin').line).toBe('On Bitcoin, leg 2: ahead 41% of the time, stake back 18%, behind 41%. Best +$9.06, worst −$10.00.');
+    // The three shares are the market's chance of each result, and add up to 100.
+    expect(41 + 18 + 41).toBe(100);
+  });
+
+  it('prints the same shares whether the stake-back figure is exactly nothing or a few cents either way', () => {
+    const say = (back?: number) => {
+      const leg: LegPay = { ...parlay, ...(back === undefined ? {} : { back }) };
+      return curveWords(payoffCurves([leg], ladders).curves[0]!, [leg], 'Bitcoin').line.replace(/\. Best.*/, '');
+    };
+    expect(say(0.213)).toBe(say());
+    expect(say(2.116)).toBe(say());
+    expect(say(-0.03)).toBe(say());
   });
 
   it('calls it level when several legs cancel out', () => {
@@ -154,8 +175,8 @@ describe('one ladder’s chart, in words', () => {
 
   it('does not call an average that is not a cost a cost', () => {
     const curve = { ...payoffCurves([parlay], ladders).curves[0]!, average: 0.12 };
-    expect(curveWords(curve, [parlay], 'Bitcoin').average).toBe('At the market’s own odds this averages +$0.12.');
-    expect(curveWords({ ...curve, average: -0.001 }, [parlay], 'Bitcoin').average).toBe('At the market’s own odds this averages $0.00.');
+    expect(curveWords(curve, [parlay], 'Bitcoin').average).toBe('At the market’s prices this averages +$0.12.');
+    expect(curveWords({ ...curve, average: -0.001 }, [parlay], 'Bitcoin').average).toBe('At the market’s prices this averages $0.00.');
   });
 });
 
@@ -164,22 +185,48 @@ describe('the sentence above the charts', () => {
   const two = payoffCurves([parlay, ethRange], ladders);
 
   it('says one chart is the whole basket when every leg is on that ladder', () => {
-    expect(paysIntro(one.curves, one.missing, 2)).toBe('What the basket nets at each price the market can finish at. Both legs are on this one market, so this is the whole basket.');
+    expect(paysIntro(one.curves, one.missing, 2)).toBe('What the basket pays at each finishing price. This one chart is the whole basket.');
     const three = payoffCurves([parlay, range, breakout], ladders);
-    expect(paysIntro(three.curves, three.missing, 3)).toContain('All 3 legs are on this one market');
+    expect(paysIntro(three.curves, three.missing, 3)).toBe('What the basket pays at each finishing price. This one chart is the whole basket.');
+    // That the legs share a market is said once on the Basket page, beside the chances, not again here.
+    expect(paysIntro(three.curves, three.missing, 3)).not.toMatch(/same market|one market/);
   });
 
   it('says plainly that separate ladders are not added together', () => {
-    expect(paysIntro(two.curves, two.missing, 2)).toBe('What the legs net at each price a market can finish at. Each market is decided by its own price, so the charts are not added together.');
+    expect(paysIntro(two.curves, two.missing, 2)).toBe('What the legs pay at each price a market can finish at. Each market is decided by its own price, so the charts are not added together.');
   });
 
   it('claims neither while a leg is still left out', () => {
     const part = payoffCurves([parlay, null], ladders);
     expect(part.missing).toEqual([1]);
-    expect(paysIntro(part.curves, part.missing, 2)).toBe('What the legs net at each price a market can finish at.');
+    expect(paysIntro(part.curves, part.missing, 2)).toBe('What the legs pay at each price a market can finish at.');
     expect(waitingWords(part.missing)).toBe('Waiting for prices on leg 2.');
     expect(waitingWords([0, 2])).toBe('Waiting for prices on legs 1 and 3.');
     expect(waitingOnLadder([1])).toBe('Leg 2 is on this market too, and joins the chart once it has prices.');
     expect(waitingOnLadder([1, 2])).toBe('Legs 2 and 3 are on this market too, and join the chart once they have prices.');
+  });
+});
+
+describe('the words of the pays panel', () => {
+  it('uses "pays", "fair price" and "the market’s prices": never "nets", "fair value" or "odds"', () => {
+    const one = payoffCurves([parlay, range], ladders);
+    const two = payoffCurves([parlay, ethRange], ladders);
+    const words = [paysIntro(one.curves, one.missing, 2), paysIntro(two.curves, two.missing, 2), paysIntro(one.curves, [1], 2), paysIntro([], [0], 1)];
+    for (const [curve, pays] of [
+      [one.curves[0]!, [parlay, range]],
+      [two.curves[0]!, [parlay, ethRange]],
+    ] as const) {
+      for (const average of [-0.68, 0.12]) {
+        const said = curveWords({ ...curve, average }, [...pays], 'Bitcoin');
+        words.push(said.line, said.average);
+      }
+    }
+    expect(words.length).toBeGreaterThan(8);
+    for (const w of words) expect(w).not.toMatch(/\bnets?\b|fair value|\bodds\b/i);
+  });
+
+  it('says what the average is in the glossary’s words', () => {
+    const one = payoffCurves([parlay, range], ladders);
+    expect(curveWords({ ...one.curves[0]!, average: -0.68 }, [parlay, range], 'Bitcoin').average).toBe('At the market’s prices this averages −$0.68, the cost of the two bets over their fair price.');
   });
 });

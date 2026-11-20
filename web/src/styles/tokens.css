@@ -9,9 +9,13 @@
   --ink: #121313;
   --soft: #2f3232;
   --muted: #5d6161;
-  --faint: #979c9c;
+  /* Decoration and disabled controls only (3:1 on the surfaces). Text a person has to read uses --muted. */
+  --faint: #858a8a;
   --line: rgba(18, 19, 19, 0.1);
   --line-strong: rgba(18, 19, 19, 0.2);
+
+  /* The keyboard ring: the ink colour, so it is 18:1 on the page in both themes and never sits amber on amber. */
+  --focus: #121313;
 
   --accent: #ffd166;
   --accent-hover: #ffdc8a;
@@ -26,27 +30,28 @@
 
   /* A stage is the flat panel a piece of the product is shown on; the panel on it is the product itself. */
   --stage: #ebefef;
-  --stage-dot: rgba(18, 19, 19, 0.09);
   --panel: #ffffff;
 
   /* The one panel that stays dark in both themes: the closing call to action. */
   --band-dark-bg: #0b0b0c;
+  --band-dark-ink: #fafafa;
 
-  --r-sm: 6px;
-  --r-md: 10px;
+  /* Corners sit on a 4 / 8 / 12 scale. Buttons, inputs and switches take --r-ctl, which is the same 8. */
+  --r-xs: 2px; /* thin bars and legend swatches */
+  --r-sm: 4px;
+  --r-md: 8px;
   --r-lg: 12px;
-  --r-ctl: 8px; /* buttons, inputs, switches */
+  --r-ctl: 8px;
   --r-pill: 999px;
 
-  /* Flat by rule: depth comes from a hairline and a change of surface, never a shadow. The names stay so nothing breaks. */
-  --shadow-xs: none;
-  --shadow: none;
-  --shadow-lift: none;
+  /* The smallest a finger target gets on a phone. */
+  --tap: 44px;
 
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-ui: cubic-bezier(0.2, 0, 0, 1);
   --t-fast: 130ms;
   --t-med: 240ms;
+  --t-slow: 400ms;
 
   --font-display: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-ui: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -62,6 +67,8 @@
   text-rendering: optimizeLegibility;
 }
 
+/* The dark palette is written twice, once for a chosen theme and once for a system that asks for dark. A CSS rule cannot name
+   both selectors, so the two blocks are copies of each other. tokens.test.ts fails when they differ. */
 :root[data-theme='dark'] {
   --bg: #0a0a0b;
   --bg-2: #0f0f10;
@@ -70,9 +77,10 @@
   --ink: #fafafa;
   --soft: #d6d6d6;
   --muted: #8b8b8d;
-  --faint: #5e5e60;
+  --faint: #6a6a6c;
   --line: rgba(255, 255, 255, 0.09);
   --line-strong: rgba(255, 255, 255, 0.18);
+  --focus: #fafafa;
 
   --accent: #ffd166;
   --accent-hover: #ffdc8a;
@@ -86,10 +94,9 @@
   --bad-soft: rgba(255, 122, 107, 0.13);
 
   --stage: #1a1a1c;
-  --stage-dot: rgba(255, 255, 255, 0.08);
   --panel: #0a0a0b;
 
-  --band-dark-bg: #141415;
+  --band-dark-bg: #1c1c1e;
   color-scheme: dark;
 }
 
@@ -102,9 +109,10 @@
     --ink: #fafafa;
     --soft: #d6d6d6;
     --muted: #8b8b8d;
-    --faint: #5e5e60;
+    --faint: #6a6a6c;
     --line: rgba(255, 255, 255, 0.09);
     --line-strong: rgba(255, 255, 255, 0.18);
+    --focus: #fafafa;
     --accent: #ffd166;
     --accent-hover: #ffdc8a;
     --accent-ink: #1a1300;
@@ -115,9 +123,13 @@
     --bad: #ff7a6b;
     --bad-soft: rgba(255, 122, 107, 0.13);
     --stage: #1a1a1c;
-    --stage-dot: rgba(255, 255, 255, 0.08);
     --panel: #0a0a0b;
-    --band-dark-bg: #141415;
+    --band-dark-bg: #1c1c1e;
     color-scheme: dark;
   }
+}
+
+/* The closing panel is dark in both themes, so its ring is the light one. */
+.closing-in {
+  --focus: var(--band-dark-ink);
 }

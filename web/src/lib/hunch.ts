@@ -95,10 +95,27 @@ function levelIdeas(rungs: Rung[], feeCoef: number, waiveMarkup: boolean): Idea[
 }
 
 /**
+ * Whether a ladder's prices are out of order: a higher level priced above a lower one, on the buy side or the sell side. "X or
+ * above" must get cheaper as X rises, so this is a stale or broken book. The same rule the executor refuses every bet on a
+ * ladder for (`ladderInversions`), read from every level with a price on that side, not only the open ones.
+ */
+export function crossed(rungs: Rung[]): boolean {
+  const sorted = [...rungs].sort((a, b) => a.strike - b.strike);
+  return sorted.some((lo, i) =>
+    sorted.slice(i + 1).some((hi) => hi.strike > lo.strike && ((lo.bid !== null && hi.bid !== null && hi.bid > lo.bid + 1e-9) || (lo.ask !== null && hi.ask !== null && hi.ask > lo.ask + 1e-9))),
+  );
+}
+
+/** Whether the exchange will take no bet on this ladder for the moment because its prices are out of order. */
+export const outOfOrder = (ev: Pick<MarketEvent, 'ladderOutOfOrder' | 'rungs'>): boolean => ev.ladderOutOfOrder || crossed(ev.rungs);
+
+/**
  * Every bet a ladder has on offer right now: the parlays the exchange's prices allow, both ways, and every range and breakout
- * that passes the same rule.
+ * that passes the same rule. None on a ladder whose prices are out of order: the executor refuses every bet on it, and the
+ * evening-out of such prices would make a difference out of nothing, a green "+6¢" on a bet that cannot be placed.
  */
 export function ideasOn(ev: MarketEvent, feeCoef: number): Idea[] {
+  if (outOfOrder(ev)) return [];
   // The market list does not say outright whether the venue waives the markup rule; a parlay it let through says so.
   const waiveMarkup = [...ev.pairs, ...(ev.down?.pairs ?? [])].some((p) => p.quote.overridden);
   return [...parlayIdeas(ev.pairs, 'up'), ...parlayIdeas(ev.down?.pairs, 'down'), ...levelIdeas(ev.rungs, feeCoef, waiveMarkup)];

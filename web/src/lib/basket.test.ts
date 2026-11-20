@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../api/client';
 import type {
+  Bet,
   BreakoutQuoteResponse,
   MarketEvent,
   QuoteResponse,
@@ -10,6 +11,8 @@ import type {
 import {
   LEG_MAX_STAKE,
   answerMatches,
+  basketAttemptKey,
+  basketsFromBets,
   basketButton,
   buildRequest,
   costNote,
@@ -18,10 +21,12 @@ import {
   defaultRange,
   firstOptions,
   legStatus,
+  legsPointAWay,
   levelsValid,
   listed,
   pickMarket,
   refusedLeg,
+  restFrom,
   secondOptions,
   seedLegs,
   splitEvenly,
@@ -69,6 +74,8 @@ function ladder(
 const BTC = ladder('BTC', 60000, 500);
 const ETH = ladder('ETH', 3000, 20);
 const SOL = ladder('SOL', 140, 2);
+/** A second Bitcoin market, closing an hour later. */
+const BTC2 = { ...ladder('BTC', 60000, 500), ticker: 'BTC2611200300' };
 const sym = (ev: MarketEvent, i: number) => ev.rungs[i]!.symbol;
 
 describe('levels', () => {
@@ -155,10 +162,16 @@ describe('markets for legs', () => {
     expect(pickMarket([BTC, ETH, SOL], [BTC.ticker, ETH.ticker])?.ticker).toBe(
       SOL.ticker,
     );
-    expect(
-      pickMarket([BTC, ETH, SOL], [BTC.ticker, ETH.ticker, SOL.ticker])?.ticker,
-    ).toBe(BTC.ticker);
+    // A market no leg uses, when there is one on an asset a leg is already on.
+    expect(pickMarket([BTC, BTC2, ETH], [BTC.ticker, ETH.ticker])?.ticker).toBe(BTC2.ticker);
     expect(pickMarket([], [])).toBeUndefined();
+  });
+
+  it('never hands back a market a leg already uses: with none left there is nothing to pick', () => {
+    // The first market would be a copy of the first leg, so Add a leg is turned off rather than copying it.
+    expect(pickMarket([BTC, ETH, SOL], [BTC.ticker, ETH.ticker, SOL.ticker])).toBeUndefined();
+    expect(pickMarket([BTC], [BTC.ticker])).toBeUndefined();
+    expect(pickMarket([BTC, ETH], [ETH.ticker, BTC.ticker, null])).toBeUndefined();
   });
 
   it('seeds a rising parlay and a range on the first two assets, or both on one asset when there is only one', () => {
@@ -226,16 +239,20 @@ describe('stakes and totals', () => {
   });
 
   it('says why the orders can cost less than the stakes, in a line that is always there', () => {
-    const sized = 'Each bet is sized to cost no more than its stake.';
+    // One sentence: the ticket used to carry this and the rule that every leg is checked as two separate grey paragraphs.
+    const sized =
+      'Each bet is sized to cost no more than its stake, and every leg is checked before any is placed.';
     expect(costNote({ stake: 30, cost: 30 })).toBe(sized);
     expect(costNote({ stake: 30, cost: 29.99 })).toBe(sized);
-    // A leg the market can only part fill is the one case where the gap is more than cents, so it is named.
+    expect(sized.split(/\s+/).length).toBeLessThanOrEqual(20);
+    // A leg the market can only part cover is the one case where the gap is more than cents, so it is named.
     expect(costNote({ stake: 30, cost: 24.2 }, [1])).toBe(
-      'The market can only fill part of leg 2 right now.',
+      'The market can only cover part of leg 2 right now, and every leg is checked before any is placed.',
     );
     expect(costNote({ stake: 45, cost: 30 }, [0, 2])).toBe(
-      'The market can only fill part of legs 1 and 3 right now.',
+      'The market can only cover part of legs 1 and 3 right now, and every leg is checked before any is placed.',
     );
+    for (const said of [sized, costNote({ stake: 30, cost: 24.2 }, [1])!]) expect(said).not.toMatch(/\bfill/i);
     expect(costNote({ stake: 30, cost: 30 }, [1])).toBe(sized);
     // It should not happen, and if it does the figure stands without a sentence that would be untrue.
     expect(costNote({ stake: 30, cost: 30.05 })).toBeNull();
@@ -372,6 +389,21 @@ describe('one leg', () => {
     const s = legStatus({ ...base, stake: big, answer: ans, shown: ans });
     expect(s.state.canPlace).toBe(false);
     expect(s.state.label).toBe(`Stake $${LEG_MAX_STAKE} at most`);
+  });
+
+  it('caps a leg at the hosted demo’s $25 until the venue says what its own cap is, and then at that', () => {
+    expect(LEG_MAX_STAKE).toBe(25);
+    const at = (stake: number, maxStake?: number | null) => {
+      const ans = parlayAnswer(a, b, stake);
+      return legStatus({ ...base, stake, answer: ans, shown: ans, maxStake });
+    };
+    // Unknown cap: the default holds. $26 is over it.
+    expect(at(26).state.canPlace).toBe(false);
+    expect(at(26).state.label).toBe('Stake $25 at most');
+    expect(at(26, null).state.label).toBe('Stake $25 at most');
+    // A venue that caps at $100 lets $26 through, and one that caps at $10 turns away $11 and says $10.
+    expect(at(26, 100).state.canPlace).toBe(true);
+    expect(at(11, 10).state.label).toBe('Stake $10 at most');
   });
 
   it('reads a range answer with its own figures', () => {
@@ -662,6 +694,81 @@ describe('the request', () => {
     legs[1] = { ...legs[1]!, b: null };
     expect(() => buildRequest('', legs)).toThrow();
   });
+
+  it('carries each leg’s own price limit: the price its quote showed plus three cents, as a single bet does', () => {
+    const [first, second] = seedLegs([BTC, ETH], 20);
+    const lv = defaultLevels(ETH, 'breakout')!;
+    const legs = [first!, { ...second!, kind: 'breakout' as const, a: lv.a, b: lv.b }];
+    const req = buildRequest('', legs, 'primary', [0.462, 0.3081]);
+    expect(req.legs[0]).toMatchObject({ product: 'parlay', maxPrice: 0.492 });
+    expect(req.legs[1]).toMatchObject({ product: 'breakout', maxPrice: 0.3381 });
+    // The same two prices on a range leg.
+    const range = buildRequest('', seedLegs([BTC, ETH], 20), 'primary', [0.4, 0.6]);
+    expect(range.legs[1]).toMatchObject({ product: 'range', maxPrice: 0.63 });
+  });
+
+  it('a leg with no usable price carries no limit of its own, so the executor’s applies, and the ceiling stays under $1', () => {
+    const legs = seedLegs([BTC, ETH], 20);
+    const req = buildRequest('', legs, 'primary', [null, undefined]);
+    expect('maxPrice' in req.legs[0]!).toBe(false);
+    expect('maxPrice' in req.legs[1]!).toBe(false);
+    expect('maxPrice' in buildRequest('', legs).legs[0]!).toBe(false);
+    expect((buildRequest('', legs, 'primary', [0.99, 0.985]).legs as { maxPrice: number }[]).every((l) => l.maxPrice < 1)).toBe(true);
+  });
+
+  it('keeps one attempt’s id when only the price limits or the name change, and gives a different basket a new one', () => {
+    const legs = seedLegs([BTC, ETH], 20);
+    const a = buildRequest('Majors', legs, 'primary', [0.46, 0.4]);
+    // The price ticked between an answer that was lost and the retry; the person also changed the name: the same bets.
+    const b = buildRequest('Majors, renamed', legs, 'primary', [0.47, 0.41]);
+    expect(basketAttemptKey(b)).toBe(basketAttemptKey(a));
+    expect(basketAttemptKey(buildRequest('', legs))).toBe(basketAttemptKey(a));
+    // A different stake, level or kind is a different basket.
+    expect(basketAttemptKey(buildRequest('', legs.map((l) => ({ ...l, stake: l.stake + 1 }))))).not.toBe(basketAttemptKey(a));
+    expect(basketAttemptKey(buildRequest('', [legs[0]!, { ...legs[1]!, kind: 'breakout' }]))).not.toBe(basketAttemptKey(a));
+  });
+});
+
+const tagged = (index: number, over: Partial<Bet> = {}): Bet =>
+  ({
+    id: `bk-${index}`,
+    createdAt: '2026-11-20T10:00:00.000Z',
+    status: 'open',
+    clientRequestId: 'attempt-0001',
+    basket: { id: 'bk-1', name: 'Mixed', index, size: 3 },
+    legs: [],
+    ...over,
+  }) as unknown as Bet;
+
+describe('a basket found in the list of bets', () => {
+  it('is described as the executor answers for it, by the id it was placed under', () => {
+    const [found] = basketsFromBets([tagged(2), tagged(0), tagged(1)]);
+    expect(found!.basket).toEqual({ id: 'bk-1', name: 'Mixed', size: 3, failed: null, clientRequestId: 'attempt-0001' });
+    expect(found!.bets.map((b) => b.id)).toEqual(['bk-0', 'bk-1', 'bk-2']);
+  });
+
+  it('names the leg that did not end open, from the bet’s own status and note', () => {
+    const [found] = basketsFromBets([tagged(0), tagged(1), tagged(2, { status: 'unwound', note: 'The second order could not be completed.' })]);
+    expect(found!.basket.failed).toEqual({ index: 2, code: 'unwound', message: 'The second order could not be completed.' });
+    // A leg that is settled or sold back by now is not a failed one.
+    expect(basketsFromBets([tagged(0, { status: 'settled' }), tagged(1, { status: 'cashed_out' }), tagged(2)])[0]!.basket.failed).toBeNull();
+  });
+
+  it('says nothing of a basket with legs missing or still being placed: only the executor’s own answer knows why', () => {
+    // Two of three: the third may be on its way, or may never have been placed.
+    expect(basketsFromBets([tagged(0), tagged(1)])).toEqual([]);
+    expect(basketsFromBets([tagged(0), tagged(1), tagged(2, { status: 'placing' })])).toEqual([]);
+  });
+
+  it('keeps baskets apart, and leaves out bets that belong to none', () => {
+    const other = (i: number) => tagged(i, { id: `bk-x${i}`, clientRequestId: 'attempt-0002', basket: { id: 'bk-2', index: i, size: 2 } });
+    const found = basketsFromBets([tagged(0), other(0), { ...tagged(0), id: 'single', basket: undefined } as Bet, tagged(1), other(1), tagged(2)]);
+    expect(found.map((f) => [f.basket.id, f.basket.clientRequestId, f.bets.length])).toEqual([
+      ['bk-1', 'attempt-0001', 3],
+      ['bk-2', 'attempt-0002', 2],
+    ]);
+    expect(found[1]!.basket.name).toBeNull();
+  });
 });
 
 describe('answers from the executor', () => {
@@ -684,5 +791,42 @@ describe('answers from the executor', () => {
   it('counts legs on crypto assets', () => {
     expect(cryptoLegs([BTC, ETH, undefined])).toBe(2);
     expect(cryptoLegs([ladder('NGAS', 3, 1, 'Energy'), BTC])).toBe(1);
+  });
+
+  it('says crypto legs "that point the same way" win together more often only when every crypto leg points a way', () => {
+    const crypto = (kind: 'up' | 'down' | 'range' | 'breakout') => ({ kind, crypto: true });
+    // Two rising or falling Stake Backs on separate crypto markets: the sentence is right (the joint chance does lean high).
+    expect(legsPointAWay([crypto('up'), crypto('up')])).toBe(true);
+    expect(legsPointAWay([crypto('up'), crypto('down')])).toBe(true);
+    // A Range or a Breakout points nowhere: BTC range with ETH rising wins together 1.3% of the time, against 8.2% if unrelated.
+    expect(legsPointAWay([crypto('up'), crypto('range')])).toBe(false);
+    expect(legsPointAWay([crypto('breakout'), crypto('down')])).toBe(false);
+    expect(legsPointAWay([crypto('range'), crypto('breakout')])).toBe(false);
+    // Legs on other assets are not part of what the sentence says.
+    expect(legsPointAWay([crypto('up'), crypto('up'), { kind: 'range', crypto: false }])).toBe(true);
+    expect(legsPointAWay([])).toBe(true);
+  });
+});
+
+describe('placing the rest of a basket that was placed in part', () => {
+  const res = (failed: { index: number; code: string } | null, bets: { index: number; status: string }[]) =>
+    ({
+      basket: { id: 'k', name: null, size: 4, failed: failed ? { ...failed, message: 'x' } : null },
+      bets: bets.map((b) => ({ id: `b${b.index}`, status: b.status, basket: { id: 'k', index: b.index, size: 4 } })),
+    }) as unknown as Parameters<typeof restFrom>[0];
+
+  it('starts again at a leg that bought nothing or was sold straight back', () => {
+    expect(restFrom(res({ index: 1, code: 'failed' }, [{ index: 0, status: 'open' }, { index: 1, status: 'failed' }]))).toBe(1);
+    expect(restFrom(res({ index: 2, code: 'unwound' }, [{ index: 0, status: 'open' }, { index: 1, status: 'open' }, { index: 2, status: 'unwound' }]))).toBe(2);
+    // A leg refused before any bet exists is not in the list at all.
+    expect(restFrom(res({ index: 1, code: 'market_closed' }, [{ index: 0, status: 'open' }]))).toBe(1);
+  });
+
+  it('starts after a leg that is on the books with only its first order filled, so it is not bought twice', () => {
+    expect(restFrom(res({ index: 1, code: 'unhedged' }, [{ index: 0, status: 'open' }, { index: 1, status: 'unhedged' }]))).toBe(2);
+  });
+
+  it('is the start for a basket that was placed whole', () => {
+    expect(restFrom(res(null, []))).toBe(0);
   });
 });

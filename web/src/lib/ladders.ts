@@ -71,12 +71,28 @@ export function across(strike: number, lowest: number, highest: number): number 
 }
 
 /**
- * Which price labels fit under the chart. `xs` are the labels' positions in pixels, left to right. A label is kept when
- * it is at least `gap` from the last one kept; the last rung is always labelled, taking its neighbour's place if they
- * would be closer than `lastGap`.
+ * Which price labels fit under the chart. `xs` are the labels' positions in pixels, left to right.
+ *
+ * Evenly spaced rungs (nearly every ladder) are labelled at one steady stride, every second or third one, so the ticks along
+ * an axis read as a scale and not as a list with a gap in it. The last rung is labelled too when it lands on the stride, or
+ * when there is room for it (`lastGap`) beyond the last label kept; it is never forced in next to its neighbour.
+ *
+ * Rungs bunched unevenly (a far strike listed beside a cluster) are measured by their real positions instead: a label is
+ * kept when it is at least `gap` from the last one kept, and the last rung is always labelled, taking its neighbour's place
+ * if they would be closer than `lastGap`.
  */
 export function spacedLabels(xs: number[], gap = 68, lastGap = 56): Set<number> {
   const kept = new Set<number>();
+  const end = xs.length - 1;
+  if (end < 0) return kept;
+  const steps = xs.slice(1).map((x, i) => x - xs[i]!);
+  if (steps.length > 0 && Math.max(...steps) <= Math.min(...steps) * 1.25 && Math.min(...steps) > 0) {
+    const stride = Math.max(1, Math.ceil(gap / Math.min(...steps)));
+    for (let i = 0; i <= end; i += stride) kept.add(i);
+    const lastKept = Math.max(...kept);
+    if (lastKept !== end && xs[end]! - xs[lastKept]! >= lastGap) kept.add(end);
+    return kept;
+  }
   let lastKept = -1;
   xs.forEach((x, i) => {
     if (lastKept < 0 || x - xs[lastKept]! >= gap) {
@@ -84,8 +100,7 @@ export function spacedLabels(xs: number[], gap = 68, lastGap = 56): Set<number> 
       lastKept = i;
     }
   });
-  const end = xs.length - 1;
-  if (end >= 0 && !kept.has(end)) {
+  if (!kept.has(end)) {
     if (xs[end]! - xs[lastKept]! < lastGap) kept.delete(lastKept);
     kept.add(end);
   }

@@ -2,8 +2,8 @@
  * A revealed call as a picture someone can post: 1200 by 630, the size link previews use.
  *
  * `shareCardSvg` is plain text in, an SVG document out, so it can be tested without a browser. `savePng` draws that
- * SVG on a canvas and hands the person a PNG. Fonts are the device's own (a picture cannot load ours), which is why the
- * card names generic families.
+ * SVG on a canvas and hands the person a PNG. A picture cannot load the app's fonts, so it names the system sans-serif
+ * stack; the name is set the way the header sets it (wide, spaced, capitals) so the two read as one brand.
  */
 
 export interface ShareCard {
@@ -12,8 +12,6 @@ export interface ShareCard {
   won: boolean;
   /** The proof page's own sentence: "Given BTC at $62,500 or above, will it reach $63,500?" */
   question: string;
-  /** The result in the product's words, as the page shows it ("Finished inside"). Defaults to a parlay's. */
-  result?: string;
   /** Already formatted, as the proof page shows them: "41¢", "44¢", "+0.59". */
   fair: string;
   paid: string;
@@ -21,14 +19,29 @@ export interface ShareCard {
   edgeGood: boolean;
   /** "Nov 18, 2026" */
   when: string;
-  /** "Solana devnet" or "Test chain": the card says what it is. */
-  network: string;
-  /** Where to check it, without the scheme: "given.example.com/verify/5P8xNp…" */
+  /** True when both records of the call are on Solana. Only then may the picture say so. */
+  onSolana: boolean;
+  /** Where to check it, without the scheme: "given.example.com/verify/5P8xNp…". Printed whole: a cut address opens nothing. */
   link: string;
 }
 
 export const CARD_WIDTH = 1200;
 export const CARD_HEIGHT = 630;
+
+/**
+ * The app's own colours as literals, because a picture has no stylesheet. They are the dark theme's values in
+ * styles/tokens.css: change one there and change it here.
+ */
+export const CARD_COLORS = {
+  page: '#0a0a0b',
+  card: '#121213',
+  ink: '#fafafa',
+  muted: '#8b8b8d',
+  line: '#2a2a2b',
+  accent: '#ffd166',
+  good: '#4ade97',
+  bad: '#ff7a6b',
+} as const;
 
 const esc = (s: string): string => s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[ch]!);
 
@@ -48,48 +61,65 @@ export function wrap(text: string, max: number): string[] {
   return lines;
 }
 
-/** Shortens the middle of a long link so it fits on one line: the host and the start of the signature stay readable. */
-export function fitLink(link: string, max = 56): string {
-  return link.length <= max ? link : `${link.slice(0, max - 1)}…`;
+/**
+ * Splits an address with no spaces into lines of at most `max` characters, so that all of it is printed. It is cut where
+ * the address allows (after a slash) when that is near the end of the line, and anywhere otherwise: a signature is one
+ * long word.
+ */
+export function splitLink(link: string, max = 74): string[] {
+  const lines: string[] = [];
+  let rest = link;
+  while (rest.length > max) {
+    const slash = rest.lastIndexOf('/', max);
+    const at = slash > max - 12 ? slash + 1 : max;
+    lines.push(rest.slice(0, at));
+    rest = rest.slice(at);
+  }
+  if (rest) lines.push(rest);
+  return lines;
 }
 
-const SERIF = "Georgia, 'Times New Roman', serif";
-const SANS = "-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif";
-const MONO = "ui-monospace, Menlo, Consolas, monospace";
+const SANS = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
+const MONO = 'ui-monospace, Menlo, Consolas, monospace';
+const FIGURES = 'font-variant-numeric: tabular-nums';
 
 export function shareCardSvg(c: ShareCard): string {
-  const verdictColor = c.won ? '#1e6c43' : '#a83a25';
-  // Two lines at most, which every real ladder's question fits. A longer one ends in an ellipsis rather than pushing
+  const k = CARD_COLORS;
+  const verdictColor = c.won ? k.good : k.bad;
+  // Two lines at most, which every real market's question fits. A longer one ends in an ellipsis rather than pushing
   // the numbers into the footer.
-  let lines = wrap(c.question, 44);
-  if (lines.length > 2) lines = [lines[0]!, `${lines[1]!.slice(0, 41)}…`];
-  const qTop = 318;
-  const numsTop = qTop + (lines.length - 1) * 56 + 86;
-  const cell = (x: number, label: string, value: string, color = '#17150f') =>
-    `<text x="${x}" y="${numsTop}" font-family="${SANS}" font-size="20" fill="#6b6558">${esc(label)}</text>` +
-    `<text x="${x}" y="${numsTop + 44}" font-family="${MONO}" font-size="38" font-weight="600" fill="${color}">${esc(value)}</text>`;
+  let lines = wrap(c.question, 46);
+  if (lines.length > 2) lines = [lines[0]!, `${lines[1]!.slice(0, 43)}…`];
+  // The question is centred in the band between the result and the numbers, whatever its length; the numbers sit at a
+  // fixed height, so two cards of different questions line up.
+  const qTop = lines.length === 1 ? 342 : 318;
+  const numsTop = 420;
+  const cell = (x: number, label: string, value: string, color: string = k.ink) =>
+    `<text x="${x}" y="${numsTop}" font-family="${SANS}" font-size="20" fill="${k.muted}">${esc(label)}</text>` +
+    `<text x="${x}" y="${numsTop + 44}" font-family="${SANS}" font-size="40" font-weight="500" style="${FIGURES}" fill="${color}">${esc(value)}</text>`;
+  const linkLines = splitLink(c.link);
+  // Only what the proof page checks: the call was sealed before it was revealed. The result is the exchange's, not Solana's.
+  // A call that is not on Solana has no record to check, so the picture claims no seal and does not tell anyone to check.
+  const checkLine = c.onSolana ? 'Sealed on Solana before it was revealed. Check it yourself:' : 'Recorded by Given, not on Solana:';
 
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}">`,
-    `<rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="#f5f1e8"/>`,
-    `<rect x="40" y="40" width="1120" height="550" rx="28" fill="#fffdf7" stroke="#17150f" stroke-opacity="0.12"/>`,
-    // brand
-    `<rect x="88" y="84" width="34" height="34" rx="9" fill="#17150f"/>`,
-    `<path d="M97 108 a8 8 0 0 1 16 0" fill="none" stroke="#f0ac2b" stroke-width="3.5" stroke-linecap="round"/>`,
-    `<text x="136" y="111" font-family="${SERIF}" font-size="30" fill="#17150f">Given</text>`,
-    `<text x="1112" y="109" text-anchor="end" font-family="${SANS}" font-size="20" fill="#6b6558">${esc(c.network)} · ${esc(c.when)}</text>`,
+    `<rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="${k.page}"/>`,
+    `<rect x="40.5" y="40.5" width="1119" height="549" rx="12" fill="${k.card}" stroke="${k.line}"/>`,
+    // The name, set as the header sets it: wide, spaced, capitals.
+    `<text x="88" y="106" font-family="${SANS}" font-size="22" font-weight="500" letter-spacing="5.3" fill="${k.ink}">GIVEN</text>`,
+    `<text x="1112" y="106" text-anchor="end" font-family="${SANS}" font-size="20" fill="${k.muted}">${c.onSolana ? 'Recorded on Solana · ' : ''}${esc(c.when)}</text>`,
     // who and what happened
-    `<text x="88" y="178" font-family="${SANS}" font-size="20" font-weight="600" letter-spacing="2.4" fill="#6b6558">${esc(c.handle.toUpperCase())}</text>`,
-    `<text x="86" y="258" font-family="${SERIF}" font-size="78" fill="${verdictColor}">${c.won ? 'Called it' : 'Missed'}</text>`,
-    ...lines.map((l, i) => `<text x="88" y="${qTop + i * 56}" font-family="${SERIF}" font-size="44" fill="#17150f">${esc(l)}</text>`),
-    cell(88, 'Fair price at the time', c.fair),
-    cell(368, 'Paid', c.paid),
-    cell(568, 'Result', c.result ?? (c.won ? 'Target reached' : 'Fell short'), verdictColor),
-    cell(988, 'Edge', c.edge, c.edgeGood ? '#1e6c43' : '#a83a25'),
+    `<text x="88" y="170" font-family="${SANS}" font-size="20" font-weight="500" letter-spacing="1.6" fill="${k.muted}">${esc(c.handle.toUpperCase())}</text>`,
+    `<text x="86" y="250" font-family="${SANS}" font-size="72" font-weight="500" letter-spacing="-1.4" fill="${verdictColor}">${c.won ? 'Won' : 'Lost'}</text>`,
+    ...lines.map((l, i) => `<text x="88" y="${qTop + i * 48}" font-family="${SANS}" font-size="38" fill="${k.ink}">${esc(l)}</text>`),
+    cell(88, 'Fair price per $1', c.fair),
+    cell(488, 'You paid per $1', c.paid),
+    cell(888, 'Edge per $1', c.edge, c.edgeGood ? k.good : k.bad),
     // how to check it
-    `<line x1="88" y1="528" x2="1112" y2="528" stroke="#17150f" stroke-opacity="0.12"/>`,
-    // The date sits at the top with the network: down here a long link would run into it.
-    `<text x="88" y="562" font-family="${SANS}" font-size="19" fill="#6b6558">Committed on Solana before the result. Check it: ${esc(fitLink(c.link))}</text>`,
+    `<line x1="88" y1="478.5" x2="1112" y2="478.5" stroke="${k.line}"/>`,
+    `<text x="88" y="512" font-family="${SANS}" font-size="22" fill="${k.muted}">${checkLine}</text>`,
+    ...linkLines.map((l, i) => `<text x="88" y="${542 + i * 26}" font-family="${MONO}" font-size="20" fill="${k.accent}">${esc(l)}</text>`),
     `</svg>`,
   ].join('');
 }

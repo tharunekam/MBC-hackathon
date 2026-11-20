@@ -8,7 +8,7 @@
   padding: 0 6px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-sm);
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 1;
   color: var(--muted);
@@ -21,7 +21,7 @@
 
 /* ------------------------------------------------------------ my bets */
 .bets {
-  --bl-cols: minmax(0, 1fr) 112px 152px 168px;
+  --bl-cols: minmax(0, 1fr) 112px 152px 232px;
   --bl-pad: 20px;
 }
 
@@ -51,33 +51,35 @@
   font-weight: 500;
   line-height: 1.15;
   letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
 }
 .bl-unit {
-  font-size: 12.5px;
+  font-size: 12px;
+  line-height: 1.4;
   color: var(--muted);
+}
+/* The filters, and above the list the column names the rows line up under (a row of their own, not beside the filters). */
+.bl-bar {
+  margin-bottom: 12px;
 }
 .bl-bar .switch {
   justify-self: start;
 }
-
-/* Filters, and the column names the rows line up under. */
-.bl-bar {
+.bl-cols {
   display: grid;
   grid-template-columns: var(--bl-cols);
   align-items: end;
-  margin-bottom: 12px;
+  margin-bottom: 4px;
   /* The rows sit inside a panel's border and padding: the column names take the same inset so they line up. */
   padding-inline: calc(var(--bl-pad) + 1px);
 }
-.bl-bar .switch {
-  margin-left: calc(-1 * (var(--bl-pad) + 1px));
-}
-.bl-cols {
-  display: contents;
+/* The first column is the bet itself, which has no name above it: an empty item holds its place. */
+.bl-cols::before {
+  content: '';
 }
 .bl-cols span {
   padding: 0 var(--bl-pad) 2px 0;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--muted);
 }
@@ -89,9 +91,22 @@
   padding-right: 0;
   text-align: right;
 }
+/* The count beside a filter is muted at full strength (it was 0.72 opacity, under 4.5:1); the chosen filter keeps its own ink. */
 .bl-count {
   margin-left: 4px;
-  opacity: 0.72;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.bl-bar .switch button.is-on .bl-count {
+  color: inherit;
+}
+/* The reveal rule, said once above the list. */
+.bl-rule {
+  margin-bottom: 12px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--muted);
 }
 
 .bets-list {
@@ -100,7 +115,7 @@
 }
 .bl-panel {
   border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  border-radius: var(--r-lg);
   background: var(--surface);
 }
 
@@ -128,20 +143,23 @@
   gap: 8px;
 }
 .bl-leg {
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--soft);
 }
 .bl-title {
   margin-top: 4px;
-  font-size: 17px;
-  font-weight: 560;
+  font-size: 16px;
+  font-weight: 600;
   line-height: 1.3;
   letter-spacing: -0.01em;
   overflow-wrap: anywhere;
 }
 .bl-meta {
-  font-size: 13px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 12px;
+  font-size: 14px;
   line-height: 1.4;
   color: var(--muted);
 }
@@ -153,8 +171,9 @@
 }
 .bl-fig b {
   font-size: 16px;
-  font-weight: 560;
+  font-weight: 600;
   line-height: 1.3;
+  font-variant-numeric: tabular-nums;
 }
 .bl-res,
 .bl-stake {
@@ -165,9 +184,10 @@
   padding-right: 32px;
 }
 .bl-res small {
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 1.35;
   color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 .bl-pending {
   color: var(--soft);
@@ -185,7 +205,7 @@
   white-space: nowrap;
 }
 .bl-k {
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--muted);
 }
@@ -198,7 +218,7 @@
   padding: 0 8px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-sm);
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
   color: var(--soft);
@@ -207,7 +227,7 @@
   content: '';
   width: 6px;
   height: 6px;
-  border-radius: 1px;
+  border-radius: var(--r-pill);
   background: currentColor;
 }
 .bl-chip[data-outcome='open'] {
@@ -228,42 +248,70 @@
   color: var(--accent-text);
 }
 .bl-chip[data-outcome='failed'],
-.bl-chip[data-outcome='unwound'] {
+.bl-chip[data-outcome='placing'] {
   color: var(--muted);
 }
-
-/* Selling an open bet back: the price, then the two buttons */
-.bl-cash-actions {
-  display: flex;
-  flex: none;
-  gap: 8px;
+/* Money is at risk, or was lost: said in the loss colour, with the words beside it. */
+.bl-chip[data-outcome='unprotected'],
+.bl-chip[data-outcome='unwound'] {
+  color: var(--bad);
+}
+/* An order nobody could confirm: not known to be a loss, so the attention colour, with the words beside it. */
+.bl-chip[data-outcome='unconfirmed'] {
+  color: var(--accent-text);
+}
+/* Check results stays in the page while it works (it is aria-disabled, not disabled, so keyboard focus is not lost). */
+.page-head .btn-ghost[aria-disabled='true'] {
+  color: var(--muted);
+  cursor: progress;
 }
 
-/* What to do next with a settled bet */
+/* What became of a finished bet: plain lines under the figures, no band of their own. */
 .bl-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 24px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 4px;
+  max-width: 68ch;
   font-size: 14px;
   line-height: 1.45;
   color: var(--muted);
 }
+.bl-foot:focus {
+  outline: none;
+}
 .bl-foot b {
-  font-weight: 500;
+  font-weight: 600;
+  color: var(--soft);
+}
+/* Something the last button press could not do, right above the buttons of the row it belongs to. */
+.bl-err {
+  max-width: 68ch;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--bad);
+}
+
+/* The bottom bar of a bet: the details on the left, what can be done with it on the right. */
+.bl-bottom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
 }
 .bl-btn {
   flex: none;
   height: 36px;
   padding: 0 14px;
   font-size: 14px;
+  order: 2;
 }
 .bl-links {
   display: flex;
   flex: none;
   gap: 20px;
+  order: 2;
 }
 .bl-links a {
   font-size: 14px;
@@ -283,11 +331,12 @@
   align-items: center;
   gap: 8px;
   justify-self: start;
+  order: 1;
   height: 28px;
   padding: 0;
   border: 0;
   background: none;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--muted);
   cursor: pointer;
@@ -301,7 +350,7 @@
   border-right: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor;
   transform: translateY(-2px) rotate(45deg);
-  transition: transform 160ms var(--ease);
+  transition: transform var(--t-fast) var(--ease);
 }
 .bl-expand[aria-expanded='true'] .bl-caret {
   transform: translateY(1px) rotate(225deg);
@@ -309,7 +358,6 @@
 .bl-detail:not([hidden]) {
   display: grid;
   gap: 12px;
-  margin-top: -4px;
   padding: 12px 16px;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
@@ -337,8 +385,9 @@
   color: var(--soft);
 }
 .bl-fill {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 .bl-id {
   font-family: var(--font-mono);
@@ -372,7 +421,7 @@ a.bl-id {
   min-width: 0;
 }
 
-/* A basket: one panel, its legs inside */
+/* A basket: one panel, its bets inside */
 .bl-bhead {
   display: flex;
   align-items: flex-end;
@@ -394,6 +443,9 @@ a.bl-id {
   font-weight: 500;
   line-height: 1.2;
   letter-spacing: -0.02em;
+  /* A long name wraps instead of pushing the basket's figures off the page. */
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .bl-bfigs {
   display: flex;
@@ -406,28 +458,33 @@ a.bl-id {
 }
 .bl-bfigs dd {
   font-size: 16px;
-  font-weight: 560;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 .bl-legs > li + li {
   border-top: 1px solid var(--line);
 }
 
-/* Loading, failure, nothing yet */
+/* Loading, failure, nothing yet. The placeholders are the height of what replaces them, so the first row does not jump. */
 .bl-skels {
   display: grid;
   gap: 12px;
 }
 .bl-skel {
-  border-radius: var(--r-md);
+  border-radius: var(--r-lg);
   background: var(--bg-2);
   animation: bl-pulse 1.6s ease-in-out infinite;
 }
 .bl-skel-sum {
-  height: 96px;
+  height: 112px;
   margin-bottom: 20px;
 }
+.bl-skel-bar {
+  height: 40px;
+  margin-bottom: -4px;
+}
 .bl-skel-row {
-  height: 112px;
+  height: 150px;
 }
 @keyframes bl-pulse {
   50% {
@@ -440,7 +497,7 @@ a.bl-id {
   gap: 8px;
   padding: 32px;
   border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  border-radius: var(--r-lg);
   background: var(--surface);
 }
 .bl-empty .h-card {
@@ -516,16 +573,11 @@ a.bl-id {
     border-top: 1px solid var(--line);
   }
   .bl-sum dd:not(.bl-unit) {
-    font-size: 22px;
-  }
-  .bl-bar {
-    display: block;
-    padding-inline: 0;
+    font-size: 20px;
   }
   .bl-bar .switch {
     display: flex;
     width: 100%;
-    margin-left: 0;
   }
   .bl-stake {
     justify-items: start;
@@ -534,13 +586,16 @@ a.bl-id {
   }
   .bl-bar .switch button {
     flex: 1;
+    padding: 0 8px;
+    white-space: nowrap;
   }
   .bl-cols {
     display: none;
   }
-  /* A row stacks: the bet, then its three figures side by side, each with its own label. */
+  /* A row stacks: the bet, then its three figures in one line, each with its own label. The result takes what is left. */
   .bl-line {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: auto auto minmax(0, 1fr);
+    column-gap: 24px;
     row-gap: 12px;
   }
   .bl-what {
@@ -558,20 +613,18 @@ a.bl-id {
     overflow: visible;
     clip: auto;
   }
-  .bl-foot {
-    flex-direction: column;
-    align-items: flex-start;
-  }
   /* Fingers: everything that can be pressed in a row is at least 44px tall. */
   .bl-bar .switch button,
   .bl-btn {
     height: 44px;
   }
   .bl-btn {
+    min-width: 44px;
     padding: 0 16px;
   }
   .bl-expand {
     height: 44px;
+    min-width: 44px;
     /* Taller to press, without pushing the rows of the bet further apart. */
     margin: -8px 0;
   }
@@ -610,6 +663,22 @@ a.bl-id {
   .bl-start li + li a {
     padding: 12px 0;
   }
+  .bl-skel-sum {
+    height: 176px;
+  }
+}
+
+/* On the narrowest phones the result has no room beside two other figures: it takes a line of its own. From 361px up it stays beside
+   them, its caption wrapping in its own column, which takes a finished bet's card from about 360px to about 300px. */
+@media (max-width: 360px) {
+  .bl-line {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .bl-res {
+    grid-column: 1 / -1;
+    justify-items: start;
+    text-align: left;
+  }
 }
 
 /* ------------------------------------------------------------ proof of a call */
@@ -618,7 +687,7 @@ a.bl-id {
   gap: 20px;
   padding: 32px;
   border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  border-radius: var(--r-lg);
   background: var(--surface);
 }
 .pc-top {
@@ -635,7 +704,7 @@ a.bl-id {
 }
 .pc-verdict {
   font-family: var(--font-display);
-  font-size: clamp(37px, 5.9vw, 54px);
+  font-size: clamp(32px, 5.9vw, 48px);
   line-height: 1;
   letter-spacing: -0.028em;
   color: var(--good);
@@ -667,13 +736,13 @@ a.bl-id {
   border-left: 1px solid var(--line);
 }
 .pc-nums dt {
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--muted);
 }
 .pc-nums dd {
   font-family: var(--font-display);
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 500;
   line-height: 1.2;
   letter-spacing: -0.02em;
@@ -695,7 +764,7 @@ a.bl-id {
   margin-top: 24px;
   padding: 32px;
   border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  border-radius: var(--r-lg);
   background: var(--surface);
 }
 .verify > p {
@@ -730,11 +799,11 @@ a.bl-id {
 }
 .checks b {
   font-weight: 500;
-  font-size: 15px;
+  font-size: 16px;
 }
 .checks p {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
 }
 .verify .links {
   display: flex;
@@ -751,7 +820,7 @@ a.bl-id {
   gap: 8px;
   padding: 32px;
   border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  border-radius: var(--r-lg);
   background: var(--surface);
   color: var(--muted);
 }

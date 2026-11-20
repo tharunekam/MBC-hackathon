@@ -14,7 +14,7 @@ import { shapeOf, type JointLeg } from './together';
  * decided by different prices and are never added together: each ladder is its own chart and its own sentence.
  */
 
-/** A leg as the payoff curve takes it: its ladder, its shape, and what it nets each way. Null while it has no levels or no figures. */
+/** A leg as the payoff curve takes it: its ladder, its shape, and what it pays each way. Null while it has no levels or no figures. */
 export function legPay(leg: JointLeg | null, status: Pick<LegStatus, 'win' | 'lose' | 'back'> | undefined): LegPay | null {
   if (!leg || !status || status.win === null || status.lose === null) return null;
   return { ticker: leg.ticker, shape: leg.shape, win: status.win, lose: status.lose, ...(status.back ? { back: status.back } : {}) };
@@ -96,7 +96,7 @@ const COUNT_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six'];
 export interface CurveWords {
   /** "On Bitcoin, both legs together: ahead 41% of the time, behind 59%. Best +$16.00, worst −$14.00." */
   line: string;
-  /** The quiet line: what the legs average at the market's own odds, which is what they cost over fair value. */
+  /** The quiet line: what the legs average at the market's own prices, which is what they cost over their fair price. */
   average: string;
 }
 
@@ -115,11 +115,11 @@ export function curveWords(curve: LadderCurve, pays: (LegPay | null)[], asset: s
   const shares = `ahead ${ahead} of the time${curve.level > 1e-9 ? `, ${levelName} ${level}` : ''}, behind ${behind}`;
   const line = `On ${asset}, ${who}: ${shares}. Best ${usdSigned(curve.best)}, worst ${usdSigned(curve.worst)}.`;
 
-  const cost = n === 1 ? 'this leg costs' : `the ${COUNT_WORDS[n] ?? n} cost`;
+  const cost = n === 1 ? 'the cost of this bet over its fair price' : `the cost of the ${COUNT_WORDS[n] ?? n} bets over their fair price`;
   const average =
     curve.average < -0.005
-      ? `At the market’s own odds this averages ${usdSigned(curve.average)}: that is what ${cost} over fair value.`
-      : `At the market’s own odds this averages ${usdSigned(curve.average)}.`;
+      ? `At the market’s prices this averages ${usdSigned(curve.average)}, ${cost}.`
+      : `At the market’s prices this averages ${usdSigned(curve.average)}.`;
   return { line, average };
 }
 
@@ -129,11 +129,11 @@ export function curveWords(curve: LadderCurve, pays: (LegPay | null)[], asset: s
  * price and the charts must not be read as adding up.
  */
 export function paysIntro(curves: LadderCurve[], missing: number[], legs: number): string {
-  if (curves.length > 1) return 'What the legs net at each price a market can finish at. Each market is decided by its own price, so the charts are not added together.';
+  if (curves.length > 1) return 'What the legs pay at each price a market can finish at. Each market is decided by its own price, so the charts are not added together.';
   const one = curves[0];
-  if (one && missing.length === 0 && legs > 1 && one.legs.length === legs)
-    return `What the basket nets at each price the market can finish at. ${legs === 2 ? 'Both legs are' : `All ${legs} legs are`} on this one market, so this is the whole basket.`;
-  return 'What the legs net at each price a market can finish at.';
+  // That the legs share one market is said once, beside the chances; here it only says that one chart is the whole basket.
+  if (one && missing.length === 0 && legs > 1 && one.legs.length === legs) return 'What the basket pays at each finishing price. This one chart is the whole basket.';
+  return 'What the legs pay at each price a market can finish at.';
 }
 
 /** "Waiting for prices on leg 2." */

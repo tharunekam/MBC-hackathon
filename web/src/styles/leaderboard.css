@@ -1,5 +1,17 @@
 /* ------------------------------------------------------------ leaderboard */
 
+/* The title, with the note on where the board was read from beside it at every width. */
+.lb-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  margin-bottom: 10px;
+}
+.lb-title .h-page {
+  margin-bottom: 0;
+}
+
 /* Summary strip: the same ruled band as the Markets page, so the two read as one system. */
 .lb-sum {
   display: grid;
@@ -10,7 +22,7 @@
 }
 .lb-sum > div {
   display: grid;
-  align-content: space-between;
+  align-content: start;
   gap: 8px;
   min-width: 0;
   padding: 20px 24px;
@@ -23,7 +35,7 @@
 .lb-sum dt,
 .lb th,
 .lb-example figcaption {
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--muted);
 }
@@ -33,12 +45,13 @@
   font-weight: 500;
   line-height: 1.1;
   letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
 }
 /* With the number sealed beside the number revealed, the strip has four figures. */
 .lb-sum[data-n='4'] {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
-/* A quiet note beside a figure: how many of the sealed calls were refunded. */
+/* A quiet note beside a figure: how many of the sealed calls came back as a stake back. */
 .lb-sum dd small {
   margin-left: 8px;
   font-family: var(--font-ui);
@@ -46,6 +59,7 @@
   font-weight: 400;
   letter-spacing: 0;
   color: var(--muted);
+  display: inline-block;
   white-space: nowrap;
 }
 
@@ -59,7 +73,8 @@
 .lb {
   width: 100%;
   border-collapse: collapse;
-  font-size: 15px;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
 }
 .lb th {
   padding: 12px 16px;
@@ -79,10 +94,16 @@
   text-align: right;
   white-space: nowrap;
 }
+/* A handle is a long unbroken word: it may break anywhere before it pushes the figures off the board. */
+.lb td.lb-who {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .lb td.n,
 .lb-rank,
 .lb-calls .lb-edge {
   font-size: 14px;
+  font-variant-numeric: tabular-nums;
 }
 .lb .lb-rank {
   width: 72px;
@@ -103,18 +124,26 @@
 .lb tr.is-you td {
   background: var(--accent-soft);
 }
+/* On the amber tint the muted grey is 3.8:1 in the dark theme, under the 4.5:1 a 12px or 14px line needs. The row's quiet text
+   uses the soft ink instead, which clears it in both themes. */
+.lb tr.is-you .lb-rank,
+.lb tr.is-you td.lb-when,
+.lb tr.is-you td.lb-sealed,
+.lb tr.is-you .lb-who[data-tag]::before {
+  color: var(--soft);
+}
 /*
- * The mark on this visitor's own row. It is drawn here, from the cell's data-tag, so that the cell's text is the handle
- * and nothing else: the browser checks read the handle from that cell. A screen reader reads it after the handle.
+ * The mark on this visitor's own row, before their handle. It is drawn here, from the cell's data-tag, so that the cell's
+ * text is the handle and nothing else: the browser checks read the handle from that cell.
  */
-.lb-who[data-tag]::after {
+.lb-who[data-tag]::before {
   content: attr(data-tag);
   display: inline-block;
-  margin-left: 10px;
-  padding: 3px 6px;
+  margin-right: 8px;
+  padding: 4px 6px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-sm);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 1;
   color: var(--muted);
@@ -126,13 +155,13 @@
   padding-bottom: 2px;
 }
 .lb .lb-sub td {
-  padding-top: 0;
+  padding-top: 4px;
   padding-bottom: 10px;
   border-top: 0;
 }
 .lb td.lb-sealed {
   text-align: right;
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 1.3;
   color: var(--muted);
 }
@@ -367,7 +396,7 @@
   gap: 16px;
   padding: 12px 0;
   border-bottom: 1px solid var(--line);
-  font-size: 15px;
+  font-size: 16px;
 }
 .lb-example dt {
   color: var(--soft);
@@ -376,6 +405,7 @@
   font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .lb-example .lb-none {
   font-family: var(--font-ui);
@@ -410,6 +440,9 @@
   .lb-sum[data-n='4'] > div:nth-child(n + 3) {
     border-top: 1px solid var(--line);
   }
+  .lb {
+    font-size: 14px;
+  }
   /* 6px between columns, not 8: the 12px that gives back is what keeps the longest handle on one line at 390 wide. */
   .lb th,
   .lb td {
@@ -430,6 +463,12 @@
   }
   .lb .lb-rank {
     width: 40px;
+  }
+  /* The mark sits on a line of its own above the handle when both do not fit, rather than squeezing the handle. */
+  .lb-who[data-tag]::before {
+    display: block;
+    width: max-content;
+    margin: 0 0 2px;
   }
   /* Fingers: the handle that opens a player's calls, and every link, is at least 44px tall. The handle's cell gives up
      its own padding to the button, so a row is no taller for it; the other cells keep theirs, top and bottom alike, so
@@ -455,19 +494,6 @@
   .lb-sealed > span:first-child {
     display: block;
     margin-top: -8px;
-  }
-  /* Beside a handle there is no room for the mark, so it goes on the sealed line, under the handle. */
-  .lb tr.has-sub td.lb-who[data-tag] {
-    position: relative;
-  }
-  .lb tr.has-sub td.lb-who[data-tag]::after {
-    position: absolute;
-    top: 100%;
-    left: 6px;
-    margin: -10px 0 0;
-  }
-  .lb tr.has-sub td.lb-who-opens[data-tag]::after {
-    left: 20px;
   }
   .lb .lb-calls td {
     padding: 0 12px 12px;
@@ -506,5 +532,25 @@
 @media (prefers-reduced-motion: reduce) {
   .lb-caret {
     transition: none;
+  }
+}
+
+/* The narrowest phones: four-digit counts and a signed edge must all fit, so the gaps give a little more. */
+@media (max-width: 359px) {
+  .lb th,
+  .lb td {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  .lb th:first-child,
+  .lb td:first-child {
+    padding-left: 8px;
+  }
+  .lb th:nth-last-child(2),
+  .lb td:nth-last-child(2) {
+    padding-right: 8px;
+  }
+  .lb .lb-rank {
+    width: 32px;
   }
 }

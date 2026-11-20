@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { MarketEvent, OfferQuote, Pair, Rung } from '../api/types';
 import { distributionOf, marketView, viewOf, type Chance } from './distribution';
-import { builderLink, ideasOn, MIN_WIN, rank, score, winsOn, type Idea } from './hunch';
+import { builderLink, crossed, ideasOn, MIN_WIN, outOfOrder, rank, score, winsOn, type Idea } from './hunch';
 import { breakoutEstimate, estimate, mirrorBook } from './pricing';
 
 const rung = (strike: number, chance: number, open = true, spread = 0.01): Rung => ({
@@ -87,6 +87,44 @@ describe('the bets a ladder has on offer', () => {
     }
     // Two neighbouring rungs near the bottom of the ladder: finishing outside them is all but sure, so it is not listed.
     expect(breakouts.some((b) => b.low.strike === 61500 && b.high.strike === 62000)).toBe(false);
+  });
+});
+
+describe('a ladder whose prices are out of order', () => {
+  // Strikes 100, 110, 120 and 130 priced 90, 40, 55 and 10 cents: 120 is dearer than 110. The executor refuses every bet on it.
+  const crossedRungs = [rung(100, 0.9, true, 0.01), rung(110, 0.4, true, 0.01), rung(120, 0.55, true, 0.01), rung(130, 0.1, true, 0.01)];
+
+  it('is seen as crossed from the prices alone, on either side of the book, and never from equal prices', () => {
+    expect(crossed(crossedRungs)).toBe(true);
+    expect(crossed(ladder)).toBe(false);
+    // Equal prices are fine; a higher level one tick dearer than a lower one on the sell side only is not.
+    expect(crossed([rung(100, 0.5), { ...rung(110, 0.5) }])).toBe(false);
+    expect(crossed([{ ...rung(100, 0.5), ask: 0.51 }, { ...rung(110, 0.5), ask: 0.52 }])).toBe(true);
+    // A level with no price on a side takes no part in that side's comparison.
+    expect(crossed([rung(100, 0.5), { ...rung(110, 0.9), bid: null, ask: null }])).toBe(false);
+  });
+
+  it('lists no bet at all, rather than a green difference made out of the evening-out of its prices', () => {
+    const ev = event(crossedRungs);
+    // The market list's own flag is not needed: the prices say it. (Before, this listed ranges and breakouts.)
+    expect(ev.ladderOutOfOrder).toBe(false);
+    expect(ideasOn(ev, 0)).toEqual([]);
+    expect(outOfOrder(ev)).toBe(true);
+    // And on the market's own unmoved view nothing is ranked, so no "+6¢" is offered on a bet that cannot be placed.
+    const { levels: crossedLevels } = distributionOf(crossedRungs)!;
+    const unmoved = viewOf(crossedLevels, marketView(crossedLevels));
+    expect(rank(ideasOn(ev, 0), unmoved)).toEqual([]);
+  });
+
+  it('trusts the executor’s own flag too', () => {
+    const flagged = { ...event(ladder), ladderOutOfOrder: true };
+    expect(ideasOn(flagged, 0)).toEqual([]);
+    expect(outOfOrder(flagged)).toBe(true);
+    expect(outOfOrder(event(ladder))).toBe(false);
+  });
+
+  it('leaves an ordinary ladder exactly as it was', () => {
+    expect(ideasOn(event(ladder), 0).length).toBeGreaterThan(0);
   });
 });
 

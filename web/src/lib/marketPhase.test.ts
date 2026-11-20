@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MarketEvent, Rung } from '../api/types';
-import { anotherOpen, marketNote, phaseOf } from './marketPhase';
+import { anotherOpen, closesIn, marketNote, phaseOf } from './marketPhase';
 
 const rung = (strike: number, state = 'active/open'): Rung => ({ symbol: `S${strike}`, label: `${strike}`, strike, bid: 0.4, ask: 0.42, open: state === 'active/open', state });
 const ladder = (expiry: string | null, states: string[] = ['active/open', 'active/open', 'active/open']) => ({ expiry, rungs: states.map((s, i) => rung(100 + i, s)) });
@@ -48,6 +48,15 @@ describe('what the page says about a ladder that cannot take a bet', () => {
     expect(withOthers.text).toBe('This market closed at 9 PM and takes no more bets. Pick another market above.');
   });
 
+  it('keeps what to do apart from what happened, so a builder can say that it closed only once', () => {
+    expect(marketNote(ladder(at(21, 0)), now, { another: true })!.next).toBe('Pick another market above.');
+    expect(marketNote(ladder(at(21, 0)), now, { another: false })!.next).toBe('The next one appears here by itself when it opens.');
+    const post = marketNote(ladder(at(22, 0), ['active/post_only', 'active/post_only', 'active/post_only']), now, { another: false })!;
+    expect(post.next).toMatch(/few minutes/);
+    expect(post.next).not.toMatch(/not open/);
+    for (const n of [marketNote(ladder(at(21, 0)), now, { another: true })!, post]) expect(n.text.endsWith(n.next!)).toBe(true);
+  });
+
   it('names the day when it closed on another one, and no time when none is known', () => {
     expect(marketNote(ladder(at(17, 0, 18)), now, { another: false })!.text).toMatch(/^This market closed on Nov 18 at 5 PM and takes no more bets\./);
     const early = marketNote(ladder(at(22, 0), ['settled/closed', 'settled/closed', 'settled/closed']), now, { another: false })!;
@@ -90,5 +99,24 @@ describe('whether there is another market to point at', () => {
     expect(anotherOpen([closed, shut], closed, now)).toBe(false);
     expect(anotherOpen([closed, open], closed, now)).toBe(true);
     expect(anotherOpen([open], open, now)).toBe(false);
+  });
+});
+
+describe('the countdown beside the market picker', () => {
+  it('counts down while the market is open', () => {
+    expect(closesIn(ladder(at(22, 35)), now)).toBe('Closes in 55 min');
+  });
+
+  it('says nothing once every contract has finished, though the listed close time is still ahead', () => {
+    // The exchange can finish a market early; "Closes in 55 min" beside a market that has closed would say the opposite.
+    expect(closesIn(ladder(at(22, 35), ['settled/closed', 'settled/closed', 'settled/closed']), now)).toBeNull();
+  });
+
+  it('says nothing once the close time has passed, instead of a second "Closed"', () => {
+    expect(closesIn(ladder(at(21, 35)), now)).toBeNull();
+  });
+
+  it('keeps counting down for a market that is listed but not trading yet', () => {
+    expect(closesIn(ladder(at(22, 35), ['active/post_only', 'active/post_only', 'active/post_only']), now)).toBe('Closes in 55 min');
   });
 });

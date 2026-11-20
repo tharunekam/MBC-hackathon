@@ -1,4 +1,4 @@
-/* Markets: an index of every ladder, by asset. Flat: hairlines and type, no cards, no shadows. */
+/* Markets: an index of every market, by asset. Flat: hairlines and type, no cards, no shadows. */
 
 .mk-status {
   display: inline-flex;
@@ -35,7 +35,7 @@
   padding-left: 0;
 }
 .mk-stat dt {
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--muted);
 }
@@ -46,6 +46,7 @@
   font-size: 32px;
   line-height: 1.1;
   letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
 }
 
 .mk-stale {
@@ -63,9 +64,9 @@
 .mk-seg {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 2px;
+  gap: 4px;
   max-width: 100%;
-  padding: 3px;
+  padding: 4px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-ctl);
   background: var(--surface);
@@ -73,8 +74,8 @@
 .mk-seg button {
   height: 32px;
   padding: 0 16px;
-  border: 0;
-  border-radius: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--muted);
   font-size: 14px;
@@ -90,6 +91,8 @@
 }
 .mk-seg button[aria-pressed='true'] {
   background: var(--accent);
+  /* An amber fill alone is 1.4:1 against a white card: the chosen filter also has an ink edge. */
+  border-color: var(--ink);
   color: var(--accent-ink);
 }
 .mk-seg button:focus-visible {
@@ -103,9 +106,9 @@
 .mk-search input {
   width: 100%;
   height: 40px;
-  padding: 0 14px;
-  border: 1px solid var(--line-strong);
-  border-radius: 12px;
+  padding: 0 16px;
+  border: 1px solid color-mix(in srgb, var(--ink) 50%, transparent);
+  border-radius: var(--r-lg);
   background: var(--surface);
   color: var(--ink);
   font-size: 14px;
@@ -118,7 +121,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 36px;
+  min-height: 40px;
   margin-left: auto;
   font-size: 14px;
   color: var(--soft);
@@ -131,13 +134,9 @@
   accent-color: var(--accent);
   cursor: inherit;
 }
-.mk-toggle input:disabled {
-  cursor: not-allowed;
-}
 .mk-count {
   margin-top: 16px;
   font-size: 12px;
-  letter-spacing: 0.02em;
   color: var(--muted);
 }
 
@@ -147,6 +146,11 @@
   gap: 48px;
   margin-top: 32px;
 }
+/* An asset with nothing priced is a single line that opens to its table, so a list with no prices stays short. Neighbouring
+   lines sit together as one list: the group gap is taken back between them. */
+.mk-group-bare + .mk-group-bare {
+  margin-top: -48px;
+}
 .mk-group-head {
   display: flex;
   flex-wrap: wrap;
@@ -154,18 +158,32 @@
   gap: 8px 12px;
   margin-bottom: 12px;
 }
+summary.mk-group-head {
+  margin-bottom: 0;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  list-style: none;
+}
+summary.mk-group-head::-webkit-details-marker {
+  display: none;
+}
+.mk-group-bare[open] > summary.mk-group-head {
+  margin-bottom: 12px;
+  border-bottom-color: transparent;
+}
 .mk-group-title {
   font-family: var(--font-display);
   font-weight: 500;
-  font-size: 22px;
+  font-size: 20px;
   line-height: 1.2;
   letter-spacing: -0.02em;
 }
 .mk-tag {
-  padding: 1px 8px;
+  padding: 2px 8px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-sm);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--muted);
   align-self: center;
@@ -176,50 +194,51 @@
   color: var(--muted);
 }
 
+/* The wrapper clips nothing that matters: the table is sized to fit, and a market's last button is never cut off. */
 .mk-table-wrap {
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   background: var(--surface);
-  box-shadow: var(--shadow);
-  overflow: hidden;
+  overflow-x: auto;
 }
 .mk-table {
   width: 100%;
   table-layout: fixed; /* every asset's table lines up with the one above it */
   border-collapse: collapse;
-  font-size: 15px;
+  font-size: 14px;
 }
 /* "Closes" has no width of its own: it takes what the others leave. */
-.mk-table .mk-c-num {
-  width: 17%;
+.mk-table .mk-c-range {
+  width: 16%;
 }
 .mk-table .mk-c-rungs {
-  width: 7%;
+  width: 6%;
 }
 .mk-table .mk-c-move {
-  width: 12%;
+  width: 11%;
 }
 .mk-table .mk-c-offers {
-  width: 14%;
+  width: 11%;
 }
 .mk-table .mk-c-state {
-  width: 12%;
+  width: 13%;
 }
-/* As wide as its three links need, whatever the table's width: a share of the table cut the last link off. */
+/* Three links of about 60, 70 and 102px with 8px between them, and the cell's own padding. */
 .mk-table .mk-c-act {
-  width: 200px;
+  width: 288px;
 }
 .mk-table th {
-  padding: 10px 16px;
+  padding: 12px 16px;
   text-align: left;
-  font-size: 12.5px;
+  vertical-align: bottom;
+  font-family: var(--font-ui);
+  font-size: 13px;
   font-weight: 500;
   color: var(--muted);
-  white-space: nowrap;
   border-bottom: 1px solid var(--line);
 }
 .mk-table td {
-  padding: 14px 16px;
+  padding: 16px;
   vertical-align: middle;
   border-top: 1px solid var(--line);
 }
@@ -229,8 +248,7 @@
 .mk-table th.mk-c-num,
 .mk-table td.mk-num {
   text-align: right;
-  font-family: var(--font-mono);
-  font-size: 14px;
+  font-variant-numeric: tabular-nums;
 }
 .mk-table td.mk-num {
   white-space: nowrap;
@@ -253,14 +271,15 @@
 .mk-when {
   display: block;
   font-weight: 500;
+  white-space: nowrap;
 }
 .mk-rel {
   display: block;
   font-size: 13px;
   color: var(--muted);
+  white-space: nowrap;
 }
 .mk-none {
-  font-family: var(--font-ui);
   color: var(--muted);
 }
 .mk-state-cell {
@@ -280,7 +299,7 @@
   background: var(--good);
 }
 .mk-dot[data-state='none'] {
-  border: 1.5px solid var(--faint);
+  border: 2px solid var(--faint);
 }
 .mk-dot[data-state='order'] {
   background: var(--accent);
@@ -288,16 +307,17 @@
 
 .mk-links {
   display: inline-flex;
-  gap: 6px;
+  gap: 8px;
 }
 .mk-link {
   display: inline-flex;
   align-items: center;
-  height: 30px;
+  justify-content: center;
+  height: 32px;
   padding: 0 12px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-ctl);
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--ink);
   text-decoration: none;
@@ -309,11 +329,7 @@
   color: var(--bg);
 }
 .mk-link:active {
-  transform: translateY(0) scale(0.97);
-}
-.mk-wait {
-  font-size: 14px;
-  color: var(--muted);
+  transform: scale(0.97);
 }
 
 /* ---------------------------------------------------------- states */
@@ -327,6 +343,13 @@
   border-radius: var(--r-md);
   color: var(--muted);
 }
+.mk-state p {
+  max-width: 56ch;
+}
+/* The explanation for a list with no prices sits between the figures and the list, in the same flat frame. */
+.mk-state.mk-calm {
+  margin-top: 24px;
+}
 .mk-state-title {
   font-family: var(--font-display);
   font-weight: 500;
@@ -335,10 +358,10 @@
   color: var(--ink);
 }
 .mk-skel-stats {
-  height: 78px;
+  height: 80px;
 }
 .mk-skel-bar {
-  height: 36px;
+  height: 40px;
   width: min(420px, 100%);
   margin-top: 32px;
 }
@@ -346,7 +369,7 @@
   margin-top: 48px;
 }
 .mk-skel-title {
-  height: 26px;
+  height: 28px;
   width: 160px;
   margin-bottom: 12px;
 }
@@ -359,7 +382,7 @@
 }
 
 /* ---------------------------------------------------------- tablet */
-@media (max-width: 960px) {
+@media (max-width: 1180px) {
   .mk-toggle {
     margin-left: 0;
   }
@@ -368,15 +391,13 @@
     padding-left: 12px;
     padding-right: 12px;
   }
-  /* Seven columns on a tablet: a two-word heading takes two lines instead of running into its neighbour. */
-  .mk-table th {
-    white-space: normal;
-    vertical-align: bottom;
+  .mk-table .mk-c-act {
+    width: 272px;
   }
 }
 
 /* ---------------------------------------------------------- phone */
-@media (max-width: 719px) {
+@media (max-width: 720px) {
   .mk-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -402,9 +423,29 @@
   .mk-seg {
     align-self: flex-start;
   }
+  .mk-seg button {
+    min-height: var(--tap);
+    min-width: var(--tap);
+  }
   .mk-search {
     flex: none;
     max-width: none;
+  }
+  .mk-search input {
+    height: var(--tap);
+  }
+  .mk-toggle {
+    min-height: var(--tap);
+  }
+  .mk-toggle input {
+    width: 20px;
+    height: 20px;
+  }
+  .mk-state .btn {
+    min-height: var(--tap);
+  }
+  summary.mk-group-head {
+    min-height: var(--tap);
   }
 
   .mk-meta {
@@ -416,9 +457,12 @@
   }
 }
 
-/* ---------------------------------------------------------- narrow: each ladder is a stacked block */
-/* Seven columns need about 900px. Below that every ladder is a block of its own, each figure with its name beside it. */
-@media (max-width: 899px) {
+/* ---------------------------------------------------------- narrow: each market is a stacked block */
+/* Seven columns need about 1100px. Below that every market is a block of its own, each figure with its name beside it. */
+@media (max-width: 1099px) {
+  .mk-table-wrap {
+    overflow: hidden;
+  }
   .mk-table,
   .mk-table tbody {
     display: block;
@@ -457,18 +501,12 @@
     align-self: start;
     text-align: right;
   }
-  .mk-table td.mk-act .mk-links {
-    align-items: center;
-    gap: 20px;
+  .mk-table td.mk-act:empty {
+    display: none;
   }
-  .mk-table td.mk-act .mk-link,
-  .mk-table td.mk-act .mk-wait {
-    min-height: 44px;
-    display: inline-flex;
-    align-items: center;
-  }
-  .mk-table td.mk-act .mk-wait {
-    font-size: 13px;
+  .mk-table td.mk-act .mk-link {
+    min-height: var(--tap);
+    padding: 0 16px;
   }
   .mk-table td[data-label] {
     grid-column: 1 / -1;
@@ -481,13 +519,11 @@
   }
   .mk-table td[data-label]::before {
     content: attr(data-label);
-    font-size: 12.5px;
+    font-family: var(--font-ui);
+    font-size: 13px;
     font-weight: 500;
     color: var(--muted);
     text-align: left;
-  }
-  .mk-table td.mk-num {
-    font-size: 14px;
   }
   .mk-table td.mk-state-cell {
     white-space: normal;
@@ -495,6 +531,27 @@
   /* The dot stays beside its word, at the right, instead of drifting to the middle of the row. */
   .mk-table td.mk-state-cell .mk-dot {
     margin-left: auto;
+  }
+}
+
+/* On a phone the three links get a row of their own, equal in width, so none is clipped and the close time keeps one line. */
+@media (max-width: 599px) {
+  .mk-table tbody tr {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mk-table td.mk-act {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    margin-top: 16px;
+    text-align: left;
+  }
+  .mk-table td.mk-act .mk-links {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .mk-table td.mk-act .mk-link {
+    padding: 0 8px;
   }
 }
 
