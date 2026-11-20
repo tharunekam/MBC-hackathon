@@ -403,7 +403,7 @@ export default function Landing() {
               </li>
               <li>
                 <b>Anyone can check it on Solana</b>
-                <span>The leaderboard counts sealed calls beside revealed ones, so nobody can show only their winners. The Proof page also compares our records with the exchange.</span>
+                <span>The leaderboard counts sealed calls beside revealed ones, so a player who reveals only some of their calls shows it. The Proof page also compares our records with the exchange.</span>
               </li>
             </ol>
           </Reveal>
