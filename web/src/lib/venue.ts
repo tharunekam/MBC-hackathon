@@ -31,7 +31,8 @@ export function describeVenue(mode: string, health: Pick<HealthResponse, 'venue'
     return { chip: null, footnote: 'Practice money on Gemini’s sandbox.', readOnly: false };
   }
   if (venue === 'Gemini') return { chip: null, footnote: 'Real orders on Gemini.', readOnly: false };
-  return { chip: venue, footnote: `${venue}. Not Gemini, and no real orders.`, readOnly: false };
+  // A local test exchange is a developer setup. The footnote says what it is; it does not need a badge in the header.
+  return { chip: null, footnote: `${venue}. Not Gemini, and no real orders.`, readOnly: false };
 }
 
 export function useVenue(): VenueNote {

@@ -15,7 +15,7 @@ describe('the app says what it is talking to', () => {
 
   it('seeding is never claimed anywhere but the sandbox', () => {
     expect(describeVenue('live', { venue: 'Gemini', seeded: true }).chip).toBe(null);
-    expect(describeVenue('live', { venue: 'Local test exchange', seeded: true }).chip).toBe('Local test exchange');
+    expect(describeVenue('live', { venue: 'Local test exchange', seeded: true }).chip).toBe(null);
   });
 
   it('a replay says it is one, of what and from when, whatever else the recorded health says', () => {

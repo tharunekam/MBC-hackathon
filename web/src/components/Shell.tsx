@@ -4,16 +4,6 @@ import { useLiveStatus } from '../lib/hooks';
 import { chainLive, execLive } from '../lib/liveClients';
 import { useVenue } from '../lib/venue';
 
-export function Logo({ size = 22 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" className="logo">
-      <rect width="32" height="32" rx="8" className="logo-bg" />
-      <path d="M9 21c0-6 3-10 7-10s7 4 7 10" fill="none" className="logo-arc" strokeWidth="2.6" strokeLinecap="round" />
-      <circle cx="16" cy="11" r="2.4" className="logo-dot" />
-    </svg>
-  );
-}
-
 const Sun = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
     <circle cx="12" cy="12" r="4" />
@@ -60,24 +50,39 @@ const LINKS = [
 
 export function Nav() {
   const venue = useVenue();
+  const { pathname } = useLocation();
+  const home = pathname === '/';
+  const [top, setTop] = useState(true);
+  useEffect(() => {
+    const on = () => setTop(window.scrollY < 24);
+    on();
+    window.addEventListener('scroll', on, { passive: true });
+    return () => window.removeEventListener('scroll', on);
+  }, []);
   return (
-    <header className="nav">
+    <header className="nav" data-home={home ? '' : undefined} data-over={home && top ? 'dark' : undefined}>
       <div className="nav-in">
         <Link to="/" className="brand" aria-label="Given home">
-          <Logo />
-          <span>Given</span>
+          Given
         </Link>
-        <nav className="nav-links" aria-label="Main">
-          {LINKS.map((l) => (
-            <NavLink key={l.to} to={l.to} end={l.end} className={({ isActive }) => (isActive ? 'is-on' : '')}>
-              {l.label}
-            </NavLink>
-          ))}
-        </nav>
+        {!home && (
+          <nav className="nav-links" aria-label="Main">
+            {LINKS.map((l) => (
+              <NavLink key={l.to} to={l.to} end={l.end} className={({ isActive }) => (isActive ? 'is-on' : '')}>
+                {l.label}
+              </NavLink>
+            ))}
+          </nav>
+        )}
         <div className="nav-right">
-          <LiveBadge />
-          {venue.chip && <span className="chip chip-quiet">{venue.chip}</span>}
+          {!home && <LiveBadge />}
+          {!home && venue.chip && <span className="chip chip-quiet">{venue.chip}</span>}
           <ThemeToggle />
+          {home && (
+            <Link to="/app" className="btn btn-primary btn-sm">
+              Enter app
+            </Link>
+          )}
         </div>
       </div>
     </header>
@@ -108,8 +113,7 @@ export function Footer() {
       <div className="wrap foot-in">
         <div>
           <div className="brand brand-foot">
-            <Logo size={18} />
-            <span>Given</span>
+            Given
           </div>
           <p>Bets that give your money back if the first half of your hunch doesn’t happen.</p>
         </div>
@@ -130,13 +134,15 @@ export default function Shell() {
   return (
     <>
       <Nav />
-      <nav className="tabbar" aria-label="Primary">
-        {LINKS.map((l) => (
-          <NavLink key={l.to} to={l.to} end={l.end} className={({ isActive }) => (isActive ? 'is-on' : '')}>
-            {l.label}
-          </NavLink>
-        ))}
-      </nav>
+      {pathname !== '/' && (
+        <nav className="tabbar" aria-label="Primary">
+          {LINKS.map((l) => (
+            <NavLink key={l.to} to={l.to} end={l.end} className={({ isActive }) => (isActive ? 'is-on' : '')}>
+              {l.label}
+            </NavLink>
+          ))}
+        </nav>
+      )}
       <main id="main">
         <Outlet />
       </main>

@@ -215,7 +215,7 @@ export default function Build() {
         <div className="left-col">
         <section className="card chart-card" aria-busy={loadingFirst}>
           <div className="chart-head">
-            <div className="seg" role="tablist" aria-label="Market" ref={tabsRef}>
+            <div className="seg" role="tablist" aria-label="Market" data-solo={events.length === 1 ? 'true' : undefined} ref={tabsRef}>
               {events.map((e) => (
                 <button
                   key={e.ticker}

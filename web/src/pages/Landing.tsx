@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import ProbBar from '../components/ProbBar';
 
@@ -86,22 +86,83 @@ function Outcomes() {
   );
 }
 
+/** A fan of the curves this app is built on: each line is a market's chance of finishing at or above a price. Decorative only. */
+function Ladder() {
+  const lines = useMemo(() => {
+    const W = 1200;
+    const H = 700;
+    const N = 46;
+    return Array.from({ length: N }, (_, i) => {
+      const t = i / (N - 1);
+      const centre = 0.16 + t * 0.68;
+      const steep = 0.05 + 0.055 * Math.sin(t * Math.PI);
+      const pts: string[] = [];
+      for (let k = 0; k <= 64; k++) {
+        const x = k / 64;
+        const y = 1 / (1 + Math.exp((x - centre) / steep));
+        pts.push(`${(x * W).toFixed(1)},${(70 + (1 - y) * (H - 140) * (0.82 + 0.18 * t)).toFixed(1)}`);
+      }
+      const key = i === 13 || i === 29;
+      return { d: `M${pts.join('L')}`, key, o: key ? 0.7 : 0.06 + 0.2 * Math.sin(t * Math.PI), delay: i * 34 };
+    });
+  }, []);
+  return (
+    <svg className="ladder" viewBox="0 0 1200 700" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">
+      <g className="ladder-grid">
+        {[0.25, 0.5, 0.75].map((f) => (
+          <line key={f} x1="0" x2="1200" y1={70 + f * 560} y2={70 + f * 560} />
+        ))}
+      </g>
+      <rect className="ladder-band" x="430" y="70" width="290" height="560" />
+      <line className="ladder-mark" x1="430" x2="430" y1="70" y2="630" />
+      <line className="ladder-mark" x1="720" x2="720" y1="70" y2="630" />
+      <g className="ladder-lines">
+        {lines.map((l, i) => (
+          <path key={i} d={l.d} pathLength={1} data-key={l.key ? '' : undefined} style={{ opacity: l.o, animationDelay: `${l.delay}ms` }} />
+        ))}
+      </g>
+    </svg>
+  );
+}
+
 export default function Landing() {
   return (
     <>
-      <section className="hero">
+      <section className="hero band-dark">
+        <Ladder />
+        <div className="hero-body">
+          <h1 className="hero-title">
+            <span className="hero-mark">Given</span>
+            <span className="hero-tag">Bet on the second half of your hunch</span>
+          </h1>
+          <p className="hero-sub">
+            If the first half doesn’t happen, <b>you get your money back</b>. Real orders on Gemini, every call fingerprinted on Solana.
+          </p>
+          <div className="row-actions">
+            <Link to="/app" className="btn btn-primary btn-lg">
+              Build a bet
+            </Link>
+            <a href="#story" className="btn btn-ghost btn-lg">
+              How it works
+            </a>
+          </div>
+        </div>
+        <a href="#story" className="hero-scroll" aria-label="Scroll to how it works">
+          <span>Scroll</span>
+          <i aria-hidden="true" />
+        </a>
+      </section>
+
+      <section className="band" id="story">
         <div className="wrap hero-in">
           <div className="hero-copy">
             <span className="eyebrow">Prediction markets, with a safety net</span>
-            <h1 className="h-hero">Bet on the second half of your hunch</h1>
-            <p className="lede lede-lg">If the first half doesn’t happen, you get your money back. You only lose when the first half is right and the second half isn’t.</p>
+            <h2 className="h-section">Your stake comes back if the first half fails</h2>
+            <p className="lede">A bet has two halves: something that has to hold first, then the thing you are really betting on. You only lose when the first half is right and the second half isn’t.</p>
             <div className="row-actions">
-              <Link to="/app" className="btn btn-primary btn-lg">
+              <Link to="/app" className="btn btn-primary">
                 Build a bet
               </Link>
-              <a href="#how" className="btn btn-ghost btn-lg">
-                How it works
-              </a>
             </div>
           </div>
           <Example />

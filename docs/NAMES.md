@@ -33,9 +33,7 @@ barring.com is taken and the GitHub name is held by an unrelated account.
 | Backstop | all taken | **Backstop Solutions (investment software); B.Protocol "DeFi backstop"** | taken / taken | serious |
 | Mulligan | all taken | a registered Class 36 (financial services) mark, Mulligan Funding | taken / taken | serious |
 
-None of the twelve is confusingly close to the other projects we run (Senthos, Totalis, Longshot, Twoprint, Pelagos,
-Cumulant, Houseless, Headroom, sORBIO, Parcel, Intercepta, Living Tokens, Wardline, Compute Basis). The faintest overlap
-is Contingo and Cumulant, which is minor.
+None of the twelve is confusingly close to anything else we have built.
 
 ## What a rename would touch (and what it must not)
 
