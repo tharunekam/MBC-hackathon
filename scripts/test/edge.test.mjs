@@ -9,6 +9,7 @@ describe('which paths reach a backend', () => {
   it('lets the web app call what it needs, with the right method', () => {
     assert.deepEqual(route('GET', '/api/markets'), { target: 'executor', path: '/markets' });
     assert.deepEqual(route('POST', '/api/bets'), { target: 'executor', path: '/bets' });
+    assert.deepEqual(route('POST', '/api/baskets'), { target: 'executor', path: '/baskets' });
     assert.deepEqual(route('GET', '/api/stream'), { target: 'executor', path: '/stream' });
     assert.deepEqual(route('GET', '/api/quote/'), { target: 'executor', path: '/quote' });
     assert.deepEqual(route('GET', '/chain/leaderboard'), { target: 'chain', path: '/leaderboard' });
@@ -28,6 +29,7 @@ describe('which paths reach a backend', () => {
       ['GET', '/api/'],
       ['GET', '/api'],
       ['DELETE', '/api/bets'],
+      ['GET', '/api/baskets'],
       ['GET', '/api/settle'],
       ['POST', '/api/markets'],
       ['GET', '/chain/calls/abc/reveal'],
@@ -63,7 +65,7 @@ describe('serving the built app', () => {
     assert.equal(resolveStatic(root, '/assets/app-abc.js')?.spa, false);
     assert.equal(resolveStatic(root, '/favicon.svg')?.spa, false);
     assert.deepEqual(resolveStatic(root, '/')?.spa, true);
-    assert.deepEqual(resolveStatic(root, '/app/bets')?.spa, true);
+    assert.deepEqual(resolveStatic(root, '/bets')?.spa, true);
     assert.deepEqual(resolveStatic(root, '/verify/5abc')?.spa, true);
   });
 

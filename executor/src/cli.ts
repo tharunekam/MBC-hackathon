@@ -53,7 +53,11 @@ function printBet(bet: ReturnType<Ledger['bet']>): void {
   if (bet.payoffs) {
     const p = bet.payoffs;
     console.log(`  stake ${money(p.stake)}   paid ${p.conditionalPrice?.toFixed(4) ?? '-'} per $1   hedged: ${p.hedged ? 'yes' : 'NO'}`);
-    console.log(`  if condition fails: ${money(p.ifConditionFails)}   if both hit: ${money(p.ifBothHit)}   if condition only: ${money(p.ifConditionOnly)}`);
+    console.log(
+      p.ifConditionFails === undefined
+        ? `  if inside the range: ${money(p.ifBothHit)}   if outside: ${money(p.ifConditionOnly)}`
+        : `  if condition fails: ${money(p.ifConditionFails)}   if both hit: ${money(p.ifBothHit)}   if condition only: ${money(p.ifConditionOnly)}`,
+    );
   }
   if (bet.stakeReduced) console.log(`  reduced: ${bet.stakeReduced.reason}`);
   if (bet.offer) {

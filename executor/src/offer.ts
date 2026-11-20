@@ -136,8 +136,8 @@ export function ladderInversions(rungs: Rung[]): Inversion[] {
   return out;
 }
 
-const cents = (x: number) => `${(x * 100).toFixed(1)} cents`;
-const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
+export const cents = (x: number) => `${(x * 100).toFixed(1)} cents`;
+export const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
 
 /**
  * Applies the offer rule to one (condition A, outcome B) pair.

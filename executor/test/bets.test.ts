@@ -68,7 +68,7 @@ test('a clean bet: two fills, stake protected, cash conserved', async () => {
   assert.equal(bet.legs[1]!.outcome, 'no');
   assert.equal(bet.legs[1]!.quantityFilled, 4.23);
   assert.equal(bet.payoffs!.hedged, true);
-  assert.ok(bet.payoffs!.ifConditionFails >= 0 && bet.payoffs!.ifConditionFails < 0.01);
+  assert.ok(bet.payoffs!.ifConditionFails! >= 0 && bet.payoffs!.ifConditionFails! < 0.01);
   near(bet.cost, 10.01 * 0.3 + 4.23 * 0.29);
   near(await exchange.cash(), 1000 - bet.cost); // every dollar accounted for
 
@@ -205,7 +205,7 @@ for (const [name, aSide, bSide, expected] of [
     assert.equal(bet.status, 'settled');
 
     const pnl = bet.settlement!.pnl;
-    if (expected === 'refund') near(pnl, predicted.ifConditionFails);
+    if (expected === 'refund') near(pnl, predicted.ifConditionFails!);
     if (expected === 'win') near(pnl, predicted.ifBothHit);
     if (expected === 'lose') near(pnl, predicted.ifConditionOnly);
     near(await exchange.cash(), 1000 + pnl); // the venue's cash agrees with the ledger's result

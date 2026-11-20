@@ -5,8 +5,11 @@
  *
  *   GET  /health
  *   GET  /markets[?event=TICKER][&include=refused]
- *   GET  /quote?event=&condition=&target=&stake=[&user=]
- *   POST /bets            {user, event, condition, target, stake, maxPrice?, slippageTicks?, onHedgeFail?}
+ *   GET  /quote?event=&condition=&target=&stake=[&direction=down][&user=]      a parlay
+ *   GET  /quote?product=range&event=&low=&high=&stake=[&user=]                 a range
+ *   POST /bets            {user, event, condition, target, stake, direction?, maxPrice?, slippageTicks?, onHedgeFail?}
+ *   POST /bets            {product: "range", user, event, low, high, stake, maxPrice?, slippageTicks?}
+ *   POST /baskets         {user, name?, legs: [{product, event, condition, target | low, high, stake, direction?}]}
  *   GET  /bets[?user=]
  *   POST /settle
  *   GET  /flow[?user=]
@@ -14,6 +17,8 @@
  */
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { BasketRefused, MAX_BASKET_LEGS, MIN_BASKET_LEGS, placeBasket } from './basket.ts';
+import type { BasketLeg } from './basket.ts';
 import { BetRefused, ReviewError, isScorable, placeConditionalBet, recordReviewedPayout, settleBets } from './bets.ts';
 import type { Exchange } from './exchange.ts';
 import { betFlow, flowTotals } from './flow.ts';
@@ -30,9 +35,14 @@ import {
   ladderInversions,
   planForQuantity,
 } from './offer.ts';
-import { findPair, ladder, linkedPairs } from './pairs.ts';
+import { isDirection, viewFor } from './mirror.ts';
+import type { Direction } from './mirror.ts';
+import { findPair, ladder, linkedPairs, realRung } from './pairs.ts';
 import type { LinkedPair, Rung } from './pairs.ts';
+import type { RangePair } from './range.ts';
 import { floorToStep } from './pricing.ts';
+import { capRangeToDepth, findRange, planRange, rangeContractsFor } from './range.ts';
+import { placeRangeBet } from './range-bet.ts';
 import { encodeBody, etagOf, notModified } from './http-cache.ts';
 import { createLimiter } from './limiter.ts';
 import type { LiveHub } from './live.ts';
@@ -117,11 +127,17 @@ const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|[a-z0-9-]+\.lo
 const MAX_BODY_BYTES = 64 * 1024;
 
 const rungView = (r: Rung) => ({ symbol: r.symbol, label: r.label, strike: r.strike, bid: r.bid, ask: r.ask, open: r.open, state: r.state });
-const pairView = (p: LinkedPair) => ({
-  condition: { symbol: p.a.symbol, label: p.a.label, strike: p.a.strike, bid: p.a.bid, ask: p.a.ask },
-  target: { symbol: p.b.symbol, label: p.b.label, strike: p.b.strike, bid: p.b.bid, ask: p.b.ask },
-  quote: p.offer,
-});
+/** A pair as the reader knows it. For a falling bet the pair was found on the mirror of the ladder, so its rungs are turned back. */
+const pairView = (p: LinkedPair, direction?: Direction) => {
+  const a = realRung(p.a, direction);
+  const b = realRung(p.b, direction);
+  return {
+    condition: { symbol: a.symbol, label: a.label, strike: a.strike, bid: a.bid, ask: a.ask },
+    target: { symbol: b.symbol, label: b.label, strike: b.strike, bid: b.bid, ask: b.ask },
+    quote: p.offer,
+  };
+};
+const legView = (r: Rung) => ({ symbol: r.symbol, label: r.label, strike: r.strike, bid: r.bid, ask: r.ask });
 const betView = (bet: BetRecord) => ({ ...bet, scorable: isScorable(bet), flow: betFlow(bet) });
 
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -223,6 +239,8 @@ export function createApi(deps: ApiDeps): ApiHandler {
       for (const r of p.offer.reasons) refusedByReason[r.code] = (refusedByReason[r.code] ?? 0) + 1;
     }
     const offerable = pairs.filter((p) => p.offer.offerable);
+    const fallingPairs = linkedPairs(event, { ...pairOpts, direction: 'down' });
+    const fallingOfferable = fallingPairs.filter((p) => p.offer.offerable);
     return {
       ticker: event.ticker,
       title: event.title,
@@ -230,10 +248,16 @@ export function createApi(deps: ApiDeps): ApiHandler {
       expiry: event.expiryDate ?? null,
       rungs: rungs.map(rungView),
       ladderOutOfOrder: ladderInversions(rungs).length > 0,
-      pairs: (includeRefused ? pairs : offerable).map(pairView),
+      pairs: (includeRefused ? pairs : offerable).map((p) => pairView(p)),
       offerableCount: offerable.length,
       refusedCount: pairs.length - offerable.length,
       refusedByReason,
+      /** The same for a bet that a price falls: the condition is the higher strike and the outcome the lower. */
+      down: {
+        pairs: (includeRefused ? fallingPairs : fallingOfferable).map((p) => pairView(p, 'down')),
+        offerableCount: fallingOfferable.length,
+        refusedCount: fallingPairs.length - fallingOfferable.length,
+      },
     };
   }
 
@@ -344,15 +368,35 @@ export function createApi(deps: ApiDeps): ApiHandler {
     return promise;
   }
 
+  /** Which product and which way a request is for. */
+  const productOf = (v: unknown): 'parlay' | 'range' => {
+    if (v === undefined || v === null || v === '' || v === 'parlay') return 'parlay';
+    if (v === 'range') return 'range';
+    throw new HttpError(400, 'invalid_product', '"product" must be "parlay" or "range".');
+  };
+  const directionOf = (v: unknown): Direction => {
+    if (v === undefined || v === null || v === '') return 'up';
+    if (isDirection(v)) return v;
+    throw new HttpError(400, 'invalid_direction', '"direction" must be "up" or "down".');
+  };
+
+  /** The depth of the two legs of a quote, read through a user's exchange session; without one the quote still answers. */
+  const quoteUser = (q: URLSearchParams): string | undefined => {
+    const user = q.get('user') ?? deps.users[0];
+    return user !== undefined && deps.users.includes(user) ? user : undefined;
+  };
+
   async function quoteNow(q: URLSearchParams) {
+    if (productOf(q.get('product')) === 'range') return quoteRange(q);
     const eventTicker = text(q.get('event'), 'event');
     const conditionSymbol = text(q.get('condition'), 'condition');
     const targetSymbol = text(q.get('target'), 'target');
+    const direction = directionOf(q.get('direction'));
     const stake = q.get('stake') === null ? null : stakeOf(q.get('stake'));
     const event = await getEvent(eventTicker);
     let pair: LinkedPair;
     try {
-      pair = findPair(event, conditionSymbol, targetSymbol, deps.feeCoef, deps.waiveMarkup);
+      pair = findPair(event, conditionSymbol, targetSymbol, deps.feeCoef, deps.waiveMarkup, direction);
     } catch (err) {
       throw new HttpError(400, 'not_a_linked_pair', (err as Error).message);
     }
@@ -360,8 +404,10 @@ export function createApi(deps: ApiDeps): ApiHandler {
     const body: Record<string, unknown> = {
       venue,
       asOf: now().toISOString(),
+      product: 'parlay',
+      direction,
       event: { ticker: event.ticker, title: event.title, expiry: event.expiryDate ?? null },
-      ...pairView(pair),
+      ...pairView(pair, direction),
       stake: null,
       depth: null,
     };
@@ -371,10 +417,10 @@ export function createApi(deps: ApiDeps): ApiHandler {
       const wanted = floorToStep(stake / price);
       let quantity = wanted;
       // Depth is read through a user's exchange session; without one the quote still answers, just without a size limit.
-      const user = q.get('user') ?? deps.users[0];
-      if (user !== undefined && deps.users.includes(user)) {
+      const user = quoteUser(q);
+      if (user !== undefined) {
         try {
-          const exchange = deps.exchangeFor(user);
+          const exchange = viewFor(deps.exchangeFor(user), direction);
           const [depthA, depthB] = await Promise.all([exchange.topOfBook(pair.a.symbol), exchange.topOfBook(pair.b.symbol)]);
           const outcomeAvailable = depthB.ask !== null && depthB.ask <= pair.b.ask + 1e-9 ? (depthB.askSize ?? 0) : 0;
           const conditionAvailable = depthA.bid !== null && depthA.bid >= pair.a.bid - 1e-9 ? (depthA.bidSize ?? 0) : 0;
@@ -402,25 +448,102 @@ export function createApi(deps: ApiDeps): ApiHandler {
     return body;
   }
 
+  async function quoteRange(q: URLSearchParams) {
+    const eventTicker = text(q.get('event'), 'event');
+    const lowSymbol = text(q.get('low'), 'low');
+    const highSymbol = text(q.get('high'), 'high');
+    const stake = q.get('stake') === null ? null : stakeOf(q.get('stake'));
+    const event = await getEvent(eventTicker);
+    let pair: RangePair;
+    try {
+      pair = findRange(event, lowSymbol, highSymbol, deps.feeCoef, deps.waiveMarkup);
+    } catch (err) {
+      throw new HttpError(400, 'not_a_range', (err as Error).message);
+    }
+
+    const body: Record<string, unknown> = {
+      venue,
+      asOf: now().toISOString(),
+      product: 'range',
+      event: { ticker: event.ticker, title: event.title, expiry: event.expiryDate ?? null },
+      low: legView(pair.low),
+      high: legView(pair.high),
+      quote: pair.offer,
+      stake: null,
+      depth: null,
+    };
+
+    if (stake !== null && pair.price !== null && pair.low.ask !== null && pair.high.bid !== null) {
+      const wanted = rangeContractsFor(stake, pair.low.ask, pair.high.bid, deps.feeCoef);
+      let contracts = wanted;
+      const user = quoteUser(q);
+      if (user !== undefined) {
+        try {
+          const exchange = deps.exchangeFor(user);
+          const [depthLow, depthHigh] = await Promise.all([exchange.topOfBook(pair.low.symbol), exchange.topOfBook(pair.high.symbol)]);
+          const lowAvailable = depthLow.ask !== null && depthLow.ask <= pair.low.ask + 1e-9 ? (depthLow.askSize ?? 0) : 0;
+          const highAvailable = depthHigh.bid !== null && depthHigh.bid >= pair.high.bid - 1e-9 ? (depthHigh.bidSize ?? 0) : 0;
+          const most = capRangeToDepth(Number.MAX_SAFE_INTEGER, lowAvailable, highAvailable);
+          contracts = Math.min(wanted, most);
+          body.depth = {
+            outcomeAvailable: lowAvailable,
+            conditionAvailable: highAvailable,
+            maxStake: Math.round(planRange(most, pair.low.ask, pair.high.bid, deps.feeCoef).cost * 100) / 100,
+          };
+        } catch (err) {
+          body.depth = { unavailable: err instanceof Error ? err.message : String(err) };
+        }
+      }
+      const plan = planRange(contracts, pair.low.ask, pair.high.bid, deps.feeCoef);
+      body.stake = {
+        requested: stake,
+        reduced: contracts < wanted - 1e-9,
+        ...plan,
+        cost: Math.round(plan.cost * 100) / 100,
+        cashOutNow: pair.offer.cashOutPer100 === null ? null : Math.round(((pair.offer.cashOutPer100 * plan.cost) / 100) * 100) / 100,
+      };
+    }
+    return body;
+  }
+
+  /** Turns a refusal from placing a bet into the API's 422 answer. */
+  function refusal(err: unknown): never {
+    if (err instanceof BasketRefused) {
+      throw new HttpError(422, err.code, err.message, { refused: true, leg: err.index, quote: err.quote ?? null });
+    }
+    if (err instanceof BetRefused) throw new HttpError(422, err.code, err.message, { refused: true, quote: err.quote ?? null });
+    if (err instanceof Error && /not a linked pair/.test(err.message)) throw new HttpError(400, 'not_a_linked_pair', err.message);
+    if (err instanceof Error && /not a range/.test(err.message)) throw new HttpError(400, 'not_a_range', err.message);
+    throw err;
+  }
+
+  /** The numbers every bet request carries, whichever product it is for. */
+  function limitsOf(body: Record<string, unknown>) {
+    const maxPrice = body.maxPrice === undefined || body.maxPrice === null ? undefined : Number(body.maxPrice);
+    const slippageTicks = body.slippageTicks === undefined || body.slippageTicks === null ? undefined : Number(body.slippageTicks);
+    if (maxPrice !== undefined && !(maxPrice > 0 && maxPrice < 1)) {
+      throw new HttpError(400, 'invalid_max_price', '"maxPrice" must be between 0 and 1.');
+    }
+    if (slippageTicks !== undefined && !(Number.isInteger(slippageTicks) && slippageTicks >= 0 && slippageTicks <= 10)) {
+      throw new HttpError(400, 'invalid_slippage', '"slippageTicks" must be a whole number from 0 to 10.');
+    }
+    return { maxPrice, slippageTicks };
+  }
+
   async function placeBet(body: Record<string, unknown>) {
     if (deps.isPaused?.()) throw new HttpError(503, 'paused', 'Betting is paused for a moment. Try again soon.');
     const user = requireUser(body.user);
+    if (productOf(body.product) === 'range') return placeRange(user, body);
     const request = {
       user,
       eventTicker: text(body.event, 'event'),
       conditionSymbol: text(body.condition, 'condition'),
       targetSymbol: text(body.target, 'target'),
+      direction: directionOf(body.direction),
       stake: stakeOf(body.stake),
-      maxPrice: body.maxPrice === undefined || body.maxPrice === null ? undefined : Number(body.maxPrice),
-      slippageTicks: body.slippageTicks === undefined || body.slippageTicks === null ? undefined : Number(body.slippageTicks),
+      ...limitsOf(body),
       onHedgeFail: body.onHedgeFail === 'leave' ? ('leave' as const) : ('unwind' as const),
     };
-    if (request.maxPrice !== undefined && !(request.maxPrice > 0 && request.maxPrice < 1)) {
-      throw new HttpError(400, 'invalid_max_price', '"maxPrice" must be between 0 and 1.');
-    }
-    if (request.slippageTicks !== undefined && !(Number.isInteger(request.slippageTicks) && request.slippageTicks >= 0 && request.slippageTicks <= 10)) {
-      throw new HttpError(400, 'invalid_slippage', '"slippageTicks" must be a whole number from 0 to 10.');
-    }
     await getEvent(request.eventTicker); // a clear 404 for an unknown event, before anything else
     return queued(user, async () => {
       const d = betDeps(user);
@@ -429,11 +552,83 @@ export function createApi(deps: ApiDeps): ApiHandler {
         const bet = await placeConditionalBet(d, request);
         return { status: 201, body: { bet: betView(bet), stakeReduced: bet.stakeReduced ?? null } };
       } catch (err) {
-        if (err instanceof BetRefused) {
-          throw new HttpError(422, err.code, err.message, { refused: true, quote: err.quote ?? null });
-        }
-        if (err instanceof Error && /not a linked pair/.test(err.message)) throw new HttpError(400, 'not_a_linked_pair', err.message);
+        return refusal(err);
+      }
+    });
+  }
+
+  async function placeRange(user: string, body: Record<string, unknown>) {
+    const request = {
+      user,
+      eventTicker: text(body.event, 'event'),
+      lowSymbol: text(body.low, 'low'),
+      highSymbol: text(body.high, 'high'),
+      stake: stakeOf(body.stake),
+      ...limitsOf(body),
+      onFail: body.onFail === 'leave' ? ('leave' as const) : ('unwind' as const),
+    };
+    await getEvent(request.eventTicker);
+    return queued(user, async () => {
+      const d = betDeps(user);
+      await ensureBaseline(d.exchange, deps.ledger, user, now);
+      try {
+        const bet = await placeRangeBet(d, request);
+        return { status: 201, body: { bet: betView(bet), stakeReduced: bet.stakeReduced ?? null } };
+      } catch (err) {
+        return refusal(err);
+      }
+    });
+  }
+
+  /** One leg of a basket request, checked for shape. The market itself is checked when the basket is placed. */
+  function basketLeg(raw: unknown, index: number): BasketLeg {
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+      throw new HttpError(400, 'invalid_leg', `Leg ${index + 1} must be an object.`);
+    }
+    const leg = raw as Record<string, unknown>;
+    const at = (name: string) => {
+      try {
+        return text(leg[name], name);
+      } catch {
+        throw new HttpError(400, 'missing_field', `Leg ${index + 1}: "${name}" is required.`);
+      }
+    };
+    const stake = (() => {
+      try {
+        return stakeOf(leg.stake);
+      } catch (err) {
+        if (err instanceof HttpError) throw new HttpError(err.status, err.code, `Leg ${index + 1}: ${err.message}`);
         throw err;
+      }
+    })();
+    if (productOf(leg.product) === 'range') return { product: 'range', eventTicker: at('event'), lowSymbol: at('low'), highSymbol: at('high'), stake };
+    return { product: 'parlay', direction: directionOf(leg.direction), eventTicker: at('event'), conditionSymbol: at('condition'), targetSymbol: at('target'), stake };
+  }
+
+  async function placeBasketRoute(body: Record<string, unknown>) {
+    if (deps.isPaused?.()) throw new HttpError(503, 'paused', 'Betting is paused for a moment. Try again soon.');
+    const user = requireUser(body.user);
+    if (!Array.isArray(body.legs) || body.legs.length < MIN_BASKET_LEGS || body.legs.length > MAX_BASKET_LEGS) {
+      throw new HttpError(400, 'invalid_legs', `A basket needs from ${MIN_BASKET_LEGS} to ${MAX_BASKET_LEGS} legs.`);
+    }
+    const legs = body.legs.map(basketLeg);
+    const total = legs.reduce((sum, l) => sum + l.stake, 0);
+    if (deps.maxStake !== undefined && total > deps.maxStake) {
+      throw new HttpError(400, 'stake_too_large', `Baskets are capped at ${deps.maxStake} in total on this demo.`);
+    }
+    const name = typeof body.name === 'string' && body.name.trim() !== '' ? body.name.trim().slice(0, 40) : undefined;
+    for (const ticker of new Set(legs.map((l) => l.eventTicker))) await getEvent(ticker);
+    return queued(user, async () => {
+      const d = betDeps(user);
+      await ensureBaseline(d.exchange, deps.ledger, user, now);
+      try {
+        const result = await placeBasket(d, { user, name, legs });
+        return {
+          status: 201,
+          body: { basket: { id: result.id, name: result.name ?? null, size: result.size, failed: result.failed }, bets: result.bets.map(betView) },
+        };
+      } catch (err) {
+        return refusal(err);
       }
     });
   }
@@ -574,6 +769,16 @@ export function createApi(deps: ApiDeps): ApiHandler {
         }
       },
     },
+    '/baskets': {
+      POST: async (_q, req) => {
+        refuseIfReadOnly();
+        try {
+          return await placeBasketRoute(await readJson(req));
+        } finally {
+          deps.live?.publish('bets'); // legs placed before a failure are recorded too
+        }
+      },
+    },
     '/settle': {
       POST: async () => {
         refuseIfReadOnly();
@@ -634,7 +839,7 @@ export function createApi(deps: ApiDeps): ApiHandler {
         const path = url.pathname.replace(/\/+$/, '') || '/';
         if (path === '/stream' && req.method === 'GET') return openStream(req, res, headers, url);
         const route = routes[path];
-        if (!route) throw new HttpError(404, 'not_found', `No such endpoint: ${path}. Try /health, /markets, /quote, /bets, /settle, /flow or /reconcile.`);
+        if (!route) throw new HttpError(404, 'not_found', `No such endpoint: ${path}. Try /health, /markets, /quote, /bets, /baskets, /settle, /flow or /reconcile.`);
         const handler = route[req.method as 'GET' | 'POST'];
         if (!handler) {
           headers.Allow = Object.keys(route).join(', ');

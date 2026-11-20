@@ -1,6 +1,11 @@
 import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, writeSync } from 'node:fs';
 import { dirname } from 'node:path';
+import type { Direction } from './mirror.ts';
 import type { OfferQuote } from './offer.ts';
+import type { RangeQuote } from './range.ts';
+
+/** The kinds of bet the service places. A bet recorded before there were two is a parlay. */
+export type Product = 'parlay' | 'range';
 
 /** One order sent to Gemini, identified by the tag we attach (`clientOrderId`). */
 export interface LegRecord {
@@ -29,6 +34,17 @@ export interface BetRecord {
   eventTicker: string;
   eventTitle: string;
   expiry: string | null;
+  /** What kind of bet this is. Absent on bets recorded before ranges existed: those are parlays going up. */
+  product?: Product;
+  /** Which way a parlay looks: "up" bets that a price reaches a higher level, "down" that it falls to a lower one. */
+  direction?: Direction;
+  /** Set when the bet was placed as one leg of a basket. */
+  basket?: { id: string; name?: string; index: number; size: number };
+  /**
+   * A parlay's condition is the strike that has to hold first and its target the strike it is really about; for a falling
+   * parlay the condition is the HIGHER strike. A range has no condition: its "condition" is the lower strike (the YES leg)
+   * and its "target" the higher (the NO leg).
+   */
   condition: { symbol: string; label: string; strike: number };
   target: { symbol: string; label: string; strike: number };
   requestedStake: number;
@@ -47,16 +63,23 @@ export interface BetRecord {
   legs: LegRecord[];
   /** Net dollars spent (buys minus any unwind proceeds). */
   cost: number;
+  /**
+   * What the bet pays. For a parlay: ifBothHit is the win, ifConditionOnly the loss, ifConditionFails the refund. For a
+   * range: ifBothHit and ifInRange are the win, ifConditionOnly and ifOutside the loss, and there is no refund line.
+   * `hedged` means both legs are in place (a range's two legs are matched).
+   */
   payoffs?: {
     stake: number;
-    ifConditionFails: number;
+    ifConditionFails?: number;
     ifBothHit: number;
     ifConditionOnly: number;
+    ifInRange?: number;
+    ifOutside?: number;
     conditionalPrice: number | null;
     hedged: boolean;
   };
   /** The offer rule's numbers and verdict at the moment the bet was placed. */
-  offer?: OfferQuote;
+  offer?: OfferQuote | RangeQuote;
   /** Present when the depth guard shrank the bet so both orders fit at the best price. */
   stakeReduced?: {
     requested: number;
