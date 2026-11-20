@@ -11,7 +11,7 @@
  *           authority key (a file in the chain data folder, or GIVEN_AUTHORITY_KEY holding its JSON array).
  *   quotes  real Gemini sandbox prices and order books, no account: bets are switched off. In-memory test chain by
  *           default; GIVEN_QUOTES_CHAIN=devnet opts in to real devnet ingestion using the existing authority key.
- *   fake    the local test exchange and the in-memory test chain. Staging only; it labels itself as a test everywhere.
+ *   fake    the local test exchange and the in-memory test chain. Staging only: nothing on screen says it is a test, so it refuses a public address unless told it is one.
  *   auto    (default) live when the keys are present, otherwise quotes. The page says which one it is.
  *   replay  no executor, no chain service, no keys, no network: the app is answered from a session recorded earlier
  *           (GIVEN_REPLAY=<file>). The stage fallback. The page says "Replay" and when it was recorded.
@@ -118,7 +118,7 @@ if (mode === 'quotes' && modeSettings.chain === 'devnet' && !haveAuthority) {
   fail(`quotes mode with a devnet chain needs an existing Solana authority key file at ${keyFile}.`);
 }
 if (mode === 'fake' && env.GIVEN_I_KNOW_THIS_IS_A_TEST !== '1' && HOST !== '127.0.0.1') {
-  fail('fake mode shows a local test exchange and is only for staging. Set GIVEN_I_KNOW_THIS_IS_A_TEST=1 to run it on a public address.');
+  fail('fake mode runs a local test exchange and is only for staging. Set GIVEN_I_KNOW_THIS_IS_A_TEST=1 to run it on a public address.');
 }
 
 // The liquidity seeder (executor/src/seeder.ts): our own SECOND sandbox account resting tight quotes, so bets fill at a

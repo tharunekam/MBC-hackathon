@@ -104,7 +104,7 @@ async function session(page, base, live) {
   await page.waitForSelector('.receipt');
   await page.waitForSelector('.receipt .steps li.is-done >> text=Call recorded on Solana');
   const receipt = await page.locator('.receipt').innerText();
-  need(/Order 1 filled/.test(receipt) && /Order 2 filled/.test(receipt), 'both orders are not shown as filled');
+  need(/Order 1 went through/.test(receipt) && /Order 2 went through/.test(receipt), 'both orders are not shown as filled');
 
   await page.getByRole('link', { name: 'See my bets' }).click();
   await page.waitForURL('**/bets');
@@ -118,7 +118,7 @@ async function session(page, base, live) {
   }
   await until('the bet to show Won without a reload', async () => (await page.locator('text=Won').count()) >= 1, 45_000);
   await page.getByRole('button', { name: 'Reveal on Solana' }).first().click();
-  await page.waitForSelector('text=Edge scored');
+  await page.getByText(/Revealed on Solana/).first().waitFor();
   await page.getByRole('button', { name: /Orders and proof/ }).first().click();
   const details = await page.locator('[data-bet]').first().innerText();
 
@@ -146,7 +146,7 @@ await check('a whole bet is recorded while the app is used for real (local test 
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
   recorded = await session(page, live.base, live);
   seen.handle = recorded.handle;
-  need(/Called it/.test(recorded.verdict), 'the recorded call was not a win');
+  need(/\bWon\b/.test(recorded.verdict), 'the recorded call was not a win');
   need(/\$0\.00/.test(recorded.tied), 'the recorded cash check did not tie out');
   await sleep(800); // let the snapshot that follows the last step land
 });

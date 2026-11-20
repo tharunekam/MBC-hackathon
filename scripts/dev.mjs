@@ -3,7 +3,7 @@
  * Runs, inspects and stops this project's dev stack on fixed ports.
  *
  *   node scripts/dev.mjs fake     executor over a local test exchange + chain service on an in-memory chain + web
- *                                 (no Gemini key, no SOL; every signature is labelled as a test chain)
+ *                                 (no Gemini key, no SOL; the signatures are not real)
  *   node scripts/dev.mjs quotes  REAL Gemini sandbox prices and order books with no keys: ladders and quotes are live,
  *                                 every order is refused (read-only). Chain is the in-memory test chain.
  *   node scripts/dev.mjs live     real Gemini SANDBOX executor + Solana DEVNET chain service + web

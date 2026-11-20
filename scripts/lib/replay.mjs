@@ -52,7 +52,8 @@ const parse = (text) => {
 
 /**
  * What identifies a request: the method, the path, its query in a fixed order, and for a POST its body with keys in a
- * fixed order. The `user` a browser sends is left out: the hosted server pins the account whatever it says.
+ * fixed order. The `user` a browser sends is left out: the hosted server pins the account whatever it says. So is the
+ * `requestId`: the page makes a fresh random one for every attempt, so two identical clicks never carry the same one.
  */
 export function keyOf(method, url, bodyText) {
   const [rawPath, rawQuery = ''] = String(url).split('?');
@@ -62,7 +63,7 @@ export function keyOf(method, url, bodyText) {
   if (method.toUpperCase() !== 'GET') {
     const body = parse(bodyText);
     if (body && typeof body === 'object' && !Array.isArray(body)) {
-      const { user: _user, ...rest } = body;
+      const { user: _user, requestId: _requestId, ...rest } = body;
       if (Object.keys(rest).length > 0) key += ` ${JSON.stringify(canonical(rest))}`;
     } else if (body !== null) key += ` ${JSON.stringify(body)}`;
   }
