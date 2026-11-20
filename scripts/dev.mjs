@@ -109,7 +109,7 @@ async function start(mode) {
       // bet placed with no keys reaches a result, a reveal and the leaderboard without anyone calling /dev/resolve.
       env: {
         GIVEN_PORT: String(PORTS.executor),
-        ...(mode === 'fake' ? { FAKE_ROUND_MINUTES: process.env.FAKE_ROUND_MINUTES ?? '5' } : {}),
+        ...(mode === 'fake' ? { FAKE_ROUND_MINUTES: process.env.FAKE_ROUND_MINUTES ?? '5', FAKE_ASSETS: process.env.FAKE_ASSETS ?? 'ETH,SOL' } : {}),
         ...(mode === 'live' ? { GIVEN_SANDBOX_WAIVE_MARKUP: '1' } : {}),
         ...(mode === 'quotes' ? { GIVEN_READONLY: '1', GIVEN_SANDBOX_WAIVE_MARKUP: '1' } : {}),
       },

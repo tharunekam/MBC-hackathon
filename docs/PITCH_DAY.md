@@ -1,7 +1,7 @@
 # Pitch day: turning everything on, and off again
 
 The QuickNode Stream is kept **paused** until it is needed, because it bills for every block it reads, matched or not (about
-270,000 credits an hour on devnet; the free plan holds 10 million). The leaderboard works without it: the chain service reads
+450,000 credits an hour on devnet, measured at about 4.2 blocks a second on 2026-11-20; the free plan holds 10 million). The leaderboard works without it: the chain service reads
 our authority's recent transactions from Solana every minute. The Stream's job in the pitch is to be the live feed, and to
 be the evidence for the QuickNode bounty, so it is on for a short window only.
 
@@ -14,6 +14,23 @@ be the evidence for the QuickNode bounty, so it is on for a short window only.
       tunnel should pass it.
 - [ ] `npm run quicknode -- plan` shows the webhook address people really open (`<GIVEN_PUBLIC_URL>/chain/hooks/quicknode`).
 - [ ] `npm run quicknode -- test-filter` says FILTER OK (it runs our filter on QuickNode against a real record; no Stream needed).
+
+## Checked end to end on 2026-11-20 (a laptop with no Gemini keys, behind a quick tunnel)
+
+A real devnet commit and reveal (written by `cd chain && npm run smoke`, through our program) were read by the Stream's filter,
+delivered to the public webhook, re-read from Solana and verified by the server, and the leaderboard's source changed from
+"Read from Solana" to "Live from Solana". What was run, in order, so it can be done again:
+
+1. `cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8080`, then put its `https://….trycloudflare.com` address in `.env` as `GIVEN_PUBLIC_URL`.
+2. `npm run build`, then `GIVEN_INTERNAL_EXECUTOR_PORT=18741 GIVEN_INTERNAL_CHAIN_PORT=18742 GIVEN_EDGE_TRUST_PROXY=1 PORT=8080 node scripts/serve.mjs`
+   (quotes mode with the devnet chain from `.env`; the internal ports keep clear of `npm run dev`, which holds 8741 and 8742).
+3. `npm run quicknode -- plan`, `test-filter` (FILTER OK) and `test-delivery` (202, 202, 401).
+4. `npm run quicknode -- pitch-on --recreate`: the Stream is replaced by a fresh one pointing at the tunnel.
+5. `cd chain && node --env-file=../.env scripts/devnet-smoke.ts`: a commit and a reveal on devnet. Seconds later the leaderboard says "Live from Solana".
+6. `npm run quicknode -- pitch-off`.
+
+A paused Stream cannot be resumed for long on the free plan (devnet moves about 4 blocks a second), so every start after a pause is `pitch-on --recreate`.
+A tunnel's address changes whenever it restarts: repeat step 1, then `pitch-on --recreate`.
 
 ## Once, on the machine that holds the Gemini keys, after the 2026-11-20 order-path changes
 
@@ -45,7 +62,7 @@ If any step fails, do not demo live: use the replay (`GIVEN_MODE=replay`, below)
 ## Straight after
 
 - `npm run quicknode -- pitch-off`, then confirm the status says paused. Nothing is billed while it is paused.
-- Credits used: the dashboard shows the remaining balance. Roughly 4.5k credits a minute while active.
+- Credits used: the dashboard shows the remaining balance. Roughly 7.5k credits a minute while active.
 
 ## If something is not working on the day
 

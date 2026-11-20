@@ -154,7 +154,7 @@ recorded fallback.
       `npm run quicknode -- status` confirms it on a machine with the key) and, while it is running, a screenshot of its dashboard
       (network, dataset, filter, webhook, delivery count) is in the README. Not yet taken: it needs a real delivery.
 - [ ] The Stream is **running only when needed**: `npm run quicknode -- pitch-on` before recording and before
-      judging, `pitch-off` after (`docs/PITCH_DAY.md`). Running, it uses about 270k credits an hour (10.8M a day); the free
+      judging, `pitch-off` after (`docs/PITCH_DAY.md`). Running, it uses about 450k credits an hour (10.8M a day); the free
       trial holds 10M in total, shared with RPC calls.
 - [ ] If the liquidity seeder is running while recording or presenting: `GIVEN_SEEDED=1` is set (the nav shows "Seeded
       prices"), the narration says the tight prices are our own test quotes, and nothing calls its fills order flow.
