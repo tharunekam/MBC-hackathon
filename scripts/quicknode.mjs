@@ -19,7 +19,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { API, CREDITS_PER_BLOCK, addMissing, buildStreamBody, creditEstimate, filterResult, mentions, needsFreshStream, newToken, sampleDelivery, signDelivery, testFilterBody, validStreamId } from './lib/quicknode.mjs';
+import { API, CREDITS_PER_BLOCK, addMissing, buildStreamBody, destinationUrl, pointsElsewhere, creditEstimate, filterResult, mentions, needsFreshStream, newToken, sampleDelivery, signDelivery, testFilterBody, validStreamId } from './lib/quicknode.mjs';
 
 /** The first call recorded through our program on devnet: a block known to hold a Given record. */
 const KNOWN_RECORD = '2DFD8UjXaPofQh82UXFpwsUm47ArcVkteQAxFSeyjp76CRFtr8tNK7JvZD8Th8NepmctkYqnDypHdKRavEJxQnQL';
@@ -147,7 +147,8 @@ switch (cmd) {
   }
   case 'status': {
     const s = await ours();
-    console.log(JSON.stringify({ id: s.id, name: s.name, network: s.network, dataset: s.dataset, status: s.status, destination: s.destination, sequence: s.sequence_id ?? s.sequence }, null, 2));
+    console.log(JSON.stringify({ id: s.id, name: s.name, network: s.network, dataset: s.dataset, status: s.status, destination: s.destination, delivers_to: destinationUrl(s) ?? '(not reported)', sequence: s.sequence_id ?? s.sequence }, null, 2));
+    if (pointsElsewhere(s, webhookUrl())) console.log(`\nThis Stream delivers to a different address than this machine's (${webhookUrl()}). Run: npm run quicknode -- pitch-on --recreate`);
     break;
   }
   case 'activate':
@@ -164,15 +165,26 @@ switch (cmd) {
     const answered = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...signDelivery(probe, env.QN_SECURITY_TOKEN) }, body: probe }).then((r) => r.status, () => 0);
     if (answered !== 202) die(`Our webhook did not accept a signed test delivery (HTTP ${answered || 'no answer'}). Is the server up and GIVEN_PUBLIC_URL the address people open? The Stream was NOT started.`);
     console.log('ok   our webhook accepts a signed delivery at the public address');
+    // A receiver on the in-memory test chain answers 202 too, and can never index a devnet record: refuse before billing.
+    const health = await fetch(new URL('/chain/health', url).href).then((r) => r.json(), () => null);
+    if (health && health.network && health.network !== 'devnet') die(`The receiver is on the "${health.network}" chain, not devnet, so it could not index anything the Stream delivers. Start it with GIVEN_QUOTES_CHAIN=devnet (or live mode). The Stream was NOT started.`);
+    // Build and check the replacement now, so a bad setting is found before anything is deleted.
+    const replacement = body(true);
     // 2. Start it. A Stream paused for long cannot be resumed on the free plan; then a fresh one, which starts at the tip.
     let s = await ours();
-    if (s.status === 'active') console.log('ok   the Stream is already active');
+    if (pointsElsewhere(s, url)) {
+      // The tunnel's address changed under it: resuming would deliver to a dead address, and nothing fails until the first match.
+      console.log(`The Stream delivers to ${destinationUrl(s)}, not ${url}: replacing it.`);
+      await api('DELETE', `/streams/${s.id}`);
+      await api('POST', '/streams', replacement);
+      console.log('ok   replaced it with a fresh Stream pointing here, started at the tip');
+    } else if (s.status === 'active') console.log('ok   the Stream is already active');
     else {
       const r = await api('POST', `/streams/${s.id}/activate`, {}, true);
       if (r?.failed && needsFreshStream(r.status, r.text)) {
         if (!flag('--recreate')) die('QuickNode will not resume this Stream: it fell too far behind for the free plan. Run again with --recreate to replace it with a fresh Stream that starts at the tip (this deletes the old one).');
         await api('DELETE', `/streams/${s.id}`);
-        await api('POST', '/streams', body(true));
+        await api('POST', '/streams', replacement);
         console.log('ok   replaced it with a fresh Stream, started at the tip');
       } else if (r?.failed) die(`QuickNode answered HTTP ${r.status} to activate:\n${r.text}`);
       else console.log('ok   the Stream was resumed');

@@ -135,3 +135,12 @@ export function addMissing(envText, wanted) {
  * starts at the tip and so has nothing to backfill.
  */
 export const needsFreshStream = (status, text) => status === 422 && /backfill more than \d+ blocks/i.test(String(text));
+
+/** The address a listed Stream delivers to, or null when QuickNode did not say. */
+export const destinationUrl = (stream) => (typeof stream?.destination_attributes?.url === 'string' ? stream.destination_attributes.url : null);
+
+/** True when a Stream is known to deliver somewhere other than where this machine's webhook now is (a tunnel that restarted). */
+export const pointsElsewhere = (stream, webhookUrl) => {
+  const now = destinationUrl(stream);
+  return now !== null && now.replace(/\/+$/, '') !== String(webhookUrl).replace(/\/+$/, '');
+};

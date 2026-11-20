@@ -29,6 +29,8 @@ delivered to the public webhook, re-read from Solana and verified by the server,
 5. `cd chain && node --env-file=../.env scripts/devnet-smoke.ts`: a commit and a reveal on devnet. Seconds later the leaderboard says "Live from Solana".
 6. `npm run quicknode -- pitch-off`.
 
+Notes from the review of that run: the server serves the `index.html` it read at start, so restart it after every `npm run build`; `GIVEN_INTERNAL_EXECUTOR_PORT` and `GIVEN_INTERNAL_CHAIN_PORT` move its two private ports; add `HOST=127.0.0.1` behind a tunnel so it is not also open to the local network. `pitch-on` now checks that the receiver is on devnet, builds the replacement Stream before deleting the old one, and replaces a Stream that still delivers to an old address (`status` shows where it delivers). A 202 from the webhook proves only that the address is reachable and the secret right: judge ingestion by a real record, not by the sample delivery.
+
 A paused Stream cannot be resumed for long on the free plan (devnet moves about 4 blocks a second), so every start after a pause is `pitch-on --recreate`.
 A tunnel's address changes whenever it restarts: repeat step 1, then `pitch-on --recreate`.
 
@@ -70,7 +72,7 @@ If any step fails, do not demo live: use the replay (`GIVEN_MODE=replay`, below)
 |---|---|
 | The sandbox has no bettable ladder (top of the hour) | Wait a few minutes, or present from a recorded session: `GIVEN_MODE=replay` plays back a real recorded bet with nothing behind it (`docs/DEPLOY.md`, "Replay"). Say it is a replay |
 | Gemini sandbox is down or slow | The same replay, or `GIVEN_MODE=fake` (nothing on screen says it is a test, so say aloud that it is the local test exchange, not Gemini; set `FAKE_ROUND_MINUTES=5` so its ladder settles by itself) |
-| The Stream shows paused or failing | `npm run quicknode -- pitch-on` again. The leaderboard keeps filling from the minute-by-minute read, so nothing on screen breaks |
+| The Stream shows paused or failing | Find the cause first in the dashboard delivery log (401: the tokens differ; 404, 502 or 530: the address or the server), then `npm run quicknode -- pitch-on --recreate`: on the free plan a paused Stream is almost never resumable. The leaderboard keeps filling from the minute-by-minute read, so nothing on screen breaks |
 | The public address changed (quick tunnel restarted) | Update `GIVEN_PUBLIC_URL`, restart the server, then `npm run quicknode -- pitch-on --recreate` so the Stream points at the new address |
 | The laptop sleeps | Keep it awake while presenting (`caffeinate -dimsu`), or use a host |
 

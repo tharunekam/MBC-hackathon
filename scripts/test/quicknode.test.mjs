@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { addMissing, buildStreamBody, creditEstimate, filterResult, mentions, needsFreshStream, sampleDelivery, signDelivery, testFilterBody, validStreamId } from '../lib/quicknode.mjs';
+import { addMissing, buildStreamBody, creditEstimate, destinationUrl, pointsElsewhere, filterResult, mentions, needsFreshStream, sampleDelivery, signDelivery, testFilterBody, validStreamId } from '../lib/quicknode.mjs';
 import { hookAuthentic } from '../../chain/src/webhook.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -93,6 +93,19 @@ describe('the Stream we ask QuickNode for', () => {
     assert.match(r.text, /GIVEN_HOOK_TOKEN=keepme/);
     assert.match(r.text, /QN_SECURITY_TOKEN=fresh/);
     assert.doesNotMatch(r.text, /QN_SECURITY_TOKEN=\n/);
+  });
+});
+
+describe('a Stream left pointing at an address that has gone', () => {
+  const stream = (url) => ({ destination_attributes: url === undefined ? {} : { url } });
+  it('is told apart from one that delivers here, ignoring a trailing slash', () => {
+    assert.equal(pointsElsewhere(stream('https://old.example/chain/hooks/quicknode'), 'https://new.example/chain/hooks/quicknode'), true);
+    assert.equal(pointsElsewhere(stream('https://new.example/chain/hooks/quicknode/'), 'https://new.example/chain/hooks/quicknode'), false);
+  });
+  it('is not guessed at when QuickNode does not say where it delivers', () => {
+    assert.equal(destinationUrl(stream()), null);
+    assert.equal(pointsElsewhere(stream(), 'https://new.example/chain/hooks/quicknode'), false);
+    assert.equal(pointsElsewhere(undefined, 'https://new.example/x'), false);
   });
 });
 
