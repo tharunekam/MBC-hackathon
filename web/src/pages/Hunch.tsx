@@ -96,7 +96,6 @@ export default function Hunch() {
     <div className="page builder hunch">
       <header className="page-head">
         <div>
-          <span className="eyebrow">Your view against the market’s</span>
           <h1 className="h-page">Hunch</h1>
           <p className="lede">Say where you think the price finishes and how sure you are. We list the bets on offer that are worth more to that view than they cost, biggest difference first.</p>
         </div>
@@ -277,10 +276,10 @@ export default function Hunch() {
                   ? // Closed, or not trading yet: said as that, not as a market whose prices are too far apart.
                     `${market.text}${market.phase === 'closed' ? ' The chart shows its last prices.' : ''}`
                   : ideas.length === 0
-                    ? 'No bet is on offer on this market right now. Usually that is because its buy and sell prices are too far apart to make a fair deal. The chart still shows where the market stands.'
+                    ? 'No bet is on offer in this market right now. Usually that is because its buy and sell prices are too far apart to make a fair deal. The chart still shows where the market stands.'
                     : !moved
                       ? 'Nothing yet: your view is the market’s, and every bet costs a little more than the market thinks it is worth. Move a dial, and the bets your view makes worth more than they cost appear here.'
-                      : 'No bet on this market is worth more to you than it costs right now. Your view is close to the market’s, or the spread costs more than the difference.'}
+                      : 'No bet in this market is worth more to you than it costs right now. Your view is close to the market’s, or the spread costs more than the difference.'}
             </p>
           )}
 

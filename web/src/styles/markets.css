@@ -35,11 +35,8 @@
   padding-left: 0;
 }
 .mk-stat dt {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 12.5px;
   font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--muted);
 }
 .mk-stat dd {
@@ -49,7 +46,6 @@
   font-size: 32px;
   line-height: 1.1;
   letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
 }
 
 .mk-stale {
@@ -67,32 +63,34 @@
 .mk-seg {
   display: inline-flex;
   flex-wrap: wrap;
+  gap: 2px;
   max-width: 100%;
+  padding: 3px;
   border: 1px solid var(--line-strong);
-  border-radius: var(--r-sm);
-  overflow: hidden;
+  border-radius: var(--r-ctl);
+  background: var(--surface);
 }
 .mk-seg button {
-  height: 36px;
+  height: 32px;
   padding: 0 16px;
   border: 0;
-  border-left: 1px solid var(--line);
+  border-radius: 6px;
   background: transparent;
-  color: var(--soft);
+  color: var(--muted);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: background-color 160ms var(--ease), color 160ms var(--ease);
-}
-.mk-seg button:first-child {
-  border-left: 0;
+  transition: background-color var(--t-fast) var(--ease-ui), color var(--t-fast) var(--ease-ui), transform var(--t-fast) var(--ease-ui);
 }
 .mk-seg button:hover {
-  background: var(--surface);
+  color: var(--ink);
+}
+.mk-seg button:active {
+  transform: scale(0.97);
 }
 .mk-seg button[aria-pressed='true'] {
-  background: var(--ink);
-  color: var(--bg);
+  background: var(--accent);
+  color: var(--accent-ink);
 }
 .mk-seg button:focus-visible {
   outline-offset: -2px;
@@ -104,10 +102,10 @@
 }
 .mk-search input {
   width: 100%;
-  height: 36px;
-  padding: 0 12px;
+  height: 40px;
+  padding: 0 14px;
   border: 1px solid var(--line-strong);
-  border-radius: var(--r-sm);
+  border-radius: 12px;
   background: var(--surface);
   color: var(--ink);
   font-size: 14px;
@@ -138,11 +136,9 @@
 }
 .mk-count {
   margin-top: 16px;
-  font-family: var(--font-mono);
   font-size: 12px;
   letter-spacing: 0.02em;
   color: var(--muted);
-  font-variant-numeric: tabular-nums;
 }
 
 /* ---------------------------------------------------------- groups */
@@ -169,11 +165,8 @@
   padding: 1px 8px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-sm);
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--muted);
   align-self: center;
 }
@@ -181,12 +174,13 @@
   margin-left: auto;
   font-size: 13px;
   color: var(--muted);
-  font-variant-numeric: tabular-nums;
 }
 
 .mk-table-wrap {
   border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
   overflow: hidden;
 }
 .mk-table {
@@ -218,14 +212,11 @@
 .mk-table th {
   padding: 10px 16px;
   text-align: left;
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--muted);
   white-space: nowrap;
-  border-bottom: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line);
 }
 .mk-table td {
   padding: 14px 16px;
@@ -238,11 +229,10 @@
 .mk-table th.mk-c-num,
 .mk-table td.mk-num {
   text-align: right;
-}
-.mk-table td.mk-num {
   font-family: var(--font-mono);
   font-size: 14px;
-  font-variant-numeric: tabular-nums;
+}
+.mk-table td.mk-num {
   white-space: nowrap;
 }
 .mk-table th.mk-c-act,
@@ -254,7 +244,7 @@
   transition: background-color 120ms var(--ease);
 }
 .mk-row:hover {
-  background: var(--surface);
+  background: var(--surface-2);
 }
 
 .mk-closes {
@@ -287,7 +277,7 @@
   box-sizing: border-box;
 }
 .mk-dot[data-state='priced'] {
-  background: var(--ink);
+  background: var(--good);
 }
 .mk-dot[data-state='none'] {
   border: 1.5px solid var(--faint);
@@ -298,19 +288,28 @@
 
 .mk-links {
   display: inline-flex;
-  gap: 16px;
+  gap: 6px;
 }
 .mk-link {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-ctl);
+  font-size: 13.5px;
   font-weight: 500;
-  color: var(--accent-text);
+  color: var(--ink);
   text-decoration: none;
-  border-bottom: 1px solid transparent;
+  transition: background var(--t-fast) var(--ease-ui), border-color var(--t-fast) var(--ease-ui), transform var(--t-fast) var(--ease-ui);
 }
 .mk-link:hover {
-  border-bottom-color: currentColor;
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+}
+.mk-link:active {
+  transform: translateY(0) scale(0.97);
 }
 .mk-wait {
   font-size: 14px;
@@ -482,11 +481,8 @@
   }
   .mk-table td[data-label]::before {
     content: attr(data-label);
-    font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 500;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
     color: var(--muted);
     text-align: left;
   }

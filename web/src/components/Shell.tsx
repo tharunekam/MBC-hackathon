@@ -43,6 +43,14 @@ function ThemeToggle() {
   );
 }
 
+/** The home page's sections, in reading order. The bar lists them there instead of the app's tabs. */
+const CONCEPT = [
+  { hash: '#how', name: 'How it works' },
+  { hash: '#cost', name: 'What it costs' },
+  { hash: '#proof', name: 'The record' },
+  { hash: '#products', name: 'Ways to bet' },
+];
+
 const tabClass = ({ isActive }: { isActive: boolean }) => `nav-link${isActive ? ' is-on' : ''}`;
 
 /** At 1080px and below the tabs fold into one sheet: the products with what each one is, then everything else. */
@@ -132,32 +140,43 @@ export function Nav({ venue }: { venue: VenueNote }) {
     };
   }, [menu]);
   return (
-    // With the menu open the bar is drawn solid, so the sheet never sits under a transparent bar.
-    <header className="nav" data-home={home ? '' : undefined} data-over={home && top && !menu ? 'dark' : undefined}>
+    // At the top of a page the bar has no edge; once the page moves under it, it gets its rule and its blur.
+    <header className="nav" data-home={home ? '' : undefined} data-top={top && !menu ? '' : undefined}>
       <div className="nav-in">
         <Link to={keepMode('/')} className="brand" aria-label="Given home">
           Given
         </Link>
-        <nav className="nav-links" aria-label="Main">
-          {PRODUCTS.map((p) => (
-            <NavLink key={p.id} to={keepMode(p.to)} className={tabClass}>
-              {p.name}
-            </NavLink>
-          ))}
-          <span className="nav-sep" aria-hidden="true" />
-          {TOOLS.map((t) => (
-            <NavLink key={t.id} to={keepMode(t.to)} className={tabClass}>
-              {t.name}
-            </NavLink>
-          ))}
-        </nav>
+        {home ? (
+          // On the home page the bar is the page's own contents: the idea first, then the ways to bet.
+          <nav className="nav-links" aria-label="On this page">
+            {CONCEPT.map((c) => (
+              <Link key={c.hash} to={keepMode(`/${c.hash}`)} className="nav-link">
+                {c.name}
+              </Link>
+            ))}
+          </nav>
+        ) : (
+          <nav className="nav-links" aria-label="Main">
+            {PRODUCTS.map((p) => (
+              <NavLink key={p.id} to={keepMode(p.to)} className={tabClass}>
+                {p.name}
+              </NavLink>
+            ))}
+            <span className="nav-sep" aria-hidden="true" />
+            {TOOLS.map((t) => (
+              <NavLink key={t.id} to={keepMode(t.to)} className={tabClass}>
+                {t.name}
+              </NavLink>
+            ))}
+          </nav>
+        )}
         <div className="nav-right">
           {!home && <LiveBadge />}
           <VenueChip venue={venue} />
           <ThemeToggle />
           {home ? (
             <Link to={keepMode(PRODUCTS[0]!.to)} className="btn btn-primary btn-sm">
-              Enter app
+              Open the app
             </Link>
           ) : (
             <NavLink to={keepMode(MY_BETS.to)} className={({ isActive }) => `btn btn-ghost btn-sm bets-link${isActive ? ' is-on' : ''}`}>
@@ -233,8 +252,11 @@ export function Footer({ venue }: { venue: VenueNote }) {
             </div>
           </nav>
         </div>
+        <div className="foot-mark" aria-hidden="true">
+          Given
+        </div>
         {/* What this copy of the app is really talking to comes first, then the two lines that never change. */}
-        <p className="foot-legal">{venue.about} Not affiliated with Gemini. Prediction markets carry risk, including the loss of your stake.</p>
+        <p className="foot-legal">{venue.about} Not affiliated with Gemini. Prediction markets carry risk, and you can lose your whole stake.</p>
       </div>
     </footer>
   );
@@ -279,8 +301,9 @@ export default function Shell() {
           ))}
         </nav>
       )}
-      {/* Focusable only by the skip link, so focus (and a screen reader) really does move here. */}
-      <main id="main" tabIndex={-1}>
+      {/* Keyed by page, so each page eases in as it arrives. Focusable only by the skip link, so focus (and a screen reader)
+          really does move here. */}
+      <main id="main" key={pathname} tabIndex={-1}>
         <Outlet context={venue} />
       </main>
       <Footer venue={venue} />

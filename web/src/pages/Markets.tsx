@@ -73,9 +73,8 @@ export default function Markets() {
     <div className="page mk">
       <header className="page-head">
         <div>
-          <span className="eyebrow">Markets</span>
-          <h1 className="h-page">Every ladder, by asset</h1>
-          <p className="lede">Each ladder is a set of price levels the exchange lists for one asset and one close time. Open one to build a bet on it.</p>
+          <h1 className="h-page">Markets you can bet on</h1>
+          <p className="lede">Each market is one asset and one closing time, with the price levels the exchange lists for it. Open one to build a bet.</p>
         </div>
         {status && !markets.error && (
           <span className="chip-quiet mk-status">
@@ -99,7 +98,7 @@ export default function Markets() {
       ) : markets.error && !markets.data ? (
         <div className="mk-state" role="alert">
           <h2 className="mk-state-title">The markets did not load</h2>
-          <p>The list of ladders could not be fetched. Nothing about your bets has changed.</p>
+          <p>We couldn’t load the list of markets. Nothing about your bets has changed.</p>
           <button type="button" className="btn btn-ghost btn-sm" onClick={markets.reload}>
             Try again
           </button>
@@ -107,8 +106,8 @@ export default function Markets() {
       ) : (
         <>
           <dl className="mk-stats" aria-label="Summary">
-            <Stat label="Ladders" value={totals.ladders} />
-            <Stat label="With prices" value={totals.priced} />
+            <Stat label="Markets open" value={totals.ladders} />
+            <Stat label="With live prices" value={totals.priced} />
             <Stat label="Parlays on offer" value={totals.offers} />
             <Stat label="Assets" value={totals.assets} />
           </dl>
@@ -142,24 +141,24 @@ export default function Markets() {
             </div>
             <label className="mk-toggle">
               <input type="checkbox" checked={priced} disabled={!anyPriced} onChange={(e) => patch({ priced: e.target.checked ? null : '0' })} />
-              Only ladders with prices
+              Only markets with prices
             </label>
           </div>
 
           <p className="mk-count" role="status">
-            {shownLadders} {shownLadders === 1 ? 'ladder' : 'ladders'} across {shown.length} {shown.length === 1 ? 'asset' : 'assets'}
-            {!anyPriced && totals.ladders > 0 && <span> · No ladder has prices at the moment, so all are listed</span>}
+            {shownLadders} {shownLadders === 1 ? 'market' : 'markets'} across {shown.length} {shown.length === 1 ? 'asset' : 'assets'}
+            {!anyPriced && totals.ladders > 0 && <span> · No market has prices at the moment, so all are listed</span>}
           </p>
 
           {totals.ladders === 0 ? (
             <div className="mk-state">
-              <h2 className="mk-state-title">No ladders listed</h2>
-              <p>The exchange is not listing any ladders right now. This page updates on its own.</p>
+              <h2 className="mk-state-title">No markets are open</h2>
+              <p>The exchange isn’t listing any markets right now. This page updates on its own.</p>
             </div>
           ) : shown.length === 0 ? (
             <div className="mk-state">
               <h2 className="mk-state-title">Nothing matches</h2>
-              <p>No ladder fits these filters.</p>
+              <p>No market matches these filters.</p>
               {filtered && (
                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => setParams({}, { replace: true })}>
                   Clear filters
@@ -176,20 +175,20 @@ export default function Markets() {
                     </h2>
                     <span className="mk-tag">{g.category}</span>
                     <span className="mk-meta">
-                      {g.events.length} {g.events.length === 1 ? 'ladder' : 'ladders'} · {g.priced} with prices
+                      {g.events.length} {g.events.length === 1 ? 'market' : 'markets'} · {g.priced} with prices
                     </span>
                   </div>
                   <div className="mk-table-wrap">
                     <table className="mk-table" role="table">
-                      <caption className="sr-only">{g.label} ladders, soonest close first</caption>
+                      <caption className="sr-only">{g.label} markets, soonest close first</caption>
                       <thead role="rowgroup">
                         <tr role="row">
                           <th role="columnheader" scope="col" className="mk-c-closes">Closes</th>
-                          <th role="columnheader" scope="col" className="mk-c-num">Strikes</th>
-                          <th role="columnheader" scope="col" className="mk-c-num mk-c-rungs">Rungs</th>
+                          <th role="columnheader" scope="col" className="mk-c-num">Price range</th>
+                          <th role="columnheader" scope="col" className="mk-c-num mk-c-rungs">Levels</th>
                           <th role="columnheader" scope="col" className="mk-c-num mk-c-move">Expected move</th>
                           <th role="columnheader" scope="col" className="mk-c-num mk-c-offers">Parlays on offer</th>
-                          <th role="columnheader" scope="col" className="mk-c-state">State</th>
+                          <th role="columnheader" scope="col" className="mk-c-state">Status</th>
                           <th role="columnheader" scope="col" className="mk-c-act">
                             <span className="sr-only">Action</span>
                           </th>
@@ -206,10 +205,10 @@ export default function Markets() {
                                 <span className="mk-when">{closesLabel(e.expiry, now)}</span>
                                 {rel && <span className="mk-rel">{rel}</span>}
                               </td>
-                              <td role="cell" className="mk-num" data-label="Strikes">
+                              <td role="cell" className="mk-num" data-label="Price range">
                                 {span ? `${money(span.low)} – ${money(span.high)}` : '–'}
                               </td>
-                              <td role="cell" className="mk-num mk-rungs" data-label="Rungs">
+                              <td role="cell" className="mk-num mk-rungs" data-label="Levels">
                                 {e.rungs.length}
                               </td>
                               <td role="cell" className="mk-num" data-label="Expected move">
@@ -218,7 +217,7 @@ export default function Markets() {
                               <td role="cell" className="mk-num" data-label="Parlays on offer">
                                 {parlaysOnOffer(e) > 0 ? parlaysOnOffer(e) : <span className="mk-none">None</span>}
                               </td>
-                              <td role="cell" className="mk-state-cell" data-label="State">
+                              <td role="cell" className="mk-state-cell" data-label="Status">
                                 <span className="mk-dot" data-state={st} aria-hidden="true" />
                                 {STATE_TEXT[st]}
                               </td>
@@ -258,7 +257,7 @@ export default function Markets() {
           )}
 
           <p className="fine mk-foot">
-            Prices come from the exchange and refresh on their own. A ladder with no prices cannot be bet on. Expected move is read from a ladder’s own prices: the market gives an even chance of
+            Prices come from the exchange and refresh on their own. A market with no prices can’t be bet on. Expected move is read from a market’s own prices: the market gives an even chance of
             finishing within that much of the middle of its view, either side.
           </p>
         </>

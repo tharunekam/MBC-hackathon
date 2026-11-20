@@ -416,7 +416,6 @@ export default function Basket() {
     <div className="page builder basket">
       <header className="page-head">
         <div>
-          <span className="eyebrow">A view across several assets</span>
           <h1 className="h-page">Basket</h1>
           <p className="lede">
             Up to {MAX_LEGS} bets on different markets, placed in one step. Each
@@ -906,7 +905,7 @@ function PaysPanel({
                   <p className="fine">
                     <Figures text={words.average} />
                     {c.adjusted &&
-                      ' Some of this ladder’s prices were out of order, so they were evened out first.'}
+                      ' Some of this market’s prices were out of order, so they were evened out first.'}
                   </p>
                   {waiting.length > 0 && (
                     <p className="fine">{waitingOnLadder(waiting)}</p>

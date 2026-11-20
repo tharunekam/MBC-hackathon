@@ -14,7 +14,6 @@ export default function NotFound() {
     <div className="page narrow lost">
       <header className="page-head">
         <div>
-          <span className="eyebrow">Page not found</span>
           <h1 className="h-page">There is nothing at this address</h1>
           <p className="lede">
             Given has no page at <code>{shown}</code>. The link may be old or mistyped. These pages do exist:

@@ -292,7 +292,6 @@ export default function Range() {
     <div className="page builder range-page">
       <header className="page-head">
         <div>
-          <span className="eyebrow">A bet on how far the price moves</span>
           <h1 className="h-page">Range</h1>
           <p className="lede">Choose two levels, then bet that the price stays put and finishes between them, or that it moves far enough to finish outside them, up or down.</p>
         </div>

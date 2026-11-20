@@ -108,30 +108,28 @@ export default function ProductShowcase() {
   return (
     <div className="wrap">
       <Reveal className="showcase-head">
-        <span className="eyebrow">Defined-outcome bets</span>
-        <h2 className="h-section">Bet the shape, not just the direction</h2>
-        <p className="lede">Up, down, stays put or a big move. Pick the shape of what you think will happen. Every result is on screen before you bet.</p>
+        <h2 className="h-section">
+          Four ways to bet on a price. <span className="dim">Up, down, stays put or a big move. Every result is on screen before you bet.</span>
+        </h2>
       </Reveal>
       <Reveal delay={100}>
         <ul className="showcase">
-          {SHAPES.map((s, i) => (
-            // The name is the link, stretched over the whole cell, so the cell is one target with a short name.
+          {SHAPES.map((s) => (
+            // The name is the link, stretched over the whole card, so the card is one target with a short name.
             <li key={s.id}>
-              <span className="showcase-index" aria-hidden="true">
-                0{i + 1}
-              </span>
               <h3 className="showcase-name">
                 <Link to={keepMode(s.to)}>{s.name}</Link>
               </h3>
               <Figure id={s.id} />
               <p className="showcase-line">{s.line}</p>
               <span className="showcase-go" aria-hidden="true">
-                Open <span>→</span>
+                Open
+                <i>→</i>
               </span>
             </li>
           ))}
         </ul>
-        <p className="fine showcase-note">Each picture reads left to right along where the price could finish. Above the dotted line you are ahead, below it you are behind. Illustrative, not to scale.</p>
+        <p className="fine showcase-note">Each picture shows what the bet pays against where the price finishes. Above the dotted line you are ahead, below it you are behind. Not to scale.</p>
       </Reveal>
     </div>
   );

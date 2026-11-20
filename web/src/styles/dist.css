@@ -22,13 +22,13 @@
   fill: color-mix(in srgb, var(--ink) 40%, transparent);
 }
 .dc-slot[data-zone='win'] .dc-bar {
-  fill: var(--good);
+  fill: color-mix(in srgb, var(--good) 82%, var(--surface));
 }
 .dc-slot[data-zone='back'] .dc-bar {
-  fill: var(--accent);
+  fill: color-mix(in srgb, var(--accent) 88%, var(--surface));
 }
 .dc-slot[data-zone='lose'] .dc-bar {
-  fill: var(--bad);
+  fill: color-mix(in srgb, var(--bad) 80%, var(--surface));
 }
 .dc-slot[data-zone]:hover .dc-bar {
   filter: brightness(1.08);
@@ -139,7 +139,7 @@
   border-top: 2.5px solid var(--accent);
 }
 .dist-keys b {
-  font-weight: 600;
+  font-weight: 500;
   color: var(--ink);
 }
 
@@ -199,7 +199,7 @@
   color: var(--soft);
 }
 .hunch-say b {
-  font-weight: 600;
+  font-weight: 500;
   color: var(--ink);
 }
 .hunch-reset {
@@ -289,7 +289,7 @@
   color: var(--muted);
 }
 .hunch-odds b {
-  font-weight: 600;
+  font-weight: 500;
   color: var(--ink);
 }
 .hunch-odds [data-kind='win'] b {

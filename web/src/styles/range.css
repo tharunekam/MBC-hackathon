@@ -46,7 +46,6 @@
 }
 .rb-key b {
   font-weight: 500;
-  font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
 
@@ -70,7 +69,6 @@
   border-bottom-right-radius: 0;
 }
 .range-page .nums dd {
-  font-variant-numeric: tabular-nums;
 }
 .rg-pay {
   margin: 0;
@@ -84,7 +82,7 @@
   color: var(--soft);
 }
 .rg-pay b {
-  font-weight: 600;
+  font-weight: 500;
   color: var(--ink);
 }
 
